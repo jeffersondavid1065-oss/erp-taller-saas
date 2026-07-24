@@ -1,19 +1,17 @@
 import streamlit as st
-import sqlite3
 import pandas as pd
-import os
 from datetime import datetime, timedelta
+from sqlalchemy import text
+from db import obtener_conexion
 
 st.set_page_config(page_title="Directorio y CRM", page_icon="📁", layout="wide")
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH = os.path.join(BASE_DIR, "erp_taller.db")
 
 # Validación de Seguridad
 if not st.session_state.get('user_logged', False):
     st.warning("⚠️ Debes iniciar sesión en la página principal para acceder a este módulo.")
     st.stop()
 
+engine = obtener_conexion()
 user_id = st.session_state.user_id
 
 def formato_cop(numero):
@@ -44,21 +42,28 @@ with tab_empresas:
             
             if submit_empresa:
                 if razon_social and nit:
-                    conn = sqlite3.connect(DB_PATH)
-                    c = conn.cursor()
                     try:
-                        # 🌟 Guardado amarrado al usuario_id del taller actual
-                        c.execute('''
-                            INSERT INTO Empresas_Clientes (usuario_id, razon_social, nit, telefono, email) 
-                            VALUES (?, ?, ?, ?, ?)
-                        ''', (user_id, razon_social, nit, telefono, email))
-                        conn.commit()
-                        st.success(f"✅ ¡La empresa {razon_social} fue registrada con éxito!")
+                        with engine.begin() as conn:
+                            conn.execute(
+                                text('''
+                                    INSERT INTO Empresas_Clientes (usuario_id, razon_social, nit, telefono, email) 
+                                    VALUES (:uid, :razon, :nit, :tel, :email)
+                                '''),
+                                {
+                                    "uid": user_id, 
+                                    "razon": razon_social, 
+                                    "nit": nit, 
+                                    "tel": telefono, 
+                                    "email": email
+                                }
+                            )
+                        st.success(f"✅ ¡La empresa {razon_social} fue registrada con éxito en la nube!")
                         st.rerun()
-                    except sqlite3.IntegrityError:
-                        st.error("❌ Error: Ya existe una empresa registrada con ese mismo NIT en tu taller.")
-                    finally:
-                        conn.close()
+                    except Exception as e:
+                        if "unique constraint" in str(e).lower() or "duplicate key" in str(e).lower():
+                            st.error("❌ Error: Ya existe una empresa registrada con ese mismo NIT en tu taller.")
+                        else:
+                            st.error(f"❌ Error al registrar: {e}")
                 else:
                     st.error("⚠️ La Razón Social y el NIT son campos obligatorios.")
 
@@ -66,9 +71,12 @@ with tab_empresas:
     
     st.subheader("🔍 Historial de Trabajos por Empresa")
     
-    conn = sqlite3.connect(DB_PATH)
-    # Solo las empresas de este taller
-    empresas = pd.read_sql_query("SELECT id, razon_social, nit FROM Empresas_Clientes WHERE usuario_id = ?", conn, params=(user_id,))
+    with engine.connect() as conn:
+        empresas = pd.read_sql_query(
+            text("SELECT id, razon_social, nit FROM Empresas_Clientes WHERE usuario_id = :uid"), 
+            con=conn, 
+            params={"uid": user_id}
+        )
     
     if not empresas.empty:
         dict_empresas = {f"{row['razon_social']} (NIT: {row['nit']})": row['id'] for index, row in empresas.iterrows()}
@@ -95,27 +103,37 @@ with tab_empresas:
             )
             
             if "Resumida" in tipo_vista:
-                query_historial = '''
+                query_historial = text('''
                     SELECT h.id as "N° Orden", date(h.fecha_ingreso) as "Fecha", h.placa as "Placa", 
                            SUM(d.precio_venta) as "Total Cobrado", h.estado as "Estado"
                     FROM Hojas_Trabajo h
                     JOIN Detalles_Orden d ON h.id = d.hoja_id
-                    WHERE h.empresa_id = ? AND h.usuario_id = ? AND h.fecha_ingreso >= ? AND h.fecha_ingreso < ?
+                    WHERE h.empresa_id = :eid AND h.usuario_id = :uid AND h.fecha_ingreso >= :f_ini AND h.fecha_ingreso < :f_fin
                     GROUP BY h.id, h.fecha_ingreso, h.placa, h.estado
                     ORDER BY h.id DESC
-                '''
+                ''')
             else:
-                query_historial = '''
+                query_historial = text('''
                     SELECT h.id as "N° Orden", date(h.fecha_ingreso) as "Fecha", h.placa as "Placa", 
                            d.tipo_item as "Tipo", d.descripcion as "Detalle", 
                            d.precio_venta as "Cobrado", h.estado as "Estado"
                     FROM Hojas_Trabajo h
                     JOIN Detalles_Orden d ON h.id = d.hoja_id
-                    WHERE h.empresa_id = ? AND h.usuario_id = ? AND h.fecha_ingreso >= ? AND h.fecha_ingreso < ?
+                    WHERE h.empresa_id = :eid AND h.usuario_id = :uid AND h.fecha_ingreso >= :f_ini AND h.fecha_ingreso < :f_fin
                     ORDER BY h.id DESC
-                '''
+                ''')
                 
-            df_historial = pd.read_sql_query(query_historial, conn, params=(empresa_id, user_id, fecha_inicio, fecha_fin_extendida))
+            with engine.connect() as conn:
+                df_historial = pd.read_sql_query(
+                    query_historial, 
+                    con=conn, 
+                    params={
+                        "eid": empresa_id, 
+                        "uid": user_id, 
+                        "f_ini": fecha_inicio.strftime('%Y-%m-%d'), 
+                        "f_fin": fecha_fin_extendida.strftime('%Y-%m-%d')
+                    }
+                )
             
             if not df_historial.empty:
                 columna_suma = 'Total Cobrado' if "Resumida" in tipo_vista else 'Cobrado'
@@ -141,7 +159,6 @@ with tab_empresas:
                 st.info("No hay registros para esta empresa en el rango de fechas seleccionado.")
     else:
         st.info("Aún no tienes empresas registradas. Usa el formulario de arriba para agregar la primera.")
-    conn.close()
 
 # ==========================================
 # PESTAÑA 2: GESTIÓN DE MECÁNICOS
@@ -157,29 +174,34 @@ with tab_mecanicos:
             
             if st.form_submit_button("💾 Contratar / Registrar Mecánico"):
                 if nombre_mec and doc_mec:
-                    conn = sqlite3.connect(DB_PATH)
-                    c = conn.cursor()
                     try:
-                        # 🌟 Mecánico amarrado al usuario_id del taller
-                        c.execute('''
-                            INSERT INTO Mecanicos (usuario_id, nombre, documento, estado) 
-                            VALUES (?, ?, ?, 'Activo')
-                        ''', (user_id, nombre_mec, doc_mec))
-                        conn.commit()
-                        st.success(f"✅ ¡{nombre_mec} ha sido agregado a tu equipo!")
+                        with engine.begin() as conn:
+                            conn.execute(
+                                text('''
+                                    INSERT INTO Mecanicos (usuario_id, nombre, documento, estado) 
+                                    VALUES (:uid, :nombre, :doc, 'Activo')
+                                '''),
+                                {"uid": user_id, "nombre": nombre_mec, "doc": doc_mec}
+                            )
+                        st.success(f"✅ ¡{nombre_mec} ha sido agregado a tu equipo en la nube!")
                         st.rerun()
-                    except sqlite3.IntegrityError:
-                        st.error("❌ Este documento ya está registrado en tu taller.")
-                    finally:
-                        conn.close()
+                    except Exception as e:
+                        if "unique constraint" in str(e).lower() or "duplicate key" in str(e).lower():
+                            st.error("❌ Este documento ya está registrado en tu taller.")
+                        else:
+                            st.error(f"❌ Error al registrar: {e}")
                 else:
                     st.error("Por favor completa ambos campos.")
     
     with col_mec2:
         st.subheader("👥 Personal Actual (Editar / Eliminar)")
-        conn = sqlite3.connect(DB_PATH)
-        mecanicos_db = pd.read_sql_query("SELECT id, nombre, documento, estado FROM Mecanicos WHERE usuario_id = ?", conn, params=(user_id,))
-        conn.close()
+        
+        with engine.connect() as conn:
+            mecanicos_db = pd.read_sql_query(
+                text("SELECT id, nombre, documento, estado FROM Mecanicos WHERE usuario_id = :uid"), 
+                con=conn, 
+                params={"uid": user_id}
+            )
         
         if not mecanicos_db.empty:
             for index, row in mecanicos_db.iterrows():
@@ -193,17 +215,16 @@ with tab_mecanicos:
                             st.session_state[f"edit_mode_{row['id']}"] = True
                     with col_m2:
                         if st.button("🗑️ Eliminar", key=f"btn_del_mec_{row['id']}"):
-                            conn = sqlite3.connect(DB_PATH)
-                            c = conn.cursor()
                             try:
-                                c.execute("DELETE FROM Mecanicos WHERE id = ? AND usuario_id = ?", (row['id'], user_id))
-                                conn.commit()
-                                st.success(f"Mecánico eliminado.")
+                                with engine.begin() as conn_del:
+                                    conn_del.execute(
+                                        text("DELETE FROM Mecanicos WHERE id = :id AND usuario_id = :uid"),
+                                        {"id": row['id'], "uid": user_id}
+                                    )
+                                st.success("Mecánico eliminado.")
                                 st.rerun()
                             except Exception:
                                 st.error("⚠️ No se puede eliminar: tiene trabajos asociados en órdenes.")
-                            finally:
-                                conn.close()
                     
                     if st.session_state.get(f"edit_mode_{row['id']}", False):
                         with st.form(key=f"form_update_mec_{row['id']}"):
@@ -218,15 +239,27 @@ with tab_mecanicos:
                                 cancelar = st.form_submit_button("❌ Cancelar")
                                 
                             if guardar:
-                                conn = sqlite3.connect(DB_PATH)
-                                c = conn.cursor()
-                                c.execute("UPDATE Mecanicos SET nombre = ?, documento = ?, estado = ? WHERE id = ? AND usuario_id = ?", 
-                                          (nuevo_nombre, nuevo_doc, nuevo_estado, row['id'], user_id))
-                                conn.commit()
-                                conn.close()
-                                st.session_state[f"edit_mode_{row['id']}"] = False
-                                st.success("¡Actualizado con éxito!")
-                                st.rerun()
+                                try:
+                                    with engine.begin() as conn_upd:
+                                        conn_upd.execute(
+                                            text('''
+                                                UPDATE Mecanicos 
+                                                SET nombre = :nombre, documento = :doc, estado = :estado 
+                                                WHERE id = :id AND usuario_id = :uid
+                                            '''),
+                                            {
+                                                "nombre": nuevo_nombre, 
+                                                "doc": nuevo_doc, 
+                                                "estado": nuevo_estado, 
+                                                "id": row['id'], 
+                                                "uid": user_id
+                                            }
+                                        )
+                                    st.session_state[f"edit_mode_{row['id']}"] = False
+                                    st.success("¡Actualizado con éxito!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error al actualizar: {e}")
                             if cancelar:
                                 st.session_state[f"edit_mode_{row['id']}"] = False
                                 st.rerun()
