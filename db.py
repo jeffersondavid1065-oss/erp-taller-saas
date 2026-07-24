@@ -6,6 +6,7 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOCAL_DB_PATH = os.path.join(BASE_DIR, "erp_taller.db")
 
+@st.cache_resource  # ESTA ES LA MAGIA QUE ACELERA TODO
 def obtener_conexion():
     try:
         db_url = st.secrets["postgres"]["url"]
@@ -15,6 +16,7 @@ def obtener_conexion():
     
     return engine
 
+# ... (el resto de tu código init_db se queda igual) ...
 def init_db():
     engine = obtener_conexion()
     is_sqlite = "sqlite" in str(engine.url)
