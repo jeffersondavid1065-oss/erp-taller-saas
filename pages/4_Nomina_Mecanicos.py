@@ -1,19 +1,17 @@
 import streamlit as st
-import sqlite3
 import pandas as pd
-import os
 from datetime import datetime, timedelta
+from sqlalchemy import text
+from db import obtener_conexion
 
 st.set_page_config(page_title="Nómina y Comisiones", page_icon="💰", layout="wide")
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH = os.path.join(BASE_DIR, "erp_taller.db")
 
 # Validación de Seguridad
 if not st.session_state.get('user_logged', False):
     st.warning("⚠️ Debes iniciar sesión en la página principal para acceder a este módulo.")
     st.stop()
 
+engine = obtener_conexion()
 user_id = st.session_state.user_id
 
 def formato_cop(numero):
@@ -23,13 +21,85 @@ st.title("💰 Liquidación de Nómina Dinámica")
 st.markdown(f"Auditoría de comisiones para: **{st.session_state.nombre_taller}**")
 st.markdown("---")
 
+# ==========================================
+# 1. MÓDULO DE AUDITORÍA Y EDICIÓN RÁPIDA
+# ==========================================
+st.subheader("🛠️ Auditoría de Trabajos Activos")
+st.info("💡 Haz doble clic en la **Descripción** o el **Precio** para editarlos. Luego presiona el botón Guardar.")
+
+with engine.connect() as conn:
+    query_trabajos = text('''
+        SELECT 
+            d.id as detalle_id, 
+            h.id as orden_nro,
+            h.placa, 
+            m.nombre as mecanico, 
+            d.tipo_item,
+            d.descripcion, 
+            d.precio_venta 
+        FROM Detalles_Orden d
+        JOIN Hojas_Trabajo h ON d.hoja_id = h.id
+        LEFT JOIN Mecanicos m ON d.mecanico_id = m.id
+        WHERE h.usuario_id = :uid AND h.estado != 'Facturado'
+        ORDER BY h.fecha_ingreso DESC
+    ''')
+    df_trabajos = pd.read_sql_query(query_trabajos, con=conn, params={"uid": user_id})
+
+if not df_trabajos.empty:
+    df_editado = st.data_editor(
+        df_trabajos,
+        hide_index=True,
+        use_container_width=True,
+        disabled=["detalle_id", "orden_nro", "placa", "mecanico", "tipo_item"],
+        column_config={
+            "detalle_id": None, 
+            "orden_nro": "N° Orden",
+            "placa": "Placa",
+            "mecanico": "Mecánico",
+            "tipo_item": "Tipo",
+            "descripcion": "Descripción del Trabajo (Editable)",
+            "precio_venta": st.column_config.NumberColumn("Precio Venta (Editable)", format="$%d")
+        }
+    )
+
+    if st.button("💾 Guardar Cambios en la Base de Datos", type="primary"):
+        # Comparamos para guardar solo lo que el usuario editó
+        cambios = df_editado.compare(df_trabajos)
+        if not cambios.empty:
+            try:
+                with engine.begin() as conn_update:
+                    for index, row in df_editado.iterrows():
+                        desc_orig = df_trabajos.loc[index, 'descripcion']
+                        precio_orig = df_trabajos.loc[index, 'precio_venta']
+                        
+                        # Si la fila tuvo cambios, la actualizamos en Supabase
+                        if row['descripcion'] != desc_orig or row['precio_venta'] != precio_orig:
+                            conn_update.execute(
+                                text('''
+                                    UPDATE Detalles_Orden 
+                                    SET descripcion = :desc, precio_venta = :precio 
+                                    WHERE id = :id
+                                '''),
+                                {"desc": row['descripcion'], "precio": float(row['precio_venta']), "id": int(row['detalle_id'])}
+                            )
+                st.success("✅ ¡Cambios guardados con éxito!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ Error al guardar: {e}")
+        else:
+            st.warning("No se detectaron cambios para guardar.")
+else:
+    st.info("No hay trabajos pendientes de facturación para auditar en este momento.")
+
+st.markdown("---")
+
+# ==========================================
+# 2. LIQUIDACIÓN DE NÓMINA ORIGINAL
+# ==========================================
 def obtener_mecanicos():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    # Solo los mecánicos del taller actual
-    cursor.execute("SELECT id, nombre FROM Mecanicos WHERE usuario_id = ?", (user_id,))
-    datos = cursor.fetchall()
-    conn.close()
+    with engine.connect() as conn:
+        query = text("SELECT id, nombre FROM Mecanicos WHERE usuario_id = :uid")
+        datos = conn.execute(query, {"uid": user_id}).fetchall()
     return datos
 
 mecanicos = obtener_mecanicos()
@@ -56,27 +126,35 @@ else:
         fecha_fin_extendida = fecha_fin + timedelta(days=1) 
         mecanico_id = dict_mecanicos[mecanico_sel]
         
-        # Consulta filtrada por usuario_id en Hojas_Trabajo
-        query_nomina = '''
+        query_nomina = text('''
             SELECT h.id as orden_id, h.placa, date(h.fecha_ingreso) as fecha, 
                    d.descripcion as descripcion_trabajo, 
                    d.precio_venta as valor_mano_obra
             FROM Detalles_Orden d
             JOIN Hojas_Trabajo h ON d.hoja_id = h.id
-            WHERE d.mecanico_id = ? 
+            WHERE d.mecanico_id = :mid 
             AND d.tipo_item = 'Mano de Obra'
-            AND h.usuario_id = ?
-            AND h.fecha_ingreso >= ? AND h.fecha_ingreso < ?
+            AND h.usuario_id = :uid
+            AND h.fecha_ingreso >= :f_inicio AND h.fecha_ingreso < :f_fin
             ORDER BY h.fecha_ingreso DESC
-        '''
+        ''')
         
-        conn = sqlite3.connect(DB_PATH)
-        df_nomina = pd.read_sql_query(query_nomina, conn, params=(mecanico_id, user_id, fecha_inicio, fecha_fin_extendida))
-        conn.close()
+        with engine.connect() as conn:
+            df_nomina = pd.read_sql_query(
+                query_nomina, 
+                conn, 
+                params={
+                    "mid": mecanico_id, 
+                    "uid": user_id, 
+                    "f_inicio": fecha_inicio.strftime('%Y-%m-%d'), 
+                    "f_fin": fecha_fin_extendida.strftime('%Y-%m-%d')
+                }
+            )
         
         st.markdown("---")
         
         if not df_nomina.empty:
+            # Cálculo modificado de comisión utilizando el porcentaje exacto en base a la línea original que corregimos antes
             df_nomina['comision_mecanico'] = (df_nomina['valor_mano_obra'] * (porcentaje_pago / 100)).round(2)
             
             total_mo = df_nomina['valor_mano_obra'].sum()
