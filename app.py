@@ -1,3 +1,4 @@
+import extra_streamlit_components as stx
 import streamlit as st
 import pandas as pd
 import hashlib
@@ -14,6 +15,12 @@ st.set_page_config(
 # Inicializar Base de Datos
 init_db()
 
+# ==========================================
+# GESTIÓN DE COOKIES (SESIÓN PERSISTENTE)
+# ==========================================
+# Encendemos el administrador de cookies
+cookie_manager = stx.CookieManager()
+
 def hacer_hash(password):
     return hashlib.sha256(str.encode(password)).hexdigest()
 
@@ -21,7 +28,7 @@ def formato_cop(numero):
     return f"${numero:,.0f}".replace(",", ".")
 
 # ==========================================
-# GESTIÓN DE SESIÓN (LOGIN / REGISTRO)
+# INICIALIZAR MEMORIA Y LEER COOKIES
 # ==========================================
 if 'user_logged' not in st.session_state:
     st.session_state.user_logged = False
@@ -30,6 +37,21 @@ if 'user_id' not in st.session_state:
 if 'nombre_taller' not in st.session_state:
     st.session_state.nombre_taller = ""
 
+# Si la memoria está vacía (por ej. al recargar), intentamos leer la cookie del navegador
+if not st.session_state.user_logged:
+    cookie_user = cookie_manager.get(cookie="user_id")
+    cookie_taller = cookie_manager.get(cookie="nombre_taller")
+    
+    # Si la cookie existe y tiene datos válidos, restauramos la sesión
+    if cookie_user and cookie_user != 'None':
+        st.session_state.user_logged = True
+        st.session_state.user_id = cookie_user
+        st.session_state.nombre_taller = cookie_taller
+        st.rerun()
+
+# ==========================================
+# INTERFAZ DE LOGIN Y REGISTRO
+# ==========================================
 if not st.session_state.user_logged:
     st.title("⚙️ Sistema ERP Cloud para Talleres Automotrices")
     st.markdown("### La solución definitiva para administrar tu taller, inventarios y nóminas.")
@@ -56,9 +78,15 @@ if not st.session_state.user_logged:
                         user_id, taller_name, hashed_pass, estado_sub = user
                         if hashed_pass == hacer_hash(pass_log):
                             if estado_sub == 'Activo':
+                                # 1. Guardar en la memoria temporal
                                 st.session_state.user_logged = True
                                 st.session_state.user_id = user_id
                                 st.session_state.nombre_taller = taller_name
+                                
+                                # 2. Crear las cookies para que no se cierre la sesión (Dura 30 días)
+                                cookie_manager.set("user_id", str(user_id), max_age=30*24*60*60)
+                                cookie_manager.set("nombre_taller", taller_name, max_age=30*24*60*60)
+                                
                                 st.success(f"¡Bienvenido de nuevo, {taller_name}!")
                                 st.rerun()
                             else:
@@ -106,9 +134,16 @@ if not st.session_state.user_logged:
                 else:
                     st.warning("Por favor completa todos los campos.")
 
+# ==========================================
+# PANEL DIRECTIVO (SESIÓN ACTIVA)
+# ==========================================
 else:
     st.sidebar.success(f"🏢 Taller: {st.session_state.nombre_taller}")
+    
+    # Botón para cerrar sesión y borrar cookies
     if st.sidebar.button("🚪 Cerrar Sesión"):
+        cookie_manager.delete("user_id")
+        cookie_manager.delete("nombre_taller")
         st.session_state.user_logged = False
         st.session_state.user_id = None
         st.session_state.nombre_taller = ""
