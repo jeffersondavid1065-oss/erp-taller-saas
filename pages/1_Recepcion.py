@@ -1,29 +1,25 @@
 import streamlit as st
-import sqlite3
 import pandas as pd
-import os
+from sqlalchemy import text
+from db import obtener_conexion
 
 st.set_page_config(page_title="Recepción de Vehículos", page_icon="🚘", layout="wide")
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH = os.path.join(BASE_DIR, "erp_taller.db")
-
-# Validación de Seguridad: Si no ha iniciado sesión, lo devuelve al Login
+# Validación de Seguridad
 if not st.session_state.get('user_logged', False):
     st.warning("⚠️ Debes iniciar sesión en la página principal para acceder a este módulo.")
     st.stop()
 
+engine = obtener_conexion()
 user_id = st.session_state.user_id
 
 if 'carrito_items' not in st.session_state:
     st.session_state.carrito_items = []
 
-def obtener_datos(query, params=()):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(query, params)
-    data = cursor.fetchall()
-    conn.close()
+# Función adaptada a SQLAlchemy y Supabase
+def obtener_datos(query, params={}):
+    with engine.connect() as conn:
+        data = conn.execute(text(query), params).fetchall()
     return data
 
 def formato_cop(numero):
@@ -33,12 +29,14 @@ st.title("🚘 Recepción y Asignación de Trabajos")
 st.markdown(f"Registrando órdenes para: **{st.session_state.nombre_taller}**")
 st.markdown("---")
 
-# Filtramos los datos estrictamente por el usuario (taller) actual
-empresas = obtener_datos("SELECT id, razon_social FROM Empresas_Clientes WHERE usuario_id = ?", (user_id,))
-mecanicos = obtener_datos("SELECT id, nombre FROM Mecanicos WHERE usuario_id = ?", (user_id,))
+# Filtramos los datos estrictamente por el usuario (taller) usando :uid
+empresas = obtener_datos("SELECT id, razon_social FROM Empresas_Clientes WHERE usuario_id = :uid", {"uid": user_id})
+mecanicos = obtener_datos("SELECT id, nombre FROM Mecanicos WHERE usuario_id = :uid", {"uid": user_id})
 
+# 🛑 ALERTA DE BASE DE DATOS VACÍA
 if not empresas or not mecanicos:
-    st.warning("⚠️ Tu taller aún no tiene empresas o mecánicos registrados. Ve a Directorio o Clientes para agregarlos primero.")
+    st.warning("⚠️ Tu taller aún no tiene empresas o mecánicos registrados en la base de datos nueva.")
+    st.info("💡 Como estamos estrenando servidor en la nube, debes registrar al menos 1 mecánico y 1 cliente para poder asignar trabajos.")
     st.stop()
 
 dict_empresas = {f"{e[1]}": e[0] for e in empresas}
@@ -127,29 +125,43 @@ if st.session_state.carrito_items:
         if not placa:
             st.error("Falta escribir la Placa.")
         else:
-            conn = sqlite3.connect(DB_PATH)
-            c = conn.cursor()
             try:
                 empresa_id = dict_empresas[empresa_sel]
-                # 🌟 GUARDAMOS AMARRADO AL USUARIO_ID DEL TALLER ACTUAL
-                c.execute('''
-                    INSERT INTO Hojas_Trabajo (usuario_id, placa, empresa_id, estado) 
-                    VALUES (?, ?, ?, ?)
-                ''', (user_id, placa, empresa_id, estado))
-                hoja_id = c.lastrowid
                 
-                for item in st.session_state.carrito_items:
-                    c.execute('''
-                        INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, mecanico_id, costo_compra, precio_venta)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    ''', (hoja_id, item['Tipo'], item['Descripción'], item['Mecánico_ID'], item['Costo'], item['PVP Cliente']))
+                # Usamos engine.begin() para asegurar que todo se guarde completo o no se guarde nada
+                with engine.begin() as conn:
+                    # 1. Insertamos la Hoja de Trabajo y capturamos el ID generado (RETURNING id)
+                    resultado_hoja = conn.execute(
+                        text('''
+                            INSERT INTO Hojas_Trabajo (usuario_id, placa, empresa_id, estado) 
+                            VALUES (:uid, :placa, :empresa_id, :estado)
+                            RETURNING id
+                        '''), 
+                        {"uid": user_id, "placa": placa, "empresa_id": empresa_id, "estado": estado}
+                    )
+                    hoja_id = resultado_hoja.scalar() # Obtiene el ID insertado
+                    
+                    # 2. Insertamos todos los detalles del carrito amarrados al hoja_id
+                    for item in st.session_state.carrito_items:
+                        conn.execute(
+                            text('''
+                                INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, mecanico_id, costo_compra, precio_venta)
+                                VALUES (:hoja_id, :tipo, :desc, :mec_id, :costo, :pvp)
+                            '''), 
+                            {
+                                "hoja_id": hoja_id, 
+                                "tipo": item['Tipo'], 
+                                "desc": item['Descripción'], 
+                                "mec_id": item['Mecánico_ID'], 
+                                "costo": float(item['Costo']), 
+                                "pvp": float(item['PVP Cliente'])
+                            }
+                        )
                 
-                conn.commit()
                 st.session_state.carrito_items = [] 
                 st.success(f"✅ ¡Orden #{hoja_id} guardada exitosamente para el vehículo {placa}!")
+                st.rerun()
             except Exception as e:
                 st.error(f"Error al guardar: {e}")
-            finally:
-                conn.close()
 else:
     st.info("Aún no has agregado trabajos ni repuestos.")
