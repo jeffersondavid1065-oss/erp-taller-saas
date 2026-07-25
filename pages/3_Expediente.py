@@ -50,6 +50,9 @@ if not st.session_state.get('user_logged', False):
 engine = obtener_conexion()
 user_id = st.session_state.user_id
 
+def formato_cop(numero):
+    return f"${numero:,.0f}".replace(",", ".")
+
 st.title("Expediente de Orden y Facturación")
 st.markdown(f"Gestión de órdenes para: **{st.session_state.nombre_taller}**")
 st.markdown("---")
@@ -97,15 +100,19 @@ if len(fechas_filtro) == 2:
     sql_count_parts = [
         "SELECT COUNT(*) FROM Hojas_Trabajo h JOIN Empresas_Clientes e ON h.empresa_id = e.id WHERE h.usuario_id = :uid AND h.fecha_ingreso >= :f_ini AND h.fecha_ingreso < :f_fin"
     ]
-    sql_list_parts = [
-        '''
+    
+    sql_list_select = '''
         SELECT h.id as "N° Orden", date(h.fecha_ingreso) as "Fecha", 
-               h.placa as "Placa", e.razon_social as "Empresa", h.estado as "Estado"
+               h.placa as "Placa", e.razon_social as "Empresa", 
+               COALESCE(SUM(d.precio_venta), 0) as "Total",
+               h.estado as "Estado"
         FROM Hojas_Trabajo h
         JOIN Empresas_Clientes e ON h.empresa_id = e.id
+        LEFT JOIN Detalles_Orden d ON h.id = d.hoja_id
         WHERE h.usuario_id = :uid AND h.fecha_ingreso >= :f_ini AND h.fecha_ingreso < :f_fin
-        '''
-    ]
+    '''
+    
+    sql_conditions = []
 
     params_exp = {
         "uid": user_id, 
@@ -115,17 +122,17 @@ if len(fechas_filtro) == 2:
 
     if filtro_estado_sel != "-- Todos los estados --":
         sql_count_parts.append("AND h.estado = :est")
-        sql_list_parts.append("AND h.estado = :est")
+        sql_conditions.append("AND h.estado = :est")
         params_exp["est"] = filtro_estado_sel
 
     if filtro_placa_exp:
         sql_count_parts.append("AND h.placa LIKE :placa")
-        sql_list_parts.append("AND h.placa LIKE :placa")
+        sql_conditions.append("AND h.placa LIKE :placa")
         params_exp["placa"] = f"%{filtro_placa_exp}%"
 
     if filtro_empresa_sel != "-- Todas las empresas --":
         sql_count_parts.append("AND e.razon_social = :empresa_nombre")
-        sql_list_parts.append("AND e.razon_social = :empresa_nombre")
+        sql_conditions.append("AND e.razon_social = :empresa_nombre")
         params_exp["empresa_nombre"] = filtro_empresa_sel
 
     with engine.connect() as conn:
@@ -145,12 +152,16 @@ if len(fechas_filtro) == 2:
         
         offset = (pagina_actual - 1) * REGISTROS_POR_PAGINA
         
-        sql_final_list = " ".join(sql_list_parts) + " ORDER BY h.id DESC LIMIT :limit OFFSET :offset"
+        # Ensamblamos la consulta sumando el GROUP BY para consolidar los montos
+        sql_final_list = sql_list_select + " " + " ".join(sql_conditions) + " GROUP BY h.id, h.fecha_ingreso, h.placa, e.razon_social, h.estado ORDER BY h.id DESC LIMIT :limit OFFSET :offset"
         params_exp["limit"] = REGISTROS_POR_PAGINA
         params_exp["offset"] = offset
 
         with engine.connect() as conn:
             df_lista = pd.read_sql_query(text(sql_final_list), con=conn, params=params_exp)
+            
+        # Formatear la columna de total a moneda
+        df_lista['Total'] = df_lista['Total'].apply(formato_cop)
         
         st.dataframe(df_lista, use_container_width=True, hide_index=True)
     else:
@@ -211,7 +222,7 @@ if orden_busqueda:
                     st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
                     
                     gran_total = df_trabajos['precio_venta'].sum()
-                    st.success(f"Total a cobrar al cliente: ${gran_total:,.2f}")
+                    st.success(f"Total a cobrar al cliente: {formato_cop(gran_total)}")
                     
                     st.markdown("---")
                     st.markdown("#### Copiado Rápido de Ítems")
@@ -219,7 +230,7 @@ if orden_busqueda:
                     for index, row in df_trabajos.iterrows():
                         col_i1, col_i2 = st.columns([3, 1])
                         with col_i1:
-                            st.text(f"[{row['tipo_item']}] - {row['descripcion']} (${row['precio_venta']:,.0f})")
+                            st.text(f"[{row['tipo_item']}] - {row['descripcion']} ({formato_cop(row['precio_venta'])})")
                         with col_i2:
                             st.code(row['descripcion'], language="text")
                 else:
@@ -256,7 +267,7 @@ if orden_busqueda:
                             with col_e1:
                                 st.write(f"**{row['tipo_item']}**: {row['descripcion']}")
                             with col_e2:
-                                st.write(f"Valor: ${row['precio_venta']:,.0f}")
+                                st.write(f"Valor: {formato_cop(row['precio_venta'])}")
                             with col_e3:
                                 if st.button("Editar", key=f"edit_item_{row['id']}"):
                                     st.session_state[f"modo_edit_{row['id']}"] = True
