@@ -6,6 +6,11 @@ from db import obtener_conexion
 st.set_page_config(page_title="Recepción de Vehículos", layout="wide")
 st.markdown("""
     <style>
+    /* Ocultar el encabezado superior donde sale el icono de GitHub */
+    [data-testid="stHeader"] {
+        display: none !important;
+    }
+
     /* Definir la animacion */
     @keyframes fade-in-up {
         0% { 
