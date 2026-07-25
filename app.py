@@ -1,25 +1,28 @@
 import streamlit as st
+import pandas as pd
 from sqlalchemy import text
 from db import obtener_conexion
 import hashlib
 
-st.set_page_config(page_title="Sistema ERP", layout="centered")
+st.set_page_config(page_title="Sistema ERP", layout="wide")
 
 engine = obtener_conexion()
 
 if 'user_logged' not in st.session_state:
     st.session_state.user_logged = False
 
+def formato_cop(numero):
+    return f"${numero:,.0f}".replace(",", ".")
+
 if not st.session_state.user_logged:
-    # Centramos el contenido principal con columnas
+    # Pantalla de inicio de sesion centrada y minimalista
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
-        st.markdown("<h2 style='text-align: center;'>MyTaller</h2>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center;'>Sistema ERP Cloud</h2>", unsafe_allow_html=True)
         st.markdown("<p style='text-align: center; color: gray;'>Plataforma de gestion para talleres automotrices</p>", unsafe_allow_html=True)
         st.markdown("---")
         
-        # Tarjeta limpia de inicio de sesion
         with st.container(border=True):
             st.subheader("Iniciar Sesion")
             email_login = st.text_input("Correo Electronico", key="login_email")
@@ -45,7 +48,6 @@ if not st.session_state.user_logged:
         
         st.markdown("")
         
-        # Opcion de registro desplegable (minimalista)
         with st.expander("Registrar Nuevo Taller"):
             with st.form("form_registro"):
                 taller_reg = st.text_input("Nombre del Taller")
@@ -78,8 +80,67 @@ if not st.session_state.user_logged:
                     else:
                         st.warning("Completa todos los campos para registrarte.")
 else:
+    user_id = st.session_state.user_id
+    
     st.title("Panel Principal")
-    st.write(f"Bienvenido al sistema del taller: {st.session_state.get('nombre_taller', '')}")
+    st.markdown(f"Resumen gerencial y contable para: **{st.session_state.get('nombre_taller', '')}**")
+    st.markdown("---")
+
+    # Consultas para obtener indicadores contables y operativos en tiempo real
+    with engine.connect() as conn:
+        # Valor total de trabajos activos (no facturados)
+        q_valor_activos = text('''
+            SELECT SUM(d.precio_venta) 
+            FROM Detalles_Orden d
+            JOIN Hojas_Trabajo h ON d.hoja_id = h.id
+            WHERE h.usuario_id = :uid AND h.estado != 'Facturado'
+        ''')
+        total_activos = conn.execute(q_valor_activos, {"uid": user_id}).scalar() or 0.0
+
+        # Conteo de ordenes en estado Cotizar
+        q_cotizar = text('''
+            SELECT COUNT(*) FROM Hojas_Trabajo 
+            WHERE usuario_id = :uid AND estado = 'Cotizar'
+        ''')
+        total_cotizar = conn.execute(q_cotizar, {"uid": user_id}).scalar() or 0
+
+        # Conteo de ordenes activas totales
+        q_ordenes = text('''
+            SELECT COUNT(*) FROM Hojas_Trabajo 
+            WHERE usuario_id = :uid AND estado != 'Facturado'
+        ''')
+        total_ordenes_activas = conn.execute(q_ordenes, {"uid": user_id}).scalar() or 0
+
+        # Conteo de empresas/clientes registrados
+        q_empresas = text('''
+            SELECT COUNT(*) FROM Empresas_Clientes 
+            WHERE usuario_id = :uid
+        ''')
+        total_empresas = conn.execute(q_empresas, {"uid": user_id}).scalar() or 0
+
+    # Bloque de metricas financieras y operativas
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Valor Trabajos Activos", formato_cop(total_activos))
+    m2.metric("Ordenes por Cotizar", total_cotizar)
+    m3.metric("Ordenes Activas en Taller", total_ordenes_activas)
+    m4.metric("Empresas Registradas", total_empresas)
+
+    st.markdown("---")
+    
+    # Seccion informativa rapida
+    col_info1, col_info2 = st.columns(2)
+    with col_info1:
+        with st.container(border=True):
+            st.subheader("Control Contable")
+            st.write("Desde este panel puedes supervisar de forma general el estado financiero de tus operaciones en curso. Utiliza los modulos laterales para gestionar la nomina, auditar precios o emitir facturas.")
+    with col_info2:
+        with st.container(border=True):
+            st.subheader("Accesos Rapidos")
+            st.write("• Dirigete a Expediente para auditar estados y cotizar pendientes.")
+            st.write("• Consulta Nomina Mecanicos para calcular comisiones de personal.")
+            st.write("• Gestiona tu cartera de clientes desde el Directorio.")
+
+    st.markdown("")
     if st.button("Cerrar Sesion"):
         st.session_state.user_logged = False
         st.rerun()
