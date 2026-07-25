@@ -1,20 +1,19 @@
 import streamlit as st
-import sqlite3
 import pandas as pd
 import os
 import math
 from datetime import datetime, timedelta
+from sqlalchemy import text
+from db import obtener_conexion
 
 st.set_page_config(page_title="Expediente y Edición", page_icon="📑", layout="wide")
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH = os.path.join(BASE_DIR, "erp_taller.db")
 
 # Validación de Seguridad
 if not st.session_state.get('user_logged', False):
     st.warning("⚠️ Debes iniciar sesión en la página principal para acceder a este módulo.")
     st.stop()
 
+engine = obtener_conexion()
 user_id = st.session_state.user_id
 
 st.title("📑 Expediente de Orden y Facturación")
@@ -22,16 +21,10 @@ st.markdown(f"Gestión de órdenes para: **{st.session_state.nombre_taller}**")
 st.markdown("---")
 
 def obtener_mecanicos():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    # Solo los mecánicos de este taller
-    cursor.execute("SELECT id, nombre FROM Mecanicos WHERE usuario_id = ?", (user_id,))
-    datos = cursor.fetchall()
-    conn.close()
+    with engine.connect() as conn:
+        query = text("SELECT id, nombre FROM Mecanicos WHERE usuario_id = :uid")
+        datos = conn.execute(query, {"uid": user_id}).fetchall()
     return {f"{m[1]}": m[0] for m in datos}
-
-conn = sqlite3.connect(DB_PATH)
-cursor = conn.cursor()
 
 st.subheader("📋 Historial de Órdenes por Fecha")
 
@@ -45,12 +38,13 @@ if len(fechas_filtro) == 2:
     fecha_inicio, fecha_fin = fechas_filtro
     fecha_fin_extendida = fecha_fin + timedelta(days=1) 
 
-    # Contamos las órdenes de este taller en el rango de fechas
-    cursor.execute('''
-        SELECT COUNT(*) FROM Hojas_Trabajo 
-        WHERE usuario_id = ? AND fecha_ingreso >= ? AND fecha_ingreso < ?
-    ''', (user_id, fecha_inicio, fecha_fin_extendida))
-    total_registros = cursor.fetchone()[0]
+    with engine.connect() as conn:
+        # Contamos las órdenes de este taller en el rango de fechas
+        query_count = text('''
+            SELECT COUNT(*) FROM Hojas_Trabajo 
+            WHERE usuario_id = :uid AND fecha_ingreso >= :f_ini AND fecha_ingreso < :f_fin
+        ''')
+        total_registros = conn.execute(query_count, {"uid": user_id, "f_ini": fecha_inicio, "f_fin": fecha_fin_extendida}).scalar()
 
     if total_registros > 0:
         REGISTROS_POR_PAGINA = 20
@@ -65,17 +59,29 @@ if len(fechas_filtro) == 2:
         
         offset = (pagina_actual - 1) * REGISTROS_POR_PAGINA
         
-        # Traemos solo las órdenes de este usuario_id
-        query_lista = '''
+        # Traemos las órdenes conectadas a Supabase
+        query_lista = text('''
             SELECT h.id as "N° Orden", date(h.fecha_ingreso) as "Fecha", 
                    h.placa as "Placa", e.razon_social as "Empresa", h.estado as "Estado"
             FROM Hojas_Trabajo h
             JOIN Empresas_Clientes e ON h.empresa_id = e.id
-            WHERE h.usuario_id = ? AND h.fecha_ingreso >= ? AND h.fecha_ingreso < ?
+            WHERE h.usuario_id = :uid AND h.fecha_ingreso >= :f_ini AND h.fecha_ingreso < :f_fin
             ORDER BY h.id DESC
-            LIMIT ? OFFSET ?
-        '''
-        df_lista = pd.read_sql_query(query_lista, conn, params=(user_id, fecha_inicio, fecha_fin_extendida, REGISTROS_POR_PAGINA, offset))
+            LIMIT :limit OFFSET :offset
+        ''')
+        
+        with engine.connect() as conn:
+            df_lista = pd.read_sql_query(
+                query_lista, 
+                con=conn, 
+                params={
+                    "uid": user_id, 
+                    "f_ini": fecha_inicio, 
+                    "f_fin": fecha_fin_extendida, 
+                    "limit": REGISTROS_POR_PAGINA, 
+                    "offset": offset
+                }
+            )
         
         st.dataframe(df_lista, use_container_width=True, hide_index=True)
     else:
@@ -94,15 +100,14 @@ if orden_busqueda:
     if orden_busqueda.isdigit(): 
         orden_id = int(orden_busqueda)
         
-        # Validamos que la orden pertenezca al taller logueado
-        query_vehiculo = '''
-            SELECT h.id, h.placa, h.estado, h.fecha_ingreso, e.razon_social, e.nit 
-            FROM Hojas_Trabajo h
-            JOIN Empresas_Clientes e ON h.empresa_id = e.id
-            WHERE h.id = ? AND h.usuario_id = ?
-        '''
-        cursor.execute(query_vehiculo, (orden_id, user_id))
-        vehiculo = cursor.fetchone()
+        with engine.connect() as conn:
+            query_vehiculo = text('''
+                SELECT h.id, h.placa, h.estado, h.fecha_ingreso, e.razon_social, e.nit 
+                FROM Hojas_Trabajo h
+                JOIN Empresas_Clientes e ON h.empresa_id = e.id
+                WHERE h.id = :oid AND h.usuario_id = :uid
+            ''')
+            vehiculo = conn.execute(query_vehiculo, {"oid": orden_id, "uid": user_id}).fetchone()
         
         if not vehiculo:
             st.warning(f"No se encontró ninguna orden con el número #{orden_id} en tu taller.")
@@ -115,13 +120,18 @@ if orden_busqueda:
             col2.metric("NIT", nit)
             col3.metric("Estado Actual", estado_actual)
             
-            df_trabajos = pd.read_sql_query('''
-                SELECT d.id, d.tipo_item, d.descripcion, m.nombre as mecanico, 
-                       d.costo_compra, d.precio_venta 
-                FROM Detalles_Orden d
-                LEFT JOIN Mecanicos m ON d.mecanico_id = m.id
-                WHERE d.hoja_id = ?
-            ''', conn, params=(hoja_id,))
+            with engine.connect() as conn:
+                df_trabajos = pd.read_sql_query(
+                    text('''
+                        SELECT d.id, d.tipo_item, d.descripcion, m.nombre as mecanico, 
+                               d.costo_compra, d.precio_venta 
+                        FROM Detalles_Orden d
+                        LEFT JOIN Mecanicos m ON d.mecanico_id = m.id
+                        WHERE d.hoja_id = :hid
+                    '''), 
+                    con=conn, 
+                    params={"hid": hoja_id}
+                )
             
             tab_factura, tab_editar = st.tabs(["🧾 Ver y Facturar", "✏️ Editar Orden (Corregir / Agregar)"])
             
@@ -155,11 +165,16 @@ if orden_busqueda:
                 with col_est2:
                     st.write("") 
                     if st.button("🔄 Guardar Cambio de Estado"):
-                        c = conn.cursor()
-                        c.execute("UPDATE Hojas_Trabajo SET estado = ? WHERE id = ?", (nuevo_estado, hoja_id))
-                        conn.commit()
-                        st.success("Estado actualizado.")
-                        st.rerun()
+                        try:
+                            with engine.begin() as conn_est:
+                                conn_est.execute(
+                                    text("UPDATE Hojas_Trabajo SET estado = :est WHERE id = :hid"),
+                                    {"est": nuevo_estado, "hid": hoja_id}
+                                )
+                            st.success("Estado actualizado.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error: {e}")
                 
                 st.markdown("---")
                 st.markdown("### 2. Corregir o Eliminar Ítems")
@@ -173,10 +188,15 @@ if orden_busqueda:
                                 st.write(f"Valor: ${row['precio_venta']:,.0f}")
                             with col_e3:
                                 if st.button("🗑️ Eliminar", key=f"del_{row['id']}"):
-                                    c = conn.cursor()
-                                    c.execute("DELETE FROM Detalles_Orden WHERE id = ?", (row['id'],))
-                                    conn.commit()
-                                    st.rerun()
+                                    try:
+                                        with engine.begin() as conn_del:
+                                            conn_del.execute(
+                                                text("DELETE FROM Detalles_Orden WHERE id = :did"),
+                                                {"did": row['id']}
+                                            )
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Error al eliminar: {e}")
                 else:
                     st.warning("No hay ítems para corregir.")
 
@@ -189,30 +209,46 @@ if orden_busqueda:
                     
                     with tab_mo:
                         desc_mo = st.text_input("Descripción", key="e_desc_mo")
-                        mec_sel = st.selectbox("Mecánico", options=list(dict_mecanicos.keys()), key="e_mec_mo")
+                        mec_sel = st.selectbox("Mecánico", options=list(dict_mecanicos.keys()), key="e_mec_mo") if dict_mecanicos else None
                         venta_mo = st.number_input("Cobro Cliente ($)", min_value=0, step=5000, key="e_venta_mo")
                         if st.button("💾 Guardar Trabajo"):
-                            if desc_mo and venta_mo > 0:
-                                c = conn.cursor()
-                                c.execute('''INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, mecanico_id, precio_venta)
-                                             VALUES (?, 'Mano de Obra', ?, ?, ?)''', 
-                                          (hoja_id, desc_mo, dict_mecanicos[mec_sel], venta_mo))
-                                conn.commit()
-                                st.rerun()
-                                
+                            if desc_mo and venta_mo > 0 and mec_sel:
+                                try:
+                                    with engine.begin() as conn_mo:
+                                        conn_mo.execute(
+                                            text('''
+                                                INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, mecanico_id, precio_venta)
+                                                VALUES (:hid, 'Mano de Obra', :desc, :mid, :pvp)
+                                            '''),
+                                            {"hid": hoja_id, "desc": desc_mo, "mid": dict_mecanicos[mec_sel], "pvp": float(venta_mo)}
+                                        )
+                                    st.success("¡Trabajo agregado con éxito!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error: {e}")
+                            else:
+                                st.error("Completa la descripción, el precio y asegúrate de tener mecánicos registrados.")
+                            
                     with tab_rep:
                         desc_rep = st.text_input("Nombre Repuesto", key="e_desc_rep")
                         costo_rep = st.number_input("Costo Compra ($)", min_value=0, step=1000, key="e_costo_rep")
                         venta_rep = st.number_input("Precio Venta ($)", min_value=0, step=1000, key="e_venta_rep")
                         if st.button("💾 Guardar Repuesto"):
                             if desc_rep and venta_rep > 0:
-                                c = conn.cursor()
-                                c.execute('''INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, costo_compra, precio_venta)
-                                             VALUES (?, 'Repuesto', ?, ?, ?)''', 
-                                          (hoja_id, desc_rep, costo_rep, venta_rep))
-                                conn.commit()
-                                st.rerun()
+                                try:
+                                    with engine.begin() as conn_rep:
+                                        conn_rep.execute(
+                                            text('''
+                                                INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, costo_compra, precio_venta)
+                                                VALUES (:hid, 'Repuesto', :desc, :costo, :pvp)
+                                            '''),
+                                            {"hid": hoja_id, "desc": desc_rep, "costo": float(costo_rep), "pvp": float(venta_rep)}
+                                        )
+                                    st.success("¡Repuesto agregado con éxito!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error: {e}")
+                            else:
+                                st.error("Llenar descripción y precio de venta.")
     else:
         st.error("Por favor, ingresa solo números (Ej: 1, 2, 3...)")
-
-conn.close()
