@@ -4,11 +4,11 @@ from datetime import datetime, timedelta
 from sqlalchemy import text
 from db import obtener_conexion
 
-st.set_page_config(page_title="Directorio y CRM", page_icon="📁", layout="wide")
+st.set_page_config(page_title="Directorio y CRM", layout="wide")
 
 # Validación de Seguridad
 if not st.session_state.get('user_logged', False):
-    st.warning("⚠️ Debes iniciar sesión en la página principal para acceder a este módulo.")
+    st.warning("Debes iniciar sesión en la página principal para acceder a este módulo.")
     st.stop()
 
 engine = obtener_conexion()
@@ -17,18 +17,18 @@ user_id = st.session_state.user_id
 def formato_cop(numero):
     return f"${numero:,.0f}".replace(",", ".")
 
-st.title("📁 Directorio y Expediente de Clientes")
+st.title("Directorio y Expediente de Clientes")
 st.markdown(f"Administración de clientes, flotas y personal para: **{st.session_state.nombre_taller}**")
 st.markdown("---")
 
-tab_empresas, tab_mecanicos = st.tabs(["🏢 Empresas y Flotas", "👨‍🔧 Equipo de Mecánicos"])
+tab_empresas, tab_mecanicos = st.tabs(["Empresas y Flotas", "Equipo de Mecánicos"])
 
 # ==========================================
 # PESTAÑA 1: GESTIÓN DE EMPRESAS Y CRM
 # ==========================================
 with tab_empresas:
     
-    with st.expander("➕ Haz clic aquí para registrar una Nueva Empresa o Cliente", expanded=False):
+    with st.expander("Registrar una nueva empresa o cliente", expanded=False):
         with st.form("form_nueva_empresa", clear_on_submit=True):
             col1, col2 = st.columns(2)
             with col1:
@@ -38,7 +38,7 @@ with tab_empresas:
                 telefono = st.text_input("Teléfono de Contacto")
                 email = st.text_input("Correo Electrónico")
             
-            submit_empresa = st.form_submit_button("💾 Guardar Empresa")
+            submit_empresa = st.form_submit_button("Guardar Empresa", type="primary")
             
             if submit_empresa:
                 if razon_social and nit:
@@ -57,22 +57,22 @@ with tab_empresas:
                                     "email": email
                                 }
                             )
-                        st.success(f"✅ ¡La empresa {razon_social} fue registrada con éxito en la nube!")
+                        st.success(f"La empresa {razon_social} fue registrada con éxito en el sistema.")
                         st.rerun()
                     except Exception as e:
                         if "unique constraint" in str(e).lower() or "duplicate key" in str(e).lower():
-                            st.error("❌ Error: Ya existe una empresa registrada con ese mismo NIT en tu taller.")
+                            st.error("Error: Ya existe una empresa registrada con ese mismo NIT en el taller.")
                         else:
-                            st.error(f"❌ Error al registrar: {e}")
+                            st.error(f"Error al registrar: {e}")
                 else:
-                    st.error("⚠️ La Razón Social y el NIT son campos obligatorios.")
+                    st.warning("La Razón Social y el NIT son campos obligatorios.")
 
     st.markdown("---")
     
     # ==========================================
     # BUSCADOR DINÁMICO CON OPCIÓN VACÍA INICIAL
     # ==========================================
-    st.subheader("🔍 Buscador y Gestión de Clientes / Empresas")
+    st.subheader("Buscador y Gestión de Clientes / Empresas")
     
     with engine.connect() as conn:
         empresas_df = pd.read_sql_query(
@@ -87,14 +87,14 @@ with tab_empresas:
         opciones_select = ["-- Selecciona o busca una empresa --"] + list(dict_empresas.keys())
         
         empresa_seleccionada_str = st.selectbox(
-            "🔎 Escribe o busca la empresa/cliente:", 
+            "Escribe o busca la empresa / cliente:", 
             options=opciones_select,
             help="Empieza a escribir el nombre para filtrar automáticamente."
         )
         
         # Si el usuario no ha seleccionado ninguna empresa real, detenemos el despliegue aquí
         if empresa_seleccionada_str == "-- Selecciona o busca una empresa --":
-            st.info("👆 Selecciona o busca una empresa en la casilla de arriba para ver su información y su historial.")
+            st.info("Selecciona o busca una empresa en la casilla superior para ver su información y su historial.")
         else:
             empresa_id_activo = dict_empresas[empresa_seleccionada_str]
             empresa_info = empresas_df[empresas_df['id'] == empresa_id_activo].iloc[0]
@@ -103,25 +103,25 @@ with tab_empresas:
             with st.container(border=True):
                 col_card1, col_card2, col_card_btn1, col_card_btn2 = st.columns([3, 2, 1, 1])
                 with col_card1:
-                    st.markdown(f"### 🏢 {empresa_info['razon_social']}")
+                    st.markdown(f"#### {empresa_info['razon_social']}")
                     st.caption(f"**NIT / Cédula:** {empresa_info['nit']}")
                 with col_card2:
-                    st.markdown(f"**📞 Tel:** {empresa_info['telefono'] or 'No registrado'}")
-                    st.markdown(f"**✉️ Email:** {empresa_info['email'] or 'No registrado'}")
+                    st.markdown(f"**Teléfono:** {empresa_info['telefono'] or 'No registrado'}")
+                    st.markdown(f"**Email:** {empresa_info['email'] or 'No registrado'}")
                 with col_card_btn1:
                     st.markdown("<br>", unsafe_allow_html=True)
-                    if st.button("✏️ Editar", key=f"btn_edit_{empresa_info['id']}"):
+                    if st.button("Editar", key=f"btn_edit_{empresa_info['id']}", use_container_width=True):
                         st.session_state[f"edit_emp_mode_{empresa_info['id']}"] = True
                         st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = False
                 with col_card_btn2:
                     st.markdown("<br>", unsafe_allow_html=True)
-                    if st.button("🗑️ Eliminar", key=f"btn_del_emp_{empresa_info['id']}"):
+                    if st.button("Eliminar", key=f"btn_del_emp_{empresa_info['id']}", use_container_width=True):
                         st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = True
                         st.session_state[f"edit_emp_mode_{empresa_info['id']}"] = False
 
                 # Confirmación de eliminación
                 if st.session_state.get(f"delete_emp_confirm_{empresa_info['id']}", False):
-                    st.warning(f"⚠️ ¿Estás seguro de eliminar a **{empresa_info['razon_social']}**? Esta acción no se puede deshacer si tiene registros.")
+                    st.warning(f"¿Estás seguro de eliminar a **{empresa_info['razon_social']}**? Esta acción no se puede deshacer si tiene registros.")
                     col_conf1, col_conf2 = st.columns(2)
                     with col_conf1:
                         if st.button("Sí, eliminar definitivamente", key=f"yes_del_emp_{empresa_info['id']}", type="primary"):
@@ -132,10 +132,10 @@ with tab_empresas:
                                         {"id": empresa_info['id'], "uid": user_id}
                                     )
                                 st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = False
-                                st.success("✅ Empresa eliminada con éxito.")
+                                st.success("Empresa eliminada con éxito.")
                                 st.rerun()
                             except Exception:
-                                st.error("⚠️ No se puede eliminar esta empresa porque tiene órdenes de trabajo o vehículos asociados en el historial.")
+                                st.error("No se puede eliminar esta empresa porque tiene órdenes de trabajo o vehículos asociados en el historial.")
                     with col_conf2:
                         if st.button("Cancelar", key=f"no_del_emp_{empresa_info['id']}"):
                             st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = False
@@ -144,8 +144,8 @@ with tab_empresas:
                 # Formulario de edición
                 if st.session_state.get(f"edit_emp_mode_{empresa_info['id']}", False):
                     st.markdown("---")
-                    with st.form(key=f"form_update_emp_{empresa_info['id']}"):
-                        st.markdown(f"#### Actualizar datos de: {empresa_info['razon_social']}")
+                    with st.form(key=f"form_update_emp_{empresa_info['id']}")):
+                        st.markdown(f"**Actualizar datos de:** {empresa_info['razon_social']}")
                         upd_razon = st.text_input("Razón Social o Nombre", value=empresa_info['razon_social'])
                         upd_nit = st.text_input("NIT o Cédula", value=empresa_info['nit'])
                         upd_tel = st.text_input("Teléfono", value=empresa_info['telefono'] or "")
@@ -153,9 +153,9 @@ with tab_empresas:
                         
                         col_f1, col_f2 = st.columns(2)
                         with col_f1:
-                            guardar_emp = st.form_submit_button("💾 Guardar Cambios", type="primary")
+                            guardar_emp = st.form_submit_button("Guardar Cambios", type="primary")
                         with col_f2:
-                            cancelar_emp = st.form_submit_button("❌ Cancelar")
+                            cancelar_emp = st.form_submit_button("Cancelar")
                             
                         if guardar_emp:
                             try:
@@ -176,10 +176,10 @@ with tab_empresas:
                                         }
                                     )
                                 st.session_state[f"edit_emp_mode_{empresa_info['id']}"] = False
-                                st.success("✅ ¡Empresa actualizada con éxito!")
+                                st.success("Empresa actualizada con éxito.")
                                 st.rerun()
                             except Exception as e:
-                                st.error(f"❌ Error al actualizar: {e}")
+                                st.error(f"Error al actualizar: {e}")
                         if cancelar_emp:
                             st.session_state[f"edit_emp_mode_{empresa_info['id']}"] = False
                             st.rerun()
@@ -189,13 +189,13 @@ with tab_empresas:
             # ==========================================
             # HISTORIAL DE TRABAJOS DE LA EMPRESA SELECCIONADA
             # ==========================================
-            st.subheader(f"📋 Historial de Trabajos y Flota")
+            st.subheader("Historial de Trabajos y Flota")
             
             col_filtro2, col_filtro3 = st.columns([2, 1])
             with col_filtro2:
                 hoy = datetime.today()
                 hace_un_mes = hoy - timedelta(days=30)
-                fechas = st.date_input("Rango de Fechas a consultar", [hace_un_mes, hoy], key="fechas_historial")
+                fechas = st.date_input("Rango de fechas a consultar", [hace_un_mes, hoy], key="fechas_historial")
             with col_filtro3:
                 filtro_placa_opcional = st.text_input("Filtrar por Placa (Opcional)").upper().strip()
             
@@ -217,7 +217,7 @@ with tab_empresas:
 
                 tipo_vista = st.radio(
                     "Selecciona el tipo de vista:", 
-                    ["📋 Vista Resumida (Solo Órdenes)", "🔍 Vista Detallada (Ítems y Repuestos)"],
+                    ["Vista Resumida (Solo Órdenes)", "Vista Detallada (Ítems y Repuestos)"],
                     horizontal=True,
                     key="radio_vista_hist"
                 )
@@ -262,7 +262,7 @@ with tab_empresas:
                     
                     csv = df_historial.to_csv(index=False).encode('utf-8')
                     st.download_button(
-                        label="📥 Descargar Reporte en CSV (Para Excel)",
+                        label="Descargar Reporte en CSV (Para Excel)",
                         data=csv,
                         file_name=f"Reporte_{empresa_info['razon_social']}_{fecha_inicio}.csv",
                         mime="text/csv",
@@ -270,7 +270,7 @@ with tab_empresas:
                 else:
                     st.info("No hay registros que coincidan con la empresa y el filtro de placa en este rango de fechas.")
     else:
-        st.info("Aún no tienes empresas registradas. Usa el formulario de arriba para agregar la primera.")
+        st.info("Aún no tienes empresas registradas. Usa el formulario superior para agregar la primera.")
 
 # ==========================================
 # PESTAÑA 2: GESTIÓN DE MECÁNICOS
@@ -279,12 +279,12 @@ with tab_mecanicos:
     col_mec1, col_mec2 = st.columns(2)
     
     with col_mec1:
-        st.subheader("➕ Agregar Nuevo Mecánico")
+        st.subheader("Agregar Nuevo Mecánico")
         with st.form("form_nuevo_mecanico", clear_on_submit=True):
             nombre_mec = st.text_input("Nombre Completo")
             doc_mec = st.text_input("Documento de Identidad")
             
-            if st.form_submit_button("💾 Contratar / Registrar Mecánico"):
+            if st.form_submit_button("Contratar / Registrar Mecánico", type="primary"):
                 if nombre_mec and doc_mec:
                     try:
                         with engine.begin() as conn:
@@ -295,18 +295,18 @@ with tab_mecanicos:
                                 '''),
                                 {"uid": user_id, "nombre": nombre_mec, "doc": doc_mec}
                             )
-                        st.success(f"✅ ¡{nombre_mec} ha sido agregado a tu equipo en la nube!")
+                        st.success(f"{nombre_mec} ha sido agregado al equipo con éxito.")
                         st.rerun()
                     except Exception as e:
                         if "unique constraint" in str(e).lower() or "duplicate key" in str(e).lower():
-                            st.error("❌ Este documento ya está registrado en tu taller.")
+                            st.error("Este documento ya está registrado en el sistema.")
                         else:
-                            st.error(f"❌ Error al registrar: {e}")
+                            st.error(f"Error al registrar: {e}")
                 else:
-                    st.error("Por favor completa ambos campos.")
+                    st.warning("Por favor, completa ambos campos.")
     
     with col_mec2:
-        st.subheader("👥 Personal Actual (Editar / Eliminar)")
+        st.subheader("Personal Actual")
         
         with engine.connect() as conn:
             mecanicos_db = pd.read_sql_query(
@@ -319,14 +319,14 @@ with tab_mecanicos:
             for index, row in mecanicos_db.iterrows():
                 with st.container(border=True):
                     st.markdown(f"**{row['nombre']}**")
-                    st.caption(f"Doc: {row['documento']} | Estado: **{row['estado']}**")
+                    st.caption(f"Documento: {row['documento']} | Estado: **{row['estado']}**")
                     
                     col_m1, col_m2 = st.columns(2)
                     with col_m1:
-                        if st.button("✏️ Editar", key=f"btn_edit_mec_{row['id']}"):
+                        if st.button("Editar", key=f"btn_edit_mec_{row['id']}", use_container_width=True):
                             st.session_state[f"edit_mode_{row['id']}"] = True
                     with col_m2:
-                        if st.button("🗑️ Eliminar", key=f"btn_del_mec_{row['id']}"):
+                        if st.button("Eliminar", key=f"btn_del_mec_{row['id']}", use_container_width=True):
                             try:
                                 with engine.begin() as conn_del:
                                     conn_del.execute(
@@ -336,7 +336,7 @@ with tab_mecanicos:
                                 st.success("Mecánico eliminado.")
                                 st.rerun()
                             except Exception:
-                                st.error("⚠️ No se puede eliminar: tiene trabajos asociados en órdenes.")
+                                st.error("No se puede eliminar: tiene trabajos asociados en órdenes de servicio.")
                     
                     if st.session_state.get(f"edit_mode_{row['id']}", False):
                         with st.form(key=f"form_update_mec_{row['id']}"):
@@ -346,9 +346,9 @@ with tab_mecanicos:
                             
                             col_f1, col_f2 = st.columns(2)
                             with col_f1:
-                                guardar = st.form_submit_button("💾 Guardar")
+                                guardar = st.form_submit_button("Guardar", type="primary")
                             with col_f2:
-                                cancelar = st.form_submit_button("❌ Cancelar")
+                                cancelar = st.form_submit_button("Cancelar")
                                 
                             if guardar:
                                 try:
@@ -368,7 +368,7 @@ with tab_mecanicos:
                                             }
                                         )
                                     st.session_state[f"edit_mode_{row['id']}"] = False
-                                    st.success("¡Actualizado con éxito!")
+                                    st.success("Registro actualizado con éxito.")
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Error al actualizar: {e}")
@@ -376,4 +376,4 @@ with tab_mecanicos:
                                 st.session_state[f"edit_mode_{row['id']}"] = False
                                 st.rerun()
         else:
-            st.info("No hay mecánicos registrados en tu taller.")
+            st.info("No hay mecánicos registrados en el sistema.")
