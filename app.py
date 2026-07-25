@@ -14,20 +14,20 @@ st.set_page_config(
 
 is_logged = st.session_state.get('user_logged', False)
 
-# 2. ESTILOS CSS CON BLOQUE SUPERPUESTO
+# 2. ESTILOS CSS CON MÁSCARA DERECHA
 st.markdown("""
     <style>
-    /* Bloque superpuesto en la esquina superior derecha para tapar iconos */
-    [data-testid="stHeader"]::after {
+    /* Máscara sólida en la esquina superior derecha que bloquea botones y clics */
+    header::after {
         content: "";
-        position: fixed;
-        top: 0;
-        right: 0;
-        width: 200px;
-        height: 55px;
-        background-color: #0e1117;
-        z-index: 99999;
-        pointer-events: auto;
+        position: fixed !important;
+        top: 0 !important;
+        right: 0 !important;
+        width: 350px !important;
+        height: 60px !important;
+        background-color: #0e1117 !important; /* Mismo tono oscuro de Streamlit */
+        z-index: 9999999 !important;
+        pointer-events: all !important; /* Bloquea cualquier clic hacia los iconos de abajo */
     }
 
     /* Ocultar la barra lateral SOLO cuando NO hay sesión iniciada */
