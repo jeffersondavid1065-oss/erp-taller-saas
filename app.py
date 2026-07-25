@@ -5,7 +5,7 @@ from db import obtener_conexion
 import hashlib
 from datetime import date
 
-# 1. CONFIGURACIÓN DE PÁGINA (Control nativo del estado de la barra)
+# 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(
     page_title="MyTaller", 
     layout="wide",
@@ -16,7 +16,7 @@ st.set_page_config(
 is_logged = st.session_state.get('user_logged', False)
 
 if not is_logged:
-    # Ocultar barra en pantalla de Login
+    # Ocultar barra lateral en pantalla de Login
     st.markdown("""
         <style>
         [data-testid="stSidebar"] {
@@ -46,7 +46,7 @@ if not is_logged:
         </style>
     """, unsafe_allow_html=True)
 else:
-    # Cuando SÍ hay sesión, aseguramos visibilidad móvil sin bloquear eventos táctiles
+    # Cuando SÍ hay sesión, forzamos que el botón flotante exista y sea táctil siempre
     st.markdown("""
         <style>
         /* Ocultar barra superior nativa (tres puntos/deploy) */
@@ -55,18 +55,24 @@ else:
             height: 0px !important;
         }
         
-        /* Hacer transparente el header sin bloquear toques */
+        /* Transparentar cabecera para liberar espacio */
         [data-testid="stHeader"] {
             background-color: transparent !important;
         }
 
-        /* FIX DEFINITIVO PARA BOTÓN DE MENÚ EN MÓVILES Y ESCRITORIO */
-        [data-testid="stSidebarCollapsedControl"],
-        [data-testid="stSidebarCollapseButton"] {
-            visibility: visible !important;
+        /* BOTÓN FLOTANTE PERMANENTE PARA ABRIR EL MENU (MÓVIL Y ESCRITORIO) */
+        [data-testid="stSidebarCollapsedControl"] {
             display: flex !important;
-            opacity: 1 !important;
+            visibility: visible !important;
+            position: fixed !important;
+            top: 10px !important;
+            left: 10px !important;
             z-index: 999999 !important;
+            background-color: #1e1e24 !important;
+            border: 1px solid rgba(255, 255, 255, 0.2) !important;
+            border-radius: 8px !important;
+            padding: 4px !important;
+            opacity: 1 !important;
         }
 
         /* SEPARAR EL ÚLTIMO ITEM DEL MENÚ LATERAL (ADMIN) */
