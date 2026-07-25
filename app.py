@@ -6,33 +6,47 @@ import hashlib
 
 st.set_page_config(page_title="MyTaller", layout="wide")
 
-# 1. ANIMACION DE ENTRADA Y OCULTAR BARRA SUPERIOR
-st.markdown("""
-    <style>
-    /* Ocultar toda la esquina superior derecha (Fork, GitHub, Menu) */
-    [data-testid="stHeader"] {
-        display: none !important;
-    }
-
-    @keyframes fade-in-up {
-        0% { opacity: 0; transform: translateY(20px); }
-        100% { opacity: 1; transform: translateY(0); }
-    }
-    [data-testid="stAppViewBlockContainer"] {
-        animation: fade-in-up 0.6s ease-out;
-    }
-    div[data-testid="stVerticalBlock"] > div {
-        animation: fade-in-up 0.5s ease-out;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# 2. OCULTAR BARRA LATERAL SI NO HA INICIADO SESION
+# 1. ANIMACION DE ENTRADA Y CONTROL DINÁMICO DE LA BARRA LATERAL
 if not st.session_state.get('user_logged', False):
     st.markdown("""
         <style>
+        [data-testid="stHeader"] {
+            display: none !important;
+        }
         [data-testid="stSidebar"] {
-            display: none;
+            display: none !important;
+        }
+        @keyframes fade-in-up {
+            0% { opacity: 0; transform: translateY(20px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+        [data-testid="stAppViewBlockContainer"] {
+            animation: fade-in-up 0.6s ease-out;
+        }
+        div[data-testid="stVerticalBlock"] > div {
+            animation: fade-in-up 0.5s ease-out;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+else:
+    st.markdown("""
+        <style>
+        [data-testid="stHeader"] {
+            display: none !important;
+        }
+        /* Forzar que la barra lateral aparezca cuando el usuario está logueado */
+        [data-testid="stSidebar"] {
+            display: block !important;
+        }
+        @keyframes fade-in-up {
+            0% { opacity: 0; transform: translateY(20px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+        [data-testid="stAppViewBlockContainer"] {
+            animation: fade-in-up 0.6s ease-out;
+        }
+        div[data-testid="stVerticalBlock"] > div {
+            animation: fade-in-up 0.5s ease-out;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -50,7 +64,6 @@ if not st.session_state.user_logged:
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
-        # Estilo tipo logo minimalista
         st.markdown("""
             <div style='text-align: center; margin-bottom: 25px;'>
                 <h1 style='font-weight: 800; font-size: 2.5rem; letter-spacing: -1px; margin-bottom: 0;'>
