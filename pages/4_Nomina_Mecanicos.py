@@ -18,14 +18,14 @@ def formato_cop(numero):
     return f"${numero:,.0f}".replace(",", ".")
 
 st.title("💰 Liquidación de Nómina Dinámica")
-st.markdown(f"Auditoría de comisiones para: **{st.session_state.nombre_taller}**")
+st.markdown(f"Auditoría de comisiones y ajustes para: **{st.session_state.nombre_taller}**")
 st.markdown("---")
 
 # ==========================================
 # 1. MÓDULO DE AUDITORÍA Y EDICIÓN RÁPIDA
 # ==========================================
-st.subheader("🛠️ Auditoría de Trabajos Activos")
-st.info("💡 Haz doble clic en la **Descripción** o el **Precio** para editarlos. Luego presiona el botón Guardar.")
+st.subheader("🛠️ Auditoría y Corrección de Trabajos Activos")
+st.info("💡 Haz doble clic en la **Descripción** o el **Precio** de la tabla para corregirlos si hubo algún cambio. Luego haz clic en el botón de guardar.")
 
 with engine.connect() as conn:
     query_trabajos = text('''
@@ -62,8 +62,7 @@ if not df_trabajos.empty:
         }
     )
 
-    if st.button("💾 Guardar Cambios en la Base de Datos", type="primary"):
-        # Comparamos para guardar solo lo que el usuario editó
+    if st.button("💾 Guardar Correcciones en la Base de Datos", type="primary"):
         cambios = df_editado.compare(df_trabajos)
         if not cambios.empty:
             try:
@@ -72,7 +71,6 @@ if not df_trabajos.empty:
                         desc_orig = df_trabajos.loc[index, 'descripcion']
                         precio_orig = df_trabajos.loc[index, 'precio_venta']
                         
-                        # Si la fila tuvo cambios, la actualizamos en Supabase
                         if row['descripcion'] != desc_orig or row['precio_venta'] != precio_orig:
                             conn_update.execute(
                                 text('''
@@ -82,19 +80,23 @@ if not df_trabajos.empty:
                                 '''),
                                 {"desc": row['descripcion'], "precio": float(row['precio_venta']), "id": int(row['detalle_id'])}
                             )
-                st.success("✅ ¡Cambios guardados con éxito!")
+                
+                # 🌟 Limpiamos la caché para que el historial y el expediente reflejen el cambio al instante
+                st.cache_data.clear()
+                
+                st.success("✅ ¡Cambios aplicados y sincronizados con el historial del vehículo con éxito!")
                 st.rerun()
             except Exception as e:
                 st.error(f"❌ Error al guardar: {e}")
         else:
-            st.warning("No se detectaron cambios para guardar.")
+            st.warning("No se detectaron cambios nuevos para guardar.")
 else:
-    st.info("No hay trabajos pendientes de facturación para auditar en este momento.")
+    st.info("No hay trabajos pendientes para auditar en este momento.")
 
 st.markdown("---")
 
 # ==========================================
-# 2. LIQUIDACIÓN DE NÓMINA ORIGINAL
+# 2. LIQUIDACIÓN DE NÓMINA (FILTROS Y CÁLCULO)
 # ==========================================
 def obtener_mecanicos():
     with engine.connect() as conn:
@@ -109,7 +111,7 @@ if not mecanicos:
 else:
     dict_mecanicos = {f"{m[1]}": m[0] for m in mecanicos}
     
-    st.subheader("Filtros y Parámetros de Liquidación")
+    st.subheader("📊 Filtros y Parámetros de Liquidación")
     col1, col2, col3 = st.columns(3)
     
     with col1:
@@ -117,7 +119,7 @@ else:
     with col2:
         hoy = datetime.today()
         hace_15_dias = hoy - timedelta(days=15)
-        fechas = st.date_input("Rango de fechas", [hace_15_dias, hoy])
+        fechas = st.date_input("Rango de fechas para liquidar", [hace_15_dias, hoy])
     with col3:
         porcentaje_pago = st.number_input("Porcentaje a Pagar (%)", min_value=0, max_value=100, value=50, step=5)
         
@@ -154,7 +156,6 @@ else:
         st.markdown("---")
         
         if not df_nomina.empty:
-            # Cálculo modificado de comisión utilizando el porcentaje exacto en base a la línea original que corregimos antes
             df_nomina['comision_mecanico'] = (df_nomina['valor_mano_obra'] * (porcentaje_pago / 100)).round(2)
             
             total_mo = df_nomina['valor_mano_obra'].sum()
@@ -163,10 +164,10 @@ else:
             st.subheader(f"Resumen de Liquidación: {mecanico_sel}")
             met1, met2, met3 = st.columns(3)
             met1.metric("Trabajos Realizados", len(df_nomina))
-            met2.metric("Base (Mano de Obra)", formato_cop(total_mo))
+            met2.metric("Base (Mano de Obra Ajustada)", formato_cop(total_mo))
             met3.metric(f"Total a Pagar ({porcentaje_pago}%)", formato_cop(total_comision))
             
-            st.markdown("#### Detalle de Trabajos para Auditoría")
+            st.markdown("#### Detalle de Trabajos para el Recibo de Pago")
             df_mostrar = df_nomina.copy()
             df_mostrar.columns = ['N° Orden', 'Placa', 'Fecha de Ingreso', 'Descripción del Trabajo', 'Cobrado al Cliente ($)', 'Comisión del Técnico ($)']
             
