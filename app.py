@@ -45,7 +45,7 @@ if not is_logged:
         </style>
     """, unsafe_allow_html=True)
 else:
-    # Cuando SÍ hay sesión, mostramos la barra y empujamos la opción de Admin hacia abajo
+    # Cuando SÍ hay sesión, mostramos la barra con soporte para móviles y separación de Admin
     st.markdown("""
         <style>
         [data-testid="stSidebar"] {
@@ -62,9 +62,30 @@ else:
             background-color: transparent !important;
         }
 
+        /* FIX ESPECÍFICO PARA DISPOSITIVOS MÓVILES (CELULARES) */
+        @media (max-width: 768px) {
+            [data-testid="stSidebarCollapsedControl"] {
+                display: flex !important;
+                visibility: visible !important;
+                position: fixed !important;
+                top: 12px !important;
+                left: 12px !important;
+                z-index: 999999 !important;
+                background-color: #262730 !important;
+                border-radius: 6px !important;
+                padding: 4px !important;
+            }
+            [data-testid="stHeader"] {
+                pointer-events: none !important;
+            }
+            [data-testid="stSidebarCollapsedControl"] * {
+                pointer-events: auto !important;
+            }
+        }
+
         /* SEPARAR EL ÚLTIMO ITEM DEL MENÚ LATERAL (ADMIN) */
         [data-testid="stSidebarNav"] ul li:last-child {
-            margin-top: 80px !important;
+            margin-top: 60px !important;
             border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
             padding-top: 12px !important;
         }
