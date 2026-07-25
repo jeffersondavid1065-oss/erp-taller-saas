@@ -14,24 +14,23 @@ st.set_page_config(
 
 is_logged = st.session_state.get('user_logged', False)
 
-# 2. ESTILOS CSS DEFINITIVOS PARA OCULTAR LA BARRA SUPERIOR DERECHA
+# 2. ESTILOS CSS CON BLOQUE SUPERPUESTO
 st.markdown("""
     <style>
-    /* Ocultar el menú superior derecho por completo (Share, Star, Edit, GitHub, Deploy, Status) */
-    [data-testid="stStatusWidget"],
-    [data-testid="stToolbar"],
-    [data-testid="stAppDeployButton"],
-    .stAppDeployButton,
-    #MainMenu,
-    footer,
-    header > div:nth-child(2) {
-        display: none !important;
-        visibility: hidden !important;
-        opacity: 0 !important;
-        pointer-events: none !important;
+    /* Bloque superpuesto en la esquina superior derecha para tapar iconos */
+    [data-testid="stHeader"]::after {
+        content: "";
+        position: fixed;
+        top: 0;
+        right: 0;
+        width: 200px;
+        height: 55px;
+        background-color: #0e1117;
+        z-index: 99999;
+        pointer-events: auto;
     }
 
-    /* Ocultar la barra lateral cuando NO hay sesión */
+    /* Ocultar la barra lateral SOLO cuando NO hay sesión iniciada */
     """ + ("" if is_logged else """
     [data-testid="stSidebar"] { display: none !important; }
     [data-testid="stSidebarCollapsedControl"] { display: none !important; }
@@ -146,9 +145,6 @@ if not st.session_state.user_logged:
                         st.warning("Completa todos los campos.")
 
 else:
-    with st.sidebar:
-        st.markdown("### Menú del Taller")
-
     user_id = st.session_state.user_id
     
     st.title("Panel Principal")
