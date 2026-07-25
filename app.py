@@ -3,6 +3,7 @@ import pandas as pd
 from sqlalchemy import text
 from db import obtener_conexion
 import hashlib
+from datetime import date # <-- NUEVO: Importamos date para validar el día de hoy
 
 st.set_page_config(page_title="MyTaller", layout="wide")
 
@@ -85,14 +86,22 @@ if not st.session_state.user_logged:
                 if email_login and pass_login:
                     pass_hash = hashlib.sha256(pass_login.encode()).hexdigest()
                     with engine.connect() as conn:
-                        query = text("SELECT id, nombre_taller, password FROM Usuarios WHERE email = :email")
+                        # NUEVO: Traemos también la fecha_pago_limite (posición 3)
+                        query = text("SELECT id, nombre_taller, password, fecha_pago_limite FROM Usuarios WHERE email = :email")
                         user = conn.execute(query, {"email": email_login}).fetchone()
                     
                     if user and user[2] == pass_hash:
-                        st.session_state.user_logged = True
-                        st.session_state.user_id = user[0]
-                        st.session_state.nombre_taller = user[1]
-                        st.rerun()
+                        fecha_limite = user[3]
+                        hoy = date.today()
+                        
+                        # NUEVO: Validamos si tiene fecha y si esta no ha expirado
+                        if fecha_limite is None or fecha_limite < hoy:
+                            st.error("⚠️ Tu suscripción se encuentra inactiva o ha expirado. Por favor, comunícate con el administrador para reactivar tu cuenta.")
+                        else:
+                            st.session_state.user_logged = True
+                            st.session_state.user_id = user[0]
+                            st.session_state.nombre_taller = user[1]
+                            st.rerun()
                     else:
                         st.error("Credenciales incorrectas.")
                 else:
@@ -108,7 +117,7 @@ if not st.session_state.user_logged:
                 pass_reg = st.text_input("Contraseña", type="password")
                 
                 st.markdown("")
-                btn_reg = st.form_submit_button("Crear Cuenta y Activar", use_container_width=True)
+                btn_reg = st.form_submit_button("Crear Cuenta", use_container_width=True)
                 if btn_reg:
                     if taller_reg and dueno_reg and email_reg and pass_reg:
                         pass_hash_reg = hashlib.sha256(pass_reg.encode()).hexdigest()
@@ -126,9 +135,12 @@ if not st.session_state.user_logged:
                                         "pass": pass_hash_reg
                                     }
                                 )
-                            st.success("Cuenta creada con éxito. Ya puedes iniciar sesión.")
+                            st.success("Cuenta creada con éxito. Contacta al administrador para activar tu suscripción e iniciar sesión.")
                         except Exception as e:
-                            st.error(f"Error al registrar: {e}")
+                            if "unique constraint" in str(e).lower() or "duplicate key" in str(e).lower():
+                                st.error("Este correo electrónico ya se encuentra registrado.")
+                            else:
+                                st.error(f"Error al registrar: {e}")
                     else:
                         st.warning("Completa todos los campos para registrarte.")
 else:
