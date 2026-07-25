@@ -22,34 +22,93 @@ st.markdown(f"Auditoría de comisiones y ajustes para: **{st.session_state.nombr
 st.markdown("---")
 
 # ==========================================
-# 1. MÓDULO DE AUDITORÍA Y EDICIÓN RÁPIDA
+# 1. MÓDULO DE AUDITORÍA Y FILTROS AVANZADOS
 # ==========================================
-st.subheader("🛠️ Auditoría y Corrección de Trabajos Activos")
-st.info("💡 Haz doble clic en la **Descripción** o el **Precio** de la tabla para corregirlos si hubo algún cambio. Luego haz clic en el botón de guardar.")
+st.subheader("🛠️ Auditoría y Corrección de Trabajos")
+st.info("💡 Por defecto se muestran los trabajos recientes. Puedes usar los filtros opcionales de abajo para buscar una orden específica por número, placa, fecha, mecánico o empresa.")
+
+# 🌟 Contenedor de Filtros Opcionales para Auditoría
+with st.expander("🔍 Filtros de Búsqueda Avanzada (Opcional)", expanded=False):
+    f_col1, f_col2, f_col3 = st.columns(3)
+    with f_col1:
+        filtro_nro_orden = st.text_input("N° de Orden (Opcional)")
+        filtro_placa = st.text_input("Placa del Vehículo (Opcional)").upper().strip()
+    with f_col2:
+        filtro_empresa = st.text_input("Nombre de Empresa / Cliente (Opcional)")
+        
+        # Obtenemos lista de mecánicos para el filtro
+        with engine.connect() as conn_m:
+            mecanicos_filtro = conn_m.execute(text("SELECT nombre FROM Mecanicos WHERE usuario_id = :uid"), {"uid": user_id}).fetchall()
+        lista_nombres_mec = ["-- Todos --"] + [m[0] for m in mecanicos_filtro]
+        filtro_mecanico_sel = st.selectbox("Mecánico (Opcional)", options=lista_nombres_mec)
+    with f_col3:
+        activar_filtro_fechas = st.checkbox("Filtrar por Rango de Fechas")
+        if activar_filtro_fechas:
+            hoy_f = datetime.today()
+            hace_30_f = hoy_f - timedelta(days=30)
+            rango_auditoria = st.date_input("Rango de Fechas", [hace_30_f, hoy_f])
+        else:
+            rango_auditoria = None
+
+# Construcción dinámica de la consulta de auditoría basada en filtros opcionales
+query_base_sql = '''
+    SELECT 
+        d.id as detalle_id, 
+        h.id as orden_nro,
+        h.placa, 
+        e.razon_social as empresa,
+        m.nombre as mecanico, 
+        d.tipo_item,
+        d.descripcion, 
+        d.precio_venta,
+        h.fecha_ingreso
+    FROM Detalles_Orden d
+    JOIN Hojas_Trabajo h ON d.hoja_id = h.id
+    JOIN Empresas_Clientes e ON h.empresa_id = e.id
+    LEFT JOIN Mecanicos m ON d.mecanico_id = m.id
+    WHERE h.usuario_id = :uid AND h.estado != 'Facturado'
+''']
+
+params_auditoria = {"uid": user_id}
+
+if filtro_nro_orden.isdigit():
+    query_base_sql.append("AND h.id = :nro_orden")
+    params_auditoria["nro_orden"] = int(filtro_nro_orden)
+
+if filtro_placa:
+    query_base_sql.append("AND h.placa LIKE :placa")
+    params_auditoria["placa"] = f"%{filtro_placa}%"
+
+if filtro_empresa:
+    query_base_sql.append("AND e.razon_social LIKE :empresa")
+    params_auditoria["empresa"] = f"%{filtro_empresa}%"
+
+if filtro_mecanico_sel != "-- Todos --":
+    query_base_sql.append("AND m.nombre = :mecanico_nombre")
+    params_auditoria["mecanico_nombre"] = filtro_mecanico_sel
+
+if activar_filtro_fechas and rango_auditoria and len(rango_auditoria) == 2:
+    f_ini, f_fin = rango_auditoria
+    f_fin_ext = f_fin + timedelta(days=1)
+    query_base_sql.append("AND h.fecha_ingreso >= :f_ini AND h.fecha_ingreso < :f_fin")
+    params_auditoria["f_ini"] = f_ini.strftime('%Y-%m-%d')
+    params_auditoria["f_fin"] = f_fin_ext.strftime('%Y-%m-%d')
+
+# Si no hay filtros estrictos aplicados, limitamos a los últimos 20 trabajos recientes por defecto
+if not filtro_nro_orden and not filtro_placa and not filtro_empresa and filtro_mecanico_sel == "-- Todos --" and not activar_filtro_fechas:
+    query_final_str = " ".join(query_base_sql) + " ORDER BY h.fecha_ingreso DESC LIMIT 20"
+else:
+    query_final_str = " ".join(query_base_sql) + " ORDER BY h.fecha_ingreso DESC"
 
 with engine.connect() as conn:
-    query_trabajos = text('''
-        SELECT 
-            d.id as detalle_id, 
-            h.id as orden_nro,
-            h.placa, 
-            e.razon_social as empresa,
-            m.nombre as mecanico, 
-            d.tipo_item,
-            d.descripcion, 
-            d.precio_venta 
-        FROM Detalles_Orden d
-        JOIN Hojas_Trabajo h ON d.hoja_id = h.id
-        JOIN Empresas_Clientes e ON h.empresa_id = e.id
-        LEFT JOIN Mecanicos m ON d.mecanico_id = m.id
-        WHERE h.usuario_id = :uid AND h.estado != 'Facturado'
-        ORDER BY h.fecha_ingreso DESC
-    ''')
-    df_trabajos = pd.read_sql_query(query_trabajos, con=conn, params={"uid": user_id})
+    df_trabajos = pd.read_sql_query(text(query_final_str), con=conn, params=params_auditoria)
 
 if not df_trabajos.empty:
+    # Ocultamos la columna auxiliar fecha_ingreso para el editor visual
+    df_para_editar = df_trabajos.drop(columns=['fecha_ingreso'])
+    
     df_editado = st.data_editor(
-        df_trabajos,
+        df_para_editar,
         hide_index=True,
         use_container_width=True,
         disabled=["detalle_id", "orden_nro", "placa", "empresa", "mecanico", "tipo_item"],
@@ -66,13 +125,13 @@ if not df_trabajos.empty:
     )
 
     if st.button("💾 Guardar Correcciones en la Base de Datos", type="primary"):
-        cambios = df_editado.compare(df_trabajos)
+        cambios = df_editado.compare(df_para_editar)
         if not cambios.empty:
             try:
                 with engine.begin() as conn_update:
                     for index, row in df_editado.iterrows():
-                        desc_orig = df_trabajos.loc[index, 'descripcion']
-                        precio_orig = df_trabajos.loc[index, 'precio_venta']
+                        desc_orig = df_para_editar.loc[index, 'descripcion']
+                        precio_orig = df_para_editar.loc[index, 'precio_venta']
                         
                         if row['descripcion'] != desc_orig or row['precio_venta'] != precio_orig:
                             conn_update.execute(
@@ -92,7 +151,7 @@ if not df_trabajos.empty:
         else:
             st.warning("No se detectaron cambios nuevos para guardar.")
 else:
-    st.info("No hay trabajos pendientes para auditar en este momento.")
+    st.info("No se encontraron trabajos que coincidan con los filtros o criterios de búsqueda.")
 
 st.markdown("---")
 
