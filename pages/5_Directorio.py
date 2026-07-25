@@ -144,7 +144,7 @@ with tab_empresas:
                 # Formulario de edición
                 if st.session_state.get(f"edit_emp_mode_{empresa_info['id']}", False):
                     st.markdown("---")
-                    with st.form(key=f"form_update_emp_{empresa_info['id']}")):
+                    with st.form(key=f"form_update_emp_{empresa_info['id']}"):
                         st.markdown(f"**Actualizar datos de:** {empresa_info['razon_social']}")
                         upd_razon = st.text_input("Razón Social o Nombre", value=empresa_info['razon_social'])
                         upd_nit = st.text_input("NIT o Cédula", value=empresa_info['nit'])
