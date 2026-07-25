@@ -5,27 +5,52 @@ from db import obtener_conexion
 import hashlib
 from datetime import date
 
-# 1. CONFIGURACIÓN DE PÁGINA (Sidebar colapsado en login, expandido si inició sesión)
+# 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(
     page_title="MyTaller", 
-    layout="wide",
-    initial_sidebar_state="expanded" if st.session_state.get('user_logged', False) else "collapsed"
+    layout="wide"
 )
 
-# 2. ESTILOS CLEAN (Oculta solo la barra derecha de Streamlit sin romper el header ni la flecha)
-st.markdown("""
-    <style>
-    /* Ocultar menú de opciones de la derecha (3 puntos y Deploy) */
-    [data-testid="stToolbar"], #MainMenu, footer {
-        visibility: hidden !important;
-        height: 0px !important;
-    }
-    /* Hacer transparente el header para mantener la flecha nativa accesible */
-    [data-testid="stHeader"] {
-        background-color: transparent !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
+# Control de visibilidad del Sidebar según la sesión
+is_logged = st.session_state.get('user_logged', False)
+
+if not is_logged:
+    # Ocultar la barra lateral completamente vía CSS SOLO cuando NO hay sesión
+    st.markdown("""
+        <style>
+        [data-testid="stSidebar"] {
+            display: none !important;
+        }
+        [data-testid="stSidebarCollapsedControl"] {
+            display: none !important;
+        }
+        [data-testid="stToolbar"], #MainMenu, footer {
+            visibility: hidden !important;
+        }
+        [data-testid="stHeader"] {
+            background-color: transparent !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+else:
+    # Cuando SÍ hay sesión, aseguramos que la barra lateral y su botón EXISTAN y se muestren bien
+    st.markdown("""
+        <style>
+        [data-testid="stSidebar"] {
+            display: block !important;
+        }
+        [data-testid="stSidebarCollapsedControl"] {
+            display: flex !important;
+            visibility: visible !important;
+        }
+        [data-testid="stToolbar"], #MainMenu, footer {
+            visibility: hidden !important;
+        }
+        [data-testid="stHeader"] {
+            background-color: transparent !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 
 engine = obtener_conexion()
 
