@@ -1,17 +1,15 @@
 import streamlit as st
-import sqlite3
-import os
+from sqlalchemy import text
+from db import obtener_conexion
 
 st.set_page_config(page_title="Tablero Kanban", page_icon="🚥", layout="wide")
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH = os.path.join(BASE_DIR, "erp_taller.db")
 
 # Validación de Seguridad
 if not st.session_state.get('user_logged', False):
     st.warning("⚠️ Debes iniciar sesión en la página principal para acceder a este módulo.")
     st.stop()
 
+engine = obtener_conexion()
 user_id = st.session_state.user_id
 
 st.title("🚥 Tablero de Control Operativo")
@@ -19,23 +17,21 @@ st.markdown(f"Patio de vehículos para: **{st.session_state.nombre_taller}**")
 st.markdown("---")
 
 def obtener_vehiculos():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    # 🌟 FILTRAMOS ESTRICTAMENTE POR EL ID DEL TALLER ACTUAL
-    cursor.execute('''
-        SELECT h.id, h.placa, e.razon_social, h.estado 
-        FROM Hojas_Trabajo h
-        JOIN Empresas_Clientes e ON h.empresa_id = e.id
-        WHERE h.usuario_id = ?
-    ''', (user_id,))
-    datos = cursor.fetchall()
-    conn.close()
+    with engine.connect() as conn:
+        query = text('''
+            SELECT h.id, h.placa, e.razon_social, h.estado 
+            FROM Hojas_Trabajo h
+            JOIN Empresas_Clientes e ON h.empresa_id = e.id
+            WHERE h.usuario_id = :uid
+        ''')
+        datos = conn.execute(query, {"uid": user_id}).fetchall()
     return datos
 
 try:
     vehiculos = obtener_vehiculos()
-except Exception:
+except Exception as e:
     vehiculos = []
+    st.error(f"Error al conectar con la base de datos: {e}")
 
 col1, col2, col3, col4, col5 = st.columns(5)
 
