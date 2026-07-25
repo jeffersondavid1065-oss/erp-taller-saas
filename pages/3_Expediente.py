@@ -26,7 +26,7 @@ def obtener_mecanicos():
         datos = conn.execute(query, {"uid": user_id}).fetchall()
     return {f"{m[1]}": m[0] for m in datos}
 
-# 🌟 Obtenemos la lista de empresas del taller para el buscador inteligente
+# Obtenemos la lista de empresas del taller para el buscador inteligente
 with engine.connect() as conn:
     empresas_db = pd.read_sql_query(
         text("SELECT id, razon_social FROM Empresas_Clientes WHERE usuario_id = :uid ORDER BY razon_social ASC"), 
@@ -54,14 +54,12 @@ with st.expander("🔍 Filtros de Búsqueda Avanzada (Estado, Placa, Empresa)", 
         filtro_estado_sel = st.selectbox("Estado del Trabajo", options=estados_opciones)
     with col_f3:
         filtro_placa_exp = st.text_input("Placa del Vehículo (Opcional)").upper().strip()
-        # 🌟 Selector inteligente con autocompletado y filtrado por escritura
         filtro_empresa_sel = st.selectbox("Empresa / Cliente (Opcional)", options=opciones_empresas_filtro)
 
 if len(fechas_filtro) == 2:
     fecha_inicio, fecha_fin = fechas_filtro
     fecha_fin_extendida = fecha_fin + timedelta(days=1) 
 
-    # Construcción dinámica de la consulta con filtros opcionales
     sql_count_parts = [
         "SELECT COUNT(*) FROM Hojas_Trabajo h JOIN Empresas_Clientes e ON h.empresa_id = e.id WHERE h.usuario_id = :uid AND h.fecha_ingreso >= :f_ini AND h.fecha_ingreso < :f_fin"
     ]
@@ -170,25 +168,45 @@ if orden_busqueda:
                     params={"hid": hoja_id}
                 )
             
-            tab_factura, tab_editar = st.tabs(["🧾 Ver y Facturar", "✏️ Editar Orden (Corregir / Agregar)"])
+            tab_factura, tab_editar = st.tabs(["🧾 Ver, Cotizar y Copiar", "✏️ Editar Orden (Corregir / Agregar)"])
             
             with tab_factura:
                 if not df_trabajos.empty:
-                    df_mostrar = df_trabajos[['tipo_item', 'descripcion', 'mecanico', 'precio_venta']].copy()
-                    df_mostrar.columns = ['Tipo', 'Descripción', 'Técnico', 'Cobro al Cliente']
-                    st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
+                    st.markdown("#### 📋 Detalle de Ítems (Copia rápida para cotizar)")
                     
+                    # Recorremos cada ítem para mostrarlo en formato de tarjeta limpia con botón de copia
+                    for index, row in df_trabajos.iterrows():
+                        with st.container(border=True):
+                            c_info1, c_info2, c_info3, c_btn = st.columns([2, 4, 2, 1])
+                            with c_info1:
+                                st.caption(f"Tipo: **{row['tipo_item']}**")
+                            with c_info2:
+                                st.markdown(f"**{row['descripcion']}**")
+                            with c_info3:
+                                st.caption(f"Técnico: {row['mecanico'] or 'N/A'} | Venta: **${row['precio_venta']:,.0f}**")
+                            with c_btn:
+                                # Usamos un bloque de texto desplegable o de código para facilitar la copia con 1 clic
+                                pass
+                    
+                    # 🌟 Bloque interactivo para copiar descripciones en bloque o ver en código de texto fácil
+                    st.markdown("---")
+                    st.markdown("#### 📥 Bloque de Texto Rápido para Cotizar / Facturar")
+                    texto_copiable = ""
+                    for index, row in df_trabajos.iterrows():
+                        texto_copiable += f"{row['descripcion']}\n"
+                    
+                    st.code(texto_copiable, language="text")
+                    st.caption("💡 Haz clic en el icono de copiar en la esquina superior derecha del recuadro de arriba para copiar todas las descripciones de golpe al portapapeles.")
+
                     gran_total = df_trabajos['precio_venta'].sum()
                     st.success(f"**Total a cobrar al cliente:** ${gran_total:,.2f}")
                     
-                    if estado_actual == "Listo para facturar":
+                    if estado_actual == "Listo para facturar" or estado_actual == "Cotizar":
                         texto_factura = f"ORDEN DE SERVICIO: #{hoja_id}\nCLIENTE: {cliente}\nNIT: {nit}\nPLACA: {placa}\n\nSERVICIOS Y REPUESTOS:\n"
                         for index, row in df_trabajos.iterrows():
                             texto_factura += f"- {row['tipo_item']}: {row['descripcion']} (${row['precio_venta']:,.0f})\n"
                         texto_factura += f"\nGRAN TOTAL: ${gran_total:,.0f}"
                         st.code(texto_factura, language="text")
-                    else:
-                        st.info("ℹ️ Cambia el estado a 'Listo para facturar' en la pestaña de Edición para generar el bloque de facturación.")
                 else:
                     st.info("No hay trabajos registrados para esta orden todavía.")
 
