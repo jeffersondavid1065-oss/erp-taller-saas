@@ -4,16 +4,24 @@ from sqlalchemy import text
 from db import obtener_conexion
 
 st.set_page_config(page_title="Recepción de Vehículos", layout="wide")
+
+# ESTILOS CSS CON MÁSCARA DERECHA Y ANIMACIÓN DE ENTRADA
 st.markdown("""
     <style>
-    /* Ocultar SOLO el icono de GitHub y opciones de Deploy */
-    [data-testid="stToolbar"] {
-        display: none !important;
-    }
-    .stAppDeployButton {
-        display: none !important;
+    /* Máscara sólida en la esquina superior derecha que bloquea botones y clics */
+    header::after {
+        content: "";
+        position: fixed !important;
+        top: 0 !important;
+        right: 0 !important;
+        width: 350px !important;
+        height: 60px !important;
+        background-color: #0e1117 !important;
+        z-index: 9999999 !important;
+        pointer-events: all !important;
     }
 
+    /* Animación de entrada */
     @keyframes fade-in-up {
         0% { opacity: 0; transform: translateY(20px); }
         100% { opacity: 1; transform: translateY(0); }
@@ -148,7 +156,7 @@ if st.session_state.carrito_items:
                     st.caption(f"Costo: {formato_cop(item['Costo'])}")
             with col_res3:
                 if item['PVP Cliente'] == 0:
-                    st.markdown("⚠️ **Por Cotizar ($0)**")
+                    st.markdown("**Por Cotizar ($0)**")
                 else:
                     st.markdown(f"**Cobro: {formato_cop(item['PVP Cliente'])}**")
             with col_res4:
