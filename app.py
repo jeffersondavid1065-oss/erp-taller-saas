@@ -5,7 +5,7 @@ from db import obtener_conexion
 import hashlib
 from datetime import date
 
-# 1. CONFIGURACIÓN DE PÁGINA (Sidebar expandido si hay sesión)
+# 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(
     page_title="MyTaller", 
     layout="wide",
@@ -14,7 +14,7 @@ st.set_page_config(
 
 is_logged = st.session_state.get('user_logged', False)
 
-# 2. ESTILOS CSS LIMPIOS (Oculta únicamente el menú derecho sin afectar el Header ni la barra lateral)
+# 2. ESTILOS CSS
 if not is_logged:
     st.markdown("""
         <style>
@@ -22,8 +22,8 @@ if not is_logged:
         [data-testid="stSidebar"] { display: none !important; }
         [data-testid="stSidebarCollapsedControl"] { display: none !important; }
         
-        /* Ocultar botones superiores del menú derecho (3 puntos, Deploy, Fork) */
-        .stAppDeployButton, #MainMenu, footer {
+        /* Ocultar únicamente el menú derecho superior (Share, GitHub, Editar, Deploy) */
+        [data-testid="stStatusWidget"], .stAppDeployButton, #MainMenu, footer {
             display: none !important;
         }
 
@@ -39,8 +39,8 @@ if not is_logged:
 else:
     st.markdown("""
         <style>
-        /* Ocultar exclusivamente el menú de opciones derecho y botón deploy sin ocultar la cabecera */
-        .stAppDeployButton, #MainMenu, footer {
+        /* Ocultar únicamente el menú derecho superior (Share, GitHub, Editar, Deploy) */
+        [data-testid="stStatusWidget"], .stAppDeployButton, #MainMenu, footer {
             display: none !important;
         }
 
@@ -69,7 +69,7 @@ if 'user_logged' not in st.session_state:
 def formato_cop(numero):
     return f"${numero:,.0f}".replace(",", ".")
 
-# 3. PANTALLAS Y LÓGICA
+# 3. PANTALLAS
 if not st.session_state.user_logged:
     # Inicio de Sesión
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -153,7 +153,6 @@ if not st.session_state.user_logged:
                         st.warning("Completa todos los campos.")
 
 else:
-    # Contenido de la barra lateral cuando hay sesión activa
     with st.sidebar:
         st.markdown("### Menú del Taller")
 
