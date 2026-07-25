@@ -120,7 +120,7 @@ with tab_empresas:
         if empresa_seleccionada_str == "-- Selecciona o busca una empresa --":
             st.info("Selecciona o busca una empresa en la casilla superior para ver su información y su historial.")
         else:
-            empresa_id_activo = dict_empresas[empresa_seleccionada_str]
+            empresa_id_activo = int(dict_empresas[empresa_seleccionada_str])
             empresa_info = empresas_df[empresas_df['id'] == empresa_id_activo].iloc[0]
             
             with st.container(border=True):
@@ -142,25 +142,26 @@ with tab_empresas:
                         st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = True
                         st.session_state[f"edit_emp_mode_{empresa_info['id']}"] = False
 
-                # Confirmación de eliminación con limpieza en cascada para evitar bloqueos
+                # Confirmación de eliminación con conversión a int nativo
                 if st.session_state.get(f"delete_emp_confirm_{empresa_info['id']}", False):
                     st.warning(f"¿Estás seguro de eliminar a **{empresa_info['razon_social']}**? Si tiene órdenes asociadas, estas y sus detalles se eliminarán permanentemente.")
                     col_conf1, col_conf2 = st.columns(2)
                     with col_conf1:
                         if st.button("Sí, eliminar definitivamente", key=f"yes_del_emp_{empresa_info['id']}", type="primary"):
                             try:
+                                empresa_id_int = int(empresa_info['id'])
                                 with engine.begin() as conn_del:
                                     conn_del.execute(
                                         text("DELETE FROM Detalles_Orden WHERE hoja_id IN (SELECT id FROM Hojas_Trabajo WHERE empresa_id = :eid)"),
-                                        {"eid": empresa_info['id']}
+                                        {"eid": empresa_id_int}
                                     )
                                     conn_del.execute(
                                         text("DELETE FROM Hojas_Trabajo WHERE empresa_id = :eid"),
-                                        {"eid": empresa_info['id']}
+                                        {"eid": empresa_id_int}
                                     )
                                     conn_del.execute(
                                         text("DELETE FROM Empresas_Clientes WHERE id = :id AND usuario_id = :uid"),
-                                        {"id": empresa_info['id'], "uid": user_id}
+                                        {"id": empresa_id_int, "uid": user_id}
                                     )
                                 st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = False
                                 st.success("Empresa eliminada con éxito.")
@@ -202,7 +203,7 @@ with tab_empresas:
                                             "nit": upd_nit,
                                             "tel": upd_tel,
                                             "email": upd_email,
-                                            "id": empresa_info['id'],
+                                            "id": int(empresa_info['id']),
                                             "uid": user_id
                                         }
                                     )
@@ -362,7 +363,7 @@ with tab_mecanicos:
                                 with engine.begin() as conn_del:
                                     conn_del.execute(
                                         text("DELETE FROM Mecanicos WHERE id = :id AND usuario_id = :uid"),
-                                        {"id": row['id'], "uid": user_id}
+                                        {"id": int(row['id']), "uid": user_id}
                                     )
                                 st.success("Mecánico eliminado.")
                                 st.rerun()
@@ -394,7 +395,7 @@ with tab_mecanicos:
                                                 "nombre": nuevo_nombre, 
                                                 "doc": nuevo_doc, 
                                                 "estado": nuevo_estado, 
-                                                "id": row['id'], 
+                                                "id": int(row['id']), 
                                                 "uid": user_id
                                             }
                                         )
