@@ -32,12 +32,15 @@ if not st.session_state.get('user_logged', False):
 else:
     st.markdown("""
         <style>
-        [data-testid="stHeader"] {
+        /* Ocultar solo el menú derecho (3 puntos y deploy) para no borrar la flecha de colapsar */
+        [data-testid="stToolbar"], #MainMenu {
             display: none !important;
         }
-        [data-testid="stSidebar"] {
-            display: block !important;
+        /* Hacemos transparente el fondo de la cabecera para que se vea limpio */
+        [data-testid="stHeader"] {
+            background-color: transparent !important;
         }
+        
         @keyframes fade-in-up {
             0% { opacity: 0; transform: translateY(20px); }
             100% { opacity: 1; transform: translateY(0); }
@@ -50,7 +53,7 @@ else:
         }
         </style>
     """, unsafe_allow_html=True)
-
+ 
 engine = obtener_conexion()
 
 if 'user_logged' not in st.session_state:
