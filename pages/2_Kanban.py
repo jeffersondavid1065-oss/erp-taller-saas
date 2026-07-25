@@ -2,18 +2,18 @@ import streamlit as st
 from sqlalchemy import text
 from db import obtener_conexion
 
-st.set_page_config(page_title="Tablero Kanban", page_icon="🚥", layout="wide")
+st.set_page_config(page_title="Tablero de Control", layout="wide")
 
-# Validación de Seguridad
+# Validacion de Seguridad
 if not st.session_state.get('user_logged', False):
-    st.warning("⚠️ Debes iniciar sesión en la página principal para acceder a este módulo.")
+    st.warning("Debes iniciar sesion en la pagina principal para acceder a este modulo.")
     st.stop()
 
 engine = obtener_conexion()
 user_id = st.session_state.user_id
 
-st.title("🚥 Tablero de Control Operativo")
-st.markdown(f"Patio de vehículos para: **{st.session_state.nombre_taller}**")
+st.title("Tablero de Control Operativo")
+st.markdown(f"Patio de vehiculos para: **{st.session_state.nombre_taller}**")
 st.markdown("---")
 
 def obtener_vehiculos():
@@ -35,9 +35,9 @@ except Exception as e:
 
 col1, col2, col3, col4, col5 = st.columns(5)
 
-def dibujar_tarjetas(columna, titulo, estado_filtro, emoji):
+def dibujar_tarjetas(columna, titulo, estado_filtro):
     with columna:
-        st.subheader(f"{emoji} {titulo}")
+        st.subheader(titulo)
         st.markdown("---")
         contador = 0
         
@@ -45,19 +45,20 @@ def dibujar_tarjetas(columna, titulo, estado_filtro, emoji):
             orden_id, placa, empresa, estado_actual = v
             if estado_actual == estado_filtro:
                 with st.container(border=True):
-                    st.markdown(f"**Orden #{orden_id} | Placa: {placa}**")
-                    st.caption(f"🏢 {empresa}")
+                    st.markdown(f"**Orden #{orden_id}**")
+                    st.markdown(f"Placa: **{placa}**")
+                    st.caption(f"Empresa: {empresa}")
                 contador += 1
                 
         if contador == 0:
-            st.info("Vacío")
+            st.info("Vacio")
 
-dibujar_tarjetas(col1, "Cotizar", "Cotizar", "📝")
-dibujar_tarjetas(col2, "En Revisión", "En revisión", "📋")
-dibujar_tarjetas(col3, "Esperando Repuestos", "Esperando repuestos", "📦")
-dibujar_tarjetas(col4, "En Reparación", "En reparación", "🔧")
-dibujar_tarjetas(col5, "Listo para Facturar", "Listo para facturar", "✅")
+dibujar_tarjetas(col1, "Cotizar", "Cotizar")
+dibujar_tarjetas(col2, "En Revision", "En revision")
+dibujar_tarjetas(col3, "Esperando Repuestos", "Esperando repuestos")
+dibujar_tarjetas(col4, "En Reparacion", "En reparacion")
+dibujar_tarjetas(col5, "Listo para Facturar", "Listo para facturar")
 
 st.markdown("---")
-if st.button("🔄 Actualizar Tablero"):
+if st.button("Actualizar Tablero"):
     st.rerun()
