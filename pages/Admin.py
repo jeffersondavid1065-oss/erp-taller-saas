@@ -16,7 +16,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Validación de seguridad: Solo tú puedes entrar a este panel
-CORREO_ADMIN = "tucorreo@gmail.com"  # <--- CAMBIA ESTE CORREO POR EL TUYO
+CORREO_ADMIN = "jefferson.david1065@gmail.com"  # <--- CAMBIA ESTE CORREO POR EL TUYO
 
 if not st.session_state.get('user_logged', False):
     st.warning("Debes iniciar sesión.")
