@@ -76,7 +76,7 @@ def obtener_ordenes_con_items_pendientes():
 ordenes_sin_precio = obtener_ordenes_con_items_pendientes()
 
 if ordenes_sin_precio:
-    with st.expander(f"⚠️ **Atención: Hay {len(ordenes_sin_precio)} orden(es) con trabajos sin precio asignado**", expanded=True):
+    with st.expander(f"Atención: Hay {len(ordenes_sin_precio)} orden(es) con trabajos sin precio asignado", expanded=True):
         dict_pendientes = {f"Orden #{o[0]} - Placa: {o[1]} ({o[2]})": o[0] for o in ordenes_sin_precio}
         
         orden_sel_key = st.selectbox("Selecciona la orden para asignar o editar precios:", options=list(dict_pendientes.keys()))
@@ -101,19 +101,26 @@ if ordenes_sin_precio:
                 item_id, tipo, desc, costo, pvp, mec = item
                 
                 col_i1, col_i2, col_i3, col_i4 = st.columns([3, 2, 2, 2])
+                
                 with col_i1:
                     st.markdown(f"**{tipo}**: {desc}")
-                    if mec:
+                    if mec and tipo == 'Mano de Obra':
                         st.caption(f"Técnico: {mec}")
+                
                 with col_i2:
-                    nuevo_costo = st.number_input(f"Costo Compra", value=float(costo or 0), step=1000.0, key=f"costo_{item_id}")
+                    if tipo == 'Repuesto':
+                        nuevo_costo = st.number_input(f"Costo Compra", value=float(costo or 0), step=1000.0, key=f"costo_{item_id}")
+                    else:
+                        nuevo_costo = 0.0
+                
                 with col_i3:
                     nuevo_pvp = st.number_input(f"Precio Venta Cliente", value=float(pvp or 0), step=5000.0, key=f"pvp_{item_id}")
+                
                 with col_i4:
                     if nuevo_pvp == 0:
-                        st.caption("🔴 Sin Valor")
+                        st.caption("Sin Valor")
                     else:
-                        st.caption(f"🟢 {formato_cop(nuevo_pvp)}")
+                        st.caption(f"{formato_cop(nuevo_pvp)}")
                 
                 nuevos_precios[item_id] = (nuevo_costo, nuevo_pvp)
                 st.markdown("---")
@@ -132,7 +139,7 @@ if ordenes_sin_precio:
                                 '''),
                                 {"costo": c_compra, "pvp": p_venta, "id": item_id}
                             )
-                    st.success("✅ Precios actualizados y sincronizados en todo el sistema con éxito.")
+                    st.success("Precios actualizados y sincronizados en el sistema.")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error al guardar precios: {e}")
@@ -181,7 +188,7 @@ def dibujar_columna(columna, titulo, estado_filtro, clase_css):
                     st.markdown(f"Placa: **{placa}**")
                     st.caption(f"Empresa: {empresa}")
                     if sin_precio and sin_precio > 0:
-                        st.caption("⚠️ **Por Cotizar ($0)**")
+                        st.caption("Pendiente por Cotizar ($0)")
                 contador += 1
                 
         if contador == 0:
