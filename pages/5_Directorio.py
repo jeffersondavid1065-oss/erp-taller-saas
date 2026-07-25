@@ -108,7 +108,6 @@ with tab_empresas:
         )
 
     if not empresas_df.empty:
-        # Creamos el diccionario y añadimos una opción vacía al inicio
         dict_empresas = {f"{row['razon_social']} (NIT/CC: {row['nit']})": row['id'] for index, row in empresas_df.iterrows()}
         opciones_select = ["-- Selecciona o busca una empresa --"] + list(dict_empresas.keys())
         
@@ -118,14 +117,12 @@ with tab_empresas:
             help="Empieza a escribir el nombre para filtrar automáticamente."
         )
         
-        # Si el usuario no ha seleccionado ninguna empresa real, detenemos el despliegue aquí
         if empresa_seleccionada_str == "-- Selecciona o busca una empresa --":
             st.info("Selecciona o busca una empresa en la casilla superior para ver su información y su historial.")
         else:
             empresa_id_activo = dict_empresas[empresa_seleccionada_str]
             empresa_info = empresas_df[empresas_df['id'] == empresa_id_activo].iloc[0]
             
-            # Tarjeta desplegada con opciones de Editar y Eliminar
             with st.container(border=True):
                 col_card1, col_card2, col_card_btn1, col_card_btn2 = st.columns([3, 2, 1, 1])
                 with col_card1:
@@ -145,23 +142,32 @@ with tab_empresas:
                         st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = True
                         st.session_state[f"edit_emp_mode_{empresa_info['id']}"] = False
 
-                # Confirmación de eliminación
+                # Confirmación de eliminación mejorada
                 if st.session_state.get(f"delete_emp_confirm_{empresa_info['id']}", False):
-                    st.warning(f"¿Estás seguro de eliminar a **{empresa_info['razon_social']}**? Esta acción no se puede deshacer si tiene registros.")
+                    st.warning(f"¿Estás seguro de eliminar a **{empresa_info['razon_social']}**?")
                     col_conf1, col_conf2 = st.columns(2)
                     with col_conf1:
                         if st.button("Sí, eliminar definitivamente", key=f"yes_del_emp_{empresa_info['id']}", type="primary"):
                             try:
                                 with engine.begin() as conn_del:
-                                    conn_del.execute(
-                                        text("DELETE FROM Empresas_Clientes WHERE id = :id AND usuario_id = :uid"),
-                                        {"id": empresa_info['id'], "uid": user_id}
-                                    )
-                                st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = False
-                                st.success("Empresa eliminada con éxito.")
-                                st.rerun()
-                            except Exception:
-                                st.error("No se puede eliminar esta empresa porque tiene órdenes de trabajo o vehículos asociados en el historial.")
+                                    # Verificamos primero si tiene órdenes en Hojas_Trabajo
+                                    check_ordenes = conn_del.execute(
+                                        text("SELECT COUNT(*) FROM Hojas_Trabajo WHERE empresa_id = :eid"),
+                                        {"eid": empresa_info['id']}
+                                    ).scalar()
+                                    
+                                    if check_ordenes > 0:
+                                        st.error(f"⚠️ No se puede eliminar: esta empresa tiene {check_ordenes} orden(es) de trabajo asociadas en el sistema (incluso si no aparecen en los filtros actuales).")
+                                    else:
+                                        conn_del.execute(
+                                            text("DELETE FROM Empresas_Clientes WHERE id = :id AND usuario_id = :uid"),
+                                            {"id": empresa_info['id'], "uid": user_id}
+                                        )
+                                        st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = False
+                                        st.success("Empresa eliminada con éxito.")
+                                        st.rerun()
+                            except Exception as e:
+                                st.error(f"No se pudo eliminar la empresa debido a registros vinculados en la base de datos.")
                     with col_conf2:
                         if st.button("Cancelar", key=f"no_del_emp_{empresa_info['id']}"):
                             st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = False
