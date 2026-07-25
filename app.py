@@ -4,7 +4,7 @@ from sqlalchemy import text
 from db import obtener_conexion
 import hashlib
 
-st.set_page_config(page_title="Sistema ERP", layout="wide")
+st.set_page_config(page_title="MyTaller", layout="wide")
 
 # 1. ANIMACION DE ENTRADA Y OCULTAR BARRA SUPERIOR
 st.markdown("""
@@ -50,9 +50,17 @@ if not st.session_state.user_logged:
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
-        st.markdown("<h2 style='text-align: center;'>Sistema ERP Cloud</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: gray;'>Plataforma de gestión para talleres automotrices</p>", unsafe_allow_html=True)
-        st.markdown("---")
+        # Estilo tipo logo minimalista
+        st.markdown("""
+            <div style='text-align: center; margin-bottom: 25px;'>
+                <h1 style='font-weight: 800; font-size: 2.5rem; letter-spacing: -1px; margin-bottom: 0;'>
+                    My<span style='color: #FF4B4B;'>Taller</span>
+                </h1>
+                <p style='color: #64748b; font-size: 0.95rem; margin-top: 5px;'>
+                    Gestión inteligente para talleres automotrices
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
         
         with st.container(border=True):
             st.subheader("Iniciar Sesión")
