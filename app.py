@@ -5,23 +5,29 @@ from db import obtener_conexion
 import hashlib
 from datetime import date
 
-# 1. CONFIGURACIÓN DE PÁGINA
+# 1. CONFIGURACIÓN DE PÁGINA (Sidebar expandido si hay sesión)
 st.set_page_config(
     page_title="MyTaller", 
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded" if st.session_state.get('user_logged', False) else "collapsed"
 )
 
 is_logged = st.session_state.get('user_logged', False)
 
-# 2. ESTILOS Y ANIMACIÓN FADE-IN
+# 2. ESTILOS CSS LIMPIOS (Oculta únicamente el menú derecho sin afectar el Header ni la barra lateral)
 if not is_logged:
     st.markdown("""
         <style>
+        /* Ocultar la barra lateral en la pantalla de inicio de sesión */
         [data-testid="stSidebar"] { display: none !important; }
         [data-testid="stSidebarCollapsedControl"] { display: none !important; }
-        [data-testid="stToolbar"], #MainMenu, footer { visibility: hidden !important; }
-        [data-testid="stHeader"] { background-color: transparent !important; }
+        
+        /* Ocultar botones superiores del menú derecho (3 puntos, Deploy, Fork) */
+        .stAppDeployButton, #MainMenu, footer {
+            display: none !important;
+        }
 
+        /* Animación suave de entrada */
         @keyframes fade-in-up {
             0% { opacity: 0; transform: translateY(20px); }
             100% { opacity: 1; transform: translateY(0); }
@@ -33,16 +39,19 @@ if not is_logged:
 else:
     st.markdown("""
         <style>
-        [data-testid="stToolbar"], #MainMenu, footer { visibility: hidden !important; }
-        [data-testid="stHeader"] { background-color: transparent !important; }
+        /* Ocultar exclusivamente el menú de opciones derecho y botón deploy sin ocultar la cabecera */
+        .stAppDeployButton, #MainMenu, footer {
+            display: none !important;
+        }
 
-        /* Separar Admin en el Sidebar */
+        /* Separar la opción de Admin en el menú lateral */
         [data-testid="stSidebarNav"] ul li:last-child {
             margin-top: 50px !important;
             border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
             padding-top: 10px !important;
         }
 
+        /* Animación suave de entrada */
         @keyframes fade-in-up {
             0% { opacity: 0; transform: translateY(20px); }
             100% { opacity: 1; transform: translateY(0); }
@@ -60,9 +69,9 @@ if 'user_logged' not in st.session_state:
 def formato_cop(numero):
     return f"${numero:,.0f}".replace(",", ".")
 
-# 3. PANTALLAS
+# 3. PANTALLAS Y LÓGICA
 if not st.session_state.user_logged:
-    # Login
+    # Inicio de Sesión
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
@@ -144,7 +153,7 @@ if not st.session_state.user_logged:
                         st.warning("Completa todos los campos.")
 
 else:
-    # BOTÓN DE RESPALDO PARA MÓVILES (Despliega el menú si se oculta)
+    # Contenido de la barra lateral cuando hay sesión activa
     with st.sidebar:
         st.markdown("### Menú del Taller")
 
