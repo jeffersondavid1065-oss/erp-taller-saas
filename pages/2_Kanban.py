@@ -4,17 +4,34 @@ from db import obtener_conexion
 
 st.set_page_config(page_title="Tablero de Control", layout="wide")
 
-# Validacion de Seguridad
+# Validación de Seguridad
 if not st.session_state.get('user_logged', False):
-    st.warning("Debes iniciar sesion en la pagina principal para acceder a este modulo.")
+    st.warning("Debes iniciar sesión en la página principal para acceder a este módulo.")
     st.stop()
 
 engine = obtener_conexion()
 user_id = st.session_state.user_id
 
 st.title("Tablero de Control Operativo")
-st.markdown(f"Patio de vehiculos para: **{st.session_state.nombre_taller}**")
+st.markdown(f"Patio de vehículos para: **{st.session_state.nombre_taller}**")
 st.markdown("---")
+
+# Estilos CSS personalizados para los fondos pastel difuminados de las columnas
+st.markdown("""
+    <style>
+    .kanban-column {
+        padding: 16px;
+        border-radius: 12px;
+        margin-bottom: 10px;
+        border: 1px solid rgba(0, 0, 0, 0.04);
+    }
+    .bg-cotizar { background-color: #f0f4f8; }
+    .bg-revision { background-color: #fcf8e8; }
+    .bg-repuestos { background-color: #fbf1ed; }
+    .bg-reparacion { background-color: #f0ebf8; }
+    .bg-facturar { background-color: #edf7ed; }
+    </style>
+""", unsafe_allow_html=True)
 
 def obtener_vehiculos():
     with engine.connect() as conn:
@@ -35,12 +52,15 @@ except Exception as e:
 
 col1, col2, col3, col4, col5 = st.columns(5)
 
-def dibujar_tarjetas(columna, titulo, estado_filtro):
+def dibujar_columna(columna, titulo, estado_filtro, clase_css):
     with columna:
-        st.subheader(titulo)
-        st.markdown("---")
-        contador = 0
+        st.markdown(f"""
+            <div class="kanban-column {clase_css}">
+                <h4 style="margin-top: 0; font-weight: 600; color: #31333F; font-size: 1.1rem;">{titulo}</h4>
+                <hr style="margin: 8px 0; border: none; border-top: 1px solid rgba(0,0,0,0.08);">
+        """, unsafe_allow_html=True)
         
+        contador = 0
         for v in vehiculos:
             orden_id, placa, empresa, estado_actual = v
             if estado_actual == estado_filtro:
@@ -51,13 +71,15 @@ def dibujar_tarjetas(columna, titulo, estado_filtro):
                 contador += 1
                 
         if contador == 0:
-            st.info("Vacio")
+            st.caption("Vacío")
+            
+        st.markdown("</div>", unsafe_allow_html=True)
 
-dibujar_tarjetas(col1, "Cotizar", "Cotizar")
-dibujar_tarjetas(col2, "En Revision", "En revision")
-dibujar_tarjetas(col3, "Esperando Repuestos", "Esperando repuestos")
-dibujar_tarjetas(col4, "En Reparacion", "En reparacion")
-dibujar_tarjetas(col5, "Listo para Facturar", "Listo para facturar")
+dibujar_columna(col1, "Cotizar", "Cotizar", "bg-cotizar")
+dibujar_columna(col2, "En Revisión", "En revisión", "bg-revision")
+dibujar_columna(col3, "Esperando Repuestos", "Esperando repuestos", "bg-repuestos")
+dibujar_columna(col4, "En Reparación", "En reparación", "bg-reparacion")
+dibujar_columna(col5, "Listo para Facturar", "Listo para facturar", "bg-facturar")
 
 st.markdown("---")
 if st.button("Actualizar Tablero"):
