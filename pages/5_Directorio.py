@@ -69,25 +69,94 @@ with tab_empresas:
 
     st.markdown("---")
     
-    st.subheader("🔍 Historial de Trabajos por Empresa")
+    # ==========================================
+    # GESTIÓN Y EDICIÓN DE EMPRESAS REGISTRADAS
+    # ==========================================
+    st.subheader("🏢 Listado y Edición de Empresas / Clientes")
     
     with engine.connect() as conn:
-        empresas = pd.read_sql_query(
-            text("SELECT id, razon_social, nit FROM Empresas_Clientes WHERE usuario_id = :uid"), 
+        empresas_df = pd.read_sql_query(
+            text("SELECT id, razon_social, nit, telefono, email FROM Empresas_Clientes WHERE usuario_id = :uid ORDER BY razon_social ASC"), 
             con=conn, 
             params={"uid": user_id}
         )
+
+    if not empresas_df.empty:
+        for index, row in empresas_df.iterrows():
+            with st.container(border=True):
+                col_info1, col_info2, col_btn = st.columns([3, 3, 1])
+                with col_info1:
+                    st.markdown(f"**{row['razon_social']}**")
+                    st.caption(f"NIT/CC: {row['nit']}")
+                with col_info2:
+                    st.caption(f"📞 Tel: {row['telefono'] or 'No registrado'} | ✉️ Email: {row['email'] or 'No registrado'}")
+                with col_btn:
+                    if st.button("✏️ Editar", key=f"btn_edit_emp_{row['id']}"):
+                        st.session_state[f"edit_emp_mode_{row['id']}"] = True
+
+                # Formulario flotante de edición para cada empresa
+                if st.session_state.get(f"edit_emp_mode_{row['id']}", False):
+                    with st.form(key=f"form_update_emp_{row['id']}"):
+                        st.markdown(f"#### Editando a: {row['razon_social']}")
+                        upd_razon = st.text_input("Razón Social", value=row['razon_social'])
+                        upd_nit = st.text_input("NIT o Cédula", value=row['nit'])
+                        upd_tel = st.text_input("Teléfono", value=row['telefono'] or "")
+                        upd_email = st.text_input("Correo Electrónico", value=row['email'] or "")
+                        
+                        col_f1, col_f2 = st.columns(2)
+                        with col_f1:
+                            guardar_emp = st.form_submit_button("💾 Guardar Cambios", type="primary")
+                        with col_f2:
+                            cancelar_emp = st.form_submit_button("❌ Cancelar")
+                            
+                        if guardar_emp:
+                            try:
+                                with engine.begin() as conn_upd:
+                                    conn_upd.execute(
+                                        text('''
+                                            UPDATE Empresas_Clientes 
+                                            SET razon_social = :razon, nit = :nit, telefono = :tel, email = :email 
+                                            WHERE id = :id AND usuario_id = :uid
+                                        '''),
+                                        {
+                                            "razon": upd_razon,
+                                            "nit": upd_nit,
+                                            "tel": upd_tel,
+                                            "email": upd_email,
+                                            "id": row['id'],
+                                            "uid": user_id
+                                        }
+                                    )
+                                st.session_state[f"edit_emp_mode_{row['id']}"] = False
+                                st.success("✅ ¡Empresa actualizada con éxito!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ Error al actualizar: {e}")
+                        if cancelar_emp:
+                            st.session_state[f"edit_emp_mode_{row['id']}"] = False
+                            st.rerun()
+    else:
+        st.info("No hay empresas registradas todavía.")
+
+    st.markdown("---")
     
-    if not empresas.empty:
-        dict_empresas = {f"{row['razon_social']} (NIT: {row['nit']})": row['id'] for index, row in empresas.iterrows()}
+    # ==========================================
+    # HISTORIAL DE TRABAJOS CON FILTRO OPCIONAL POR PLACA
+    # ==========================================
+    st.subheader("🔍 Historial de Trabajos por Empresa y Vehículo")
+    
+    if not empresas_df.empty:
+        dict_empresas = {f"{row['razon_social']} (NIT: {row['nit']})": row['id'] for index, row in empresas_df.iterrows()}
         
-        col_filtro1, col_filtro2 = st.columns(2)
+        col_filtro1, col_filtro2, col_filtro3 = st.columns([2, 2, 1])
         with col_filtro1:
             empresa_seleccionada = st.selectbox("Selecciona la Empresa", options=list(dict_empresas.keys()))
         with col_filtro2:
             hoy = datetime.today()
             hace_un_mes = hoy - timedelta(days=30)
             fechas = st.date_input("Rango de Fechas a consultar", [hace_un_mes, hoy])
+        with col_filtro3:
+            filtro_placa_opcional = st.text_input("Placa (Opcional)").upper().strip()
         
         if len(fechas) == 2:
             fecha_inicio, fecha_fin = fechas
@@ -102,44 +171,54 @@ with tab_empresas:
                 horizontal=True
             )
             
+            # Construcción dinámica de la consulta con filtro opcional de placa
+            params_query = {
+                "eid": empresa_id, 
+                "uid": user_id, 
+                "f_ini": fecha_inicio.strftime('%Y-%m-%d'), 
+                "f_fin": fecha_fin_extendida.strftime('%Y-%m-%d')
+            }
+            
+            condicion_placa = ""
+            if filtro_placa_opcional:
+                condicion_placa = "AND h.placa LIKE :placa"
+                params_query["placa"] = f"%{filtro_placa_opcional}%"
+
             if "Resumida" in tipo_vista:
-                query_historial = text('''
+                query_historial = f'''
                     SELECT h.id as "N° Orden", date(h.fecha_ingreso) as "Fecha", h.placa as "Placa", 
                            SUM(d.precio_venta) as "Total Cobrado", h.estado as "Estado"
                     FROM Hojas_Trabajo h
                     JOIN Detalles_Orden d ON h.id = d.hoja_id
-                    WHERE h.empresa_id = :eid AND h.usuario_id = :uid AND h.fecha_ingreso >= :f_ini AND h.fecha_ingreso < :f_fin
+                    WHERE h.empresa_id = :eid AND h.usuario_id = :uid 
+                    AND h.fecha_ingreso >= :f_ini AND h.fecha_ingreso < :f_fin {condicion_placa}
                     GROUP BY h.id, h.fecha_ingreso, h.placa, h.estado
                     ORDER BY h.id DESC
-                ''')
+                '''
             else:
-                query_historial = text('''
+                query_historial = f'''
                     SELECT h.id as "N° Orden", date(h.fecha_ingreso) as "Fecha", h.placa as "Placa", 
                            d.tipo_item as "Tipo", d.descripcion as "Detalle", 
                            d.precio_venta as "Cobrado", h.estado as "Estado"
                     FROM Hojas_Trabajo h
                     JOIN Detalles_Orden d ON h.id = d.hoja_id
-                    WHERE h.empresa_id = :eid AND h.usuario_id = :uid AND h.fecha_ingreso >= :f_ini AND h.fecha_ingreso < :f_fin
+                    WHERE h.empresa_id = :eid AND h.usuario_id = :uid 
+                    AND h.fecha_ingreso >= :f_ini AND h.fecha_ingreso < :f_fin {condicion_placa}
                     ORDER BY h.id DESC
-                ''')
+                '''
                 
             with engine.connect() as conn:
-                df_historial = pd.read_sql_query(
-                    query_historial, 
-                    con=conn, 
-                    params={
-                        "eid": empresa_id, 
-                        "uid": user_id, 
-                        "f_ini": fecha_inicio.strftime('%Y-%m-%d'), 
-                        "f_fin": fecha_fin_extendida.strftime('%Y-%m-%d')
-                    }
-                )
+                df_historial = pd.read_sql_query(text(query_historial), con=conn, params=params_query)
             
             if not df_historial.empty:
                 columna_suma = 'Total Cobrado' if "Resumida" in tipo_vista else 'Cobrado'
                 total_facturado = df_historial[columna_suma].sum()
                 
-                st.markdown(f"### Resumen para: {empresa_seleccionada.split(' (')[0]}")
+                titulo_resumen = f"Resumen para: {empresa_seleccionada.split(' (')[0]}"
+                if filtro_placa_opcional:
+                    titulo_resumen += f" | Filtrado por Placa: {filtro_placa_opcional}"
+                
+                st.markdown(f"### {titulo_resumen}")
                 met1, met2 = st.columns(2)
                 met1.metric("Órdenes / Vehículos Atendidos", len(df_historial) if "Resumida" in tipo_vista else df_historial['N° Orden'].nunique())
                 met2.metric("Total Facturado en el Periodo", formato_cop(total_facturado))
@@ -156,9 +235,9 @@ with tab_empresas:
                     mime="text/csv",
                 )
             else:
-                st.info("No hay registros para esta empresa en el rango de fechas seleccionado.")
+                st.info("No hay registros que coincidan con la empresa y el filtro de placa en este rango de fechas.")
     else:
-        st.info("Aún no tienes empresas registradas. Usa el formulario de arriba para agregar la primera.")
+        st.info("Aún no tienes empresas registradas para consultar historial.")
 
 # ==========================================
 # PESTAÑA 2: GESTIÓN DE MECÁNICOS
