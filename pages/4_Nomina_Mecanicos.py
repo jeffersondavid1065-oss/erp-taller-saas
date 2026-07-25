@@ -4,11 +4,11 @@ from datetime import datetime, timedelta
 from sqlalchemy import text
 from db import obtener_conexion
 
-st.set_page_config(page_title="Nómina y Comisiones", page_icon="💰", layout="wide")
+st.set_page_config(page_title="Nomina y Comisiones", layout="wide")
 
 # Validación de Seguridad
 if not st.session_state.get('user_logged', False):
-    st.warning("⚠️ Debes iniciar sesión en la página principal para acceder a este módulo.")
+    st.warning("Debes iniciar sesión en la página principal para acceder a este módulo.")
     st.stop()
 
 engine = obtener_conexion()
@@ -17,18 +17,18 @@ user_id = st.session_state.user_id
 def formato_cop(numero):
     return f"${numero:,.0f}".replace(",", ".")
 
-st.title("💰 Liquidación de Nómina Dinámica")
+st.title("Liquidación de Nómina Dinámica")
 st.markdown(f"Auditoría de comisiones y ajustes para: **{st.session_state.nombre_taller}**")
 st.markdown("---")
 
 # ==========================================
 # 1. MÓDULO DE AUDITORÍA Y FILTROS AVANZADOS
 # ==========================================
-st.subheader("🛠️ Auditoría y Corrección de Trabajos")
-st.info("💡 Por defecto se muestran los trabajos recientes. Puedes usar los filtros opcionales de abajo para buscar una orden específica por número, placa, fecha, mecánico o empresa.")
+st.subheader("Auditoría y Corrección de Trabajos")
+st.info("Por defecto se muestran los trabajos recientes. Puedes usar los filtros opcionales de abajo para buscar una orden específica por número, placa, fecha, mecánico o empresa.")
 
 # Contenedor de Filtros Opcionales para Auditoría
-with st.expander("🔍 Filtros de Búsqueda Avanzada (Opcional)", expanded=False):
+with st.expander("Filtros de Búsqueda Avanzada (Opcional)", expanded=False):
     f_col1, f_col2, f_col3 = st.columns(3)
     with f_col1:
         filtro_nro_orden = st.text_input("N° de Orden (Opcional)")
@@ -125,7 +125,7 @@ if not df_trabajos.empty:
         }
     )
 
-    if st.button("💾 Guardar Correcciones en la Base de Datos", type="primary"):
+    if st.button("Guardar Correcciones en la Base de Datos", type="primary"):
         cambios = df_editado.compare(df_para_editar)
         if not cambios.empty:
             try:
@@ -145,10 +145,10 @@ if not df_trabajos.empty:
                             )
                 
                 st.cache_data.clear()
-                st.success("✅ ¡Cambios aplicados y sincronizados con éxito!")
+                st.success("¡Cambios aplicados y sincronizados con éxito!")
                 st.rerun()
             except Exception as e:
-                st.error(f"❌ Error al guardar: {e}")
+                st.error(f"Error al guardar: {e}")
         else:
             st.warning("No se detectaron cambios nuevos para guardar.")
 else:
@@ -173,7 +173,7 @@ else:
     dict_mecanicos = {f"{m[1]}": m[0] for m in mecanicos}
     opciones_mecanicos = ["-- Selecciona un trabajador --"] + list(dict_mecanicos.keys())
     
-    st.subheader("📊 Filtros y Parámetros de Liquidación")
+    st.subheader("Filtros y Parámetros de Liquidación")
     col1, col2, col3 = st.columns(3)
     
     with col1:
@@ -186,7 +186,7 @@ else:
         porcentaje_pago = st.number_input("Porcentaje a Pagar (%)", min_value=0, max_value=100, value=50, step=5)
         
     if mecanico_sel == "-- Selecciona un trabajador --":
-        st.info("👆 Selecciona un trabajador en la casilla de arriba para ver su resumen de liquidación y detalle de pagos.")
+        st.info("Selecciona un trabajador en la casilla de arriba para ver su resumen de liquidación y detalle de pagos.")
     else:
         if len(fechas) == 2:
             fecha_inicio, fecha_fin = fechas
@@ -244,7 +244,7 @@ else:
                 
                 csv = df_mostrar.to_csv(index=False).encode('utf-8')
                 st.download_button(
-                    label=f"📥 Descargar Soporte de Pago - {mecanico_sel}",
+                    label=f"Descargar Soporte de Pago - {mecanico_sel}",
                     data=csv,
                     file_name=f"Liquidacion_{mecanico_sel}.csv",
                     mime="text/csv",
