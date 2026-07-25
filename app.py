@@ -3,7 +3,7 @@ import pandas as pd
 from sqlalchemy import text
 from db import obtener_conexion
 import hashlib
-from datetime import date # <-- NUEVO: Importamos date para validar el día de hoy
+from datetime import date
 
 st.set_page_config(page_title="MyTaller", layout="wide")
 
@@ -35,7 +35,6 @@ else:
         [data-testid="stHeader"] {
             display: none !important;
         }
-        /* Forzar que la barra lateral aparezca cuando el usuario está logueado */
         [data-testid="stSidebar"] {
             display: block !important;
         }
@@ -61,7 +60,6 @@ def formato_cop(numero):
     return f"${numero:,.0f}".replace(",", ".")
 
 if not st.session_state.user_logged:
-    # Pantalla de inicio de sesion centrada y minimalista
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
@@ -85,25 +83,26 @@ if not st.session_state.user_logged:
             if st.button("Ingresar", use_container_width=True, type="primary"):
                 if email_login and pass_login:
                     pass_hash = hashlib.sha256(pass_login.encode()).hexdigest()
-                    with engine.connect() as conn:
-                        # NUEVO: Traemos también la fecha_pago_limite (posición 3)
-                        query = text("SELECT id, nombre_taller, password, fecha_pago_limite FROM Usuarios WHERE email = :email")
-                        user = conn.execute(query, {"email": email_login}).fetchone()
-                    
-                    if user and user[2] == pass_hash:
-                        fecha_limite = user[3]
-                        hoy = date.today()
+                    try:
+                        with engine.connect() as conn:
+                            query = text("SELECT id, nombre_taller, password, fecha_pago_limite FROM Usuarios WHERE email = :email")
+                            user = conn.execute(query, {"email": email_login}).fetchone()
                         
-                        # NUEVO: Validamos si tiene fecha y si esta no ha expirado
-                        if fecha_limite is None or fecha_limite < hoy:
-                            st.error("⚠️ Tu suscripción se encuentra inactiva o ha expirado. Por favor, comunícate con el administrador para reactivar tu cuenta.")
+                        if user and user[2] == pass_hash:
+                            fecha_limite = user[3]
+                            hoy = date.today()
+                            
+                            if fecha_limite is None or fecha_limite < hoy:
+                                st.error("⚠️ Tu suscripción se encuentra inactiva o ha expirado. Por favor, comunícate con el administrador para reactivar tu cuenta.")
+                            else:
+                                st.session_state.user_logged = True
+                                st.session_state.user_id = user[0]
+                                st.session_state.nombre_taller = user[1]
+                                st.rerun()
                         else:
-                            st.session_state.user_logged = True
-                            st.session_state.user_id = user[0]
-                            st.session_state.nombre_taller = user[1]
-                            st.rerun()
-                    else:
-                        st.error("Credenciales incorrectas.")
+                            st.error("Credenciales incorrectas.")
+                    except Exception as e:
+                        st.error(f"Error de base de datos. Si dice 'ProgrammingError', usa el botón de arreglo de abajo. Detalle: {e}")
                 else:
                     st.warning("Completa todos los campos.")
         
@@ -135,14 +134,26 @@ if not st.session_state.user_logged:
                                         "pass": pass_hash_reg
                                     }
                                 )
-                            st.success("Cuenta creada con éxito. Contacta al administrador para activar tu suscripción e iniciar sesión.")
+                            st.success("Cuenta creada con éxito. Contacta al administrador para activar tu suscripción.")
                         except Exception as e:
-                            if "unique constraint" in str(e).lower() or "duplicate key" in str(e).lower():
-                                st.error("Este correo electrónico ya se encuentra registrado.")
-                            else:
-                                st.error(f"Error al registrar: {e}")
+                            st.error(f"Error al registrar: {e}")
                     else:
-                        st.warning("Completa todos los campos para registrarte.")
+                        st.warning("Completa todos los campos.")
+        
+        # ==========================================
+        # BOTÓN REPARADOR TEMPORAL
+        # ==========================================
+        st.markdown("<hr>", unsafe_allow_html=True)
+        if st.button("🔧 Arreglar Base de Datos (Admin)", use_container_width=True):
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS codigo_verificacion TEXT;"))
+                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS activo BOOLEAN DEFAULT FALSE;"))
+                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS fecha_pago_limite DATE;"))
+                st.success("✅ ¡Columnas inyectadas con éxito! Intenta iniciar sesión de nuevo arriba.")
+            except Exception as e:
+                st.error(f"Error inyectando columnas: {e}")
+
 else:
     user_id = st.session_state.user_id
     
