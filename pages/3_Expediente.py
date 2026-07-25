@@ -172,7 +172,6 @@ if orden_busqueda:
             
             with tab_factura:
                 if not df_trabajos.empty:
-                    # Tabla limpia original
                     df_mostrar = df_trabajos[['tipo_item', 'descripcion', 'mecanico', 'precio_venta']].copy()
                     df_mostrar.columns = ['Tipo', 'Descripción', 'Técnico', 'Cobro al Cliente']
                     st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
@@ -180,7 +179,6 @@ if orden_busqueda:
                     gran_total = df_trabajos['precio_venta'].sum()
                     st.success(f"**Total a cobrar al cliente:** ${gran_total:,.2f}")
                     
-                    # Sección limpia de copiado rápido individual por ítem
                     st.markdown("---")
                     st.markdown("#### 📋 Copiado Rápido de Ítems")
                     
@@ -209,22 +207,26 @@ if orden_busqueda:
                                     text("UPDATE Hojas_Trabajo SET estado = :est WHERE id = :hid"),
                                     {"est": nuevo_estado, "hid": hoja_id}
                                 )
+                            st.cache_data.clear()
                             st.success("Estado actualizado.")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error: {e}")
                 
                 st.markdown("---")
-                st.markdown("### 2. Corregir o Eliminar Ítems")
+                st.markdown("### 2. Editar, Corregir o Eliminar Ítems")
                 if not df_trabajos.empty:
                     for index, row in df_trabajos.iterrows():
                         with st.container(border=True):
-                            col_e1, col_e2, col_e3 = st.columns([4, 2, 1])
+                            col_e1, col_e2, col_e3, col_e4 = st.columns([3, 2, 1, 1])
                             with col_e1:
                                 st.write(f"**{row['tipo_item']}**: {row['descripcion']}")
                             with col_e2:
                                 st.write(f"Valor: ${row['precio_venta']:,.0f}")
                             with col_e3:
+                                if st.button("✏️ Editar", key=f"edit_item_{row['id']}"):
+                                    st.session_state[f"modo_edit_{row['id']}"] = True
+                            with col_e4:
                                 if st.button("🗑️ Eliminar", key=f"del_{row['id']}"):
                                     try:
                                         with engine.begin() as conn_del:
@@ -232,9 +234,38 @@ if orden_busqueda:
                                                 text("DELETE FROM Detalles_Orden WHERE id = :did"),
                                                 {"did": row['id']}
                                             )
+                                        st.cache_data.clear()
+                                        st.success("Ítem eliminado.")
                                         st.rerun()
                                     except Exception as e:
                                         st.error(f"Error al eliminar: {e}")
+
+                            # 🌟 Formulario de edición desplegable para cada ítem
+                            if st.session_state.get(f"modo_edit_{row['id']}", False):
+                                with st.form(key=f"form_edit_item_{row['id']}"):
+                                    st.markdown(f"Editando ítem #{row['id']}")
+                                    nueva_desc = st.text_input("Nueva Descripción", value=row['descripcion'])
+                                    nuevo_precio = st.number_input("Nuevo Precio ($)", min_value=0.0, step=5000.0, value=float(row['precio_venta']))
+                                    
+                                    col_fe1, col_fe2 = st.columns(2)
+                                    with col_fe1:
+                                        if st.form_submit_button("💾 Guardar Cambios", type="primary"):
+                                            try:
+                                                with engine.begin() as conn_upd:
+                                                    conn_upd.execute(
+                                                        text("UPDATE Detalles_Orden SET descripcion = :desc, precio_venta = :precio WHERE id = :did"),
+                                                        {"desc": nueva_desc, "precio": float(nuevo_precio), "did": row['id']}
+                                                    )
+                                                st.cache_data.clear()
+                                                st.session_state[f"modo_edit_{row['id']}"] = False
+                                                st.success("✅ ¡Ítem actualizado y sincronizado en todo el sistema!")
+                                                st.rerun()
+                                            except Exception as e:
+                                                st.error(f"Error al actualizar: {e}")
+                                    with col_fe2:
+                                        if st.form_submit_button("❌ Cancelar"):
+                                            st.session_state[f"modo_edit_{row['id']}"] = False
+                                            st.rerun()
                 else:
                     st.warning("No hay ítems para corregir.")
 
@@ -260,6 +291,7 @@ if orden_busqueda:
                                             '''),
                                             {"hid": hoja_id, "desc": desc_mo, "mid": dict_mecanicos[mec_sel], "pvp": float(venta_mo)}
                                         )
+                                    st.cache_data.clear()
                                     st.success("¡Trabajo agregado con éxito!")
                                     st.rerun()
                                 except Exception as e:
@@ -282,6 +314,7 @@ if orden_busqueda:
                                             '''),
                                             {"hid": hoja_id, "desc": desc_rep, "costo": float(costo_rep), "pvp": float(venta_rep)}
                                         )
+                                    st.cache_data.clear()
                                     st.success("¡Repuesto agregado con éxito!")
                                     st.rerun()
                                 except Exception as e:
