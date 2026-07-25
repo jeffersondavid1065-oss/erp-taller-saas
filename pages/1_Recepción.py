@@ -4,6 +4,31 @@ from sqlalchemy import text
 from db import obtener_conexion
 
 st.set_page_config(page_title="Recepción de Vehículos", layout="wide")
+st.markdown("""
+    <style>
+    /* Definir la animacion */
+    @keyframes fade-in-up {
+        0% { 
+            opacity: 0; 
+            transform: translateY(20px); 
+        }
+        100% { 
+            opacity: 1; 
+            transform: translateY(0); 
+        }
+    }
+    
+    /* Aplicar la animacion al contenedor principal de la aplicacion */
+    [data-testid="stAppViewBlockContainer"] {
+        animation: fade-in-up 0.6s ease-out;
+    }
+    
+    /* Opcional: Aplicar animacion en cascada a las tarjetas y contenedores */
+    div[data-testid="stVerticalBlock"] > div {
+        animation: fade-in-up 0.5s ease-out;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 # Validación de Seguridad
 if not st.session_state.get('user_logged', False):
