@@ -52,7 +52,7 @@ if not st.session_state.user_logged:
         with st.container(border=True):
             st.subheader("Iniciar Sesion")
             email_login = st.text_input("Correo Electronico", key="login_email")
-            pass_login = st.text_input("Contrasena", type="password", key="login_pass")
+            pass_login = st.text_input("Contraseña", type="password", key="login_pass")
             
             st.markdown("")
             if st.button("Ingresar", use_container_width=True, type="primary"):
