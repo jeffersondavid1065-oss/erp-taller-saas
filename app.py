@@ -5,17 +5,18 @@ from db import obtener_conexion
 import hashlib
 from datetime import date
 
-# 1. CONFIGURACIÓN DE PÁGINA
+# 1. CONFIGURACIÓN DE PÁGINA (Control nativo del estado de la barra)
 st.set_page_config(
     page_title="MyTaller", 
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded" if st.session_state.get('user_logged', False) else "collapsed"
 )
 
 # Control de visibilidad del Sidebar según la sesión
 is_logged = st.session_state.get('user_logged', False)
 
 if not is_logged:
-    # Ocultar la barra lateral completamente vía CSS SOLO cuando NO hay sesión
+    # Ocultar barra en pantalla de Login
     st.markdown("""
         <style>
         [data-testid="stSidebar"] {
@@ -31,7 +32,7 @@ if not is_logged:
             background-color: transparent !important;
         }
 
-        /* EFECTO DE APARICIÓN SUAVE */
+        /* EFECTO FADE-IN-UP */
         @keyframes fade-in-up {
             0% { opacity: 0; transform: translateY(20px); }
             100% { opacity: 1; transform: translateY(0); }
@@ -45,42 +46,27 @@ if not is_logged:
         </style>
     """, unsafe_allow_html=True)
 else:
-    # Cuando SÍ hay sesión, mostramos la barra con soporte para móviles y separación de Admin
+    # Cuando SÍ hay sesión, aseguramos visibilidad móvil sin bloquear eventos táctiles
     st.markdown("""
         <style>
-        [data-testid="stSidebar"] {
-            display: block !important;
-        }
-        [data-testid="stSidebarCollapsedControl"] {
-            display: flex !important;
-            visibility: visible !important;
-        }
+        /* Ocultar barra superior nativa (tres puntos/deploy) */
         [data-testid="stToolbar"], #MainMenu, footer {
             visibility: hidden !important;
+            height: 0px !important;
         }
+        
+        /* Hacer transparente el header sin bloquear toques */
         [data-testid="stHeader"] {
             background-color: transparent !important;
         }
 
-        /* FIX ESPECÍFICO PARA DISPOSITIVOS MÓVILES (CELULARES) */
-        @media (max-width: 768px) {
-            [data-testid="stSidebarCollapsedControl"] {
-                display: flex !important;
-                visibility: visible !important;
-                position: fixed !important;
-                top: 12px !important;
-                left: 12px !important;
-                z-index: 999999 !important;
-                background-color: #262730 !important;
-                border-radius: 6px !important;
-                padding: 4px !important;
-            }
-            [data-testid="stHeader"] {
-                pointer-events: none !important;
-            }
-            [data-testid="stSidebarCollapsedControl"] * {
-                pointer-events: auto !important;
-            }
+        /* FIX DEFINITIVO PARA BOTÓN DE MENÚ EN MÓVILES Y ESCRITORIO */
+        [data-testid="stSidebarCollapsedControl"],
+        [data-testid="stSidebarCollapseButton"] {
+            visibility: visible !important;
+            display: flex !important;
+            opacity: 1 !important;
+            z-index: 999999 !important;
         }
 
         /* SEPARAR EL ÚLTIMO ITEM DEL MENÚ LATERAL (ADMIN) */
@@ -90,7 +76,7 @@ else:
             padding-top: 12px !important;
         }
 
-        /* EFECTO DE APARICIÓN SUAVE */
+        /* EFECTO FADE-IN-UP */
         @keyframes fade-in-up {
             0% { opacity: 0; transform: translateY(20px); }
             100% { opacity: 1; transform: translateY(0); }
