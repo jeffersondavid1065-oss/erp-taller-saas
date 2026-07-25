@@ -28,17 +28,20 @@ st.subheader("🛠️ Auditoría y Corrección de Trabajos Activos")
 st.info("💡 Haz doble clic en la **Descripción** o el **Precio** de la tabla para corregirlos si hubo algún cambio. Luego haz clic en el botón de guardar.")
 
 with engine.connect() as conn:
+    # 🌟 Agregamos el JOIN con Empresas_Clientes para traer el nombre del cliente/empresa
     query_trabajos = text('''
         SELECT 
             d.id as detalle_id, 
             h.id as orden_nro,
             h.placa, 
+            e.razon_social as empresa,
             m.nombre as mecanico, 
             d.tipo_item,
             d.descripcion, 
             d.precio_venta 
         FROM Detalles_Orden d
         JOIN Hojas_Trabajo h ON d.hoja_id = h.id
+        JOIN Empresas_Clientes e ON h.empresa_id = e.id
         LEFT JOIN Mecanicos m ON d.mecanico_id = m.id
         WHERE h.usuario_id = :uid AND h.estado != 'Facturado'
         ORDER BY h.fecha_ingreso DESC
@@ -50,11 +53,12 @@ if not df_trabajos.empty:
         df_trabajos,
         hide_index=True,
         use_container_width=True,
-        disabled=["detalle_id", "orden_nro", "placa", "mecanico", "tipo_item"],
+        disabled=["detalle_id", "orden_nro", "placa", "empresa", "mecanico", "tipo_item"],
         column_config={
             "detalle_id": None, 
             "orden_nro": "N° Orden",
             "placa": "Placa",
+            "empresa": "Cliente / Empresa",
             "mecanico": "Mecánico",
             "tipo_item": "Tipo",
             "descripcion": "Descripción del Trabajo (Editable)",
@@ -81,10 +85,8 @@ if not df_trabajos.empty:
                                 {"desc": row['descripcion'], "precio": float(row['precio_venta']), "id": int(row['detalle_id'])}
                             )
                 
-                # 🌟 Limpiamos la caché para que el historial y el expediente reflejen el cambio al instante
                 st.cache_data.clear()
-                
-                st.success("✅ ¡Cambios aplicados y sincronizados con el historial del vehículo con éxito!")
+                st.success("✅ ¡Cambios aplicados y sincronizados con éxito!")
                 st.rerun()
             except Exception as e:
                 st.error(f"❌ Error al guardar: {e}")
@@ -129,11 +131,12 @@ else:
         mecanico_id = dict_mecanicos[mecanico_sel]
         
         query_nomina = text('''
-            SELECT h.id as orden_id, h.placa, date(h.fecha_ingreso) as fecha, 
+            SELECT h.id as orden_id, h.placa, e.razon_social as empresa, date(h.fecha_ingreso) as fecha, 
                    d.descripcion as descripcion_trabajo, 
                    d.precio_venta as valor_mano_obra
             FROM Detalles_Orden d
             JOIN Hojas_Trabajo h ON d.hoja_id = h.id
+            JOIN Empresas_Clientes e ON h.empresa_id = e.id
             WHERE d.mecanico_id = :mid 
             AND d.tipo_item = 'Mano de Obra'
             AND h.usuario_id = :uid
@@ -169,7 +172,7 @@ else:
             
             st.markdown("#### Detalle de Trabajos para el Recibo de Pago")
             df_mostrar = df_nomina.copy()
-            df_mostrar.columns = ['N° Orden', 'Placa', 'Fecha de Ingreso', 'Descripción del Trabajo', 'Cobrado al Cliente ($)', 'Comisión del Técnico ($)']
+            df_mostrar.columns = ['N° Orden', 'Placa', 'Cliente / Empresa', 'Fecha de Ingreso', 'Descripción del Trabajo', 'Cobrado al Cliente ($)', 'Comisión del Técnico ($)']
             
             st.dataframe(df_mostrar.style.format({
                 'Cobrado al Cliente ($)': lambda x: formato_cop(x),
