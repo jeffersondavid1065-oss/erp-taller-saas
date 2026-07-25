@@ -26,6 +26,17 @@ def obtener_mecanicos():
         datos = conn.execute(query, {"uid": user_id}).fetchall()
     return {f"{m[1]}": m[0] for m in datos}
 
+# 🌟 Obtenemos la lista de empresas del taller para el buscador inteligente
+with engine.connect() as conn:
+    empresas_db = pd.read_sql_query(
+        text("SELECT id, razon_social FROM Empresas_Clientes WHERE usuario_id = :uid ORDER BY razon_social ASC"), 
+        con=conn, 
+        params={"uid": user_id}
+    )
+
+dict_empresas_filtro = {row['razon_social']: row['id'] for index, row in empresas_db.iterrows()} if not empresas_db.empty else {}
+opciones_empresas_filtro = ["-- Todas las empresas --"] + list(dict_empresas_filtro.keys())
+
 st.subheader("📋 Historial y Filtros de Órdenes")
 st.info("💡 Usa los filtros opcionales de abajo para buscar por estado (ej. Cotizar), placa o empresa de forma inmediata.")
 
@@ -43,7 +54,8 @@ with st.expander("🔍 Filtros de Búsqueda Avanzada (Estado, Placa, Empresa)", 
         filtro_estado_sel = st.selectbox("Estado del Trabajo", options=estados_opciones)
     with col_f3:
         filtro_placa_exp = st.text_input("Placa del Vehículo (Opcional)").upper().strip()
-        filtro_empresa_exp = st.text_input("Nombre de Empresa / Cliente (Opcional)").strip()
+        # 🌟 Selector inteligente con autocompletado y filtrado por escritura
+        filtro_empresa_sel = st.selectbox("Empresa / Cliente (Opcional)", options=opciones_empresas_filtro)
 
 if len(fechas_filtro) == 2:
     fecha_inicio, fecha_fin = fechas_filtro
@@ -79,10 +91,10 @@ if len(fechas_filtro) == 2:
         sql_list_parts.append("AND h.placa LIKE :placa")
         params_exp["placa"] = f"%{filtro_placa_exp}%"
 
-    if filtro_empresa_exp:
-        sql_count_parts.append("AND e.razon_social LIKE :empresa")
-        sql_list_parts.append("AND e.razon_social LIKE :empresa")
-        params_exp["empresa"] = f"%{filtro_empresa_exp}%"
+    if filtro_empresa_sel != "-- Todas las empresas --":
+        sql_count_parts.append("AND e.razon_social = :empresa_nombre")
+        sql_list_parts.append("AND e.razon_social = :empresa_nombre")
+        params_exp["empresa_nombre"] = filtro_empresa_sel
 
     with engine.connect() as conn:
         total_registros = conn.execute(text(" ".join(sql_count_parts)), params_exp).scalar()
