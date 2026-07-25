@@ -70,7 +70,7 @@ with tab_empresas:
     st.markdown("---")
     
     # ==========================================
-    # BUSCADOR DINÁMICO, EDICIÓN Y ELIMINACIÓN DE EMPRESAS
+    # BUSCADOR DINÁMICO CON OPCIÓN VACÍA INICIAL
     # ==========================================
     st.subheader("🔍 Buscador y Gestión de Clientes / Empresas")
     
@@ -82,187 +82,193 @@ with tab_empresas:
         )
 
     if not empresas_df.empty:
+        # Creamos el diccionario y añadimos una opción vacía al inicio
         dict_empresas = {f"{row['razon_social']} (NIT/CC: {row['nit']})": row['id'] for index, row in empresas_df.iterrows()}
+        opciones_select = ["-- Selecciona o busca una empresa --"] + list(dict_empresas.keys())
         
         empresa_seleccionada_str = st.selectbox(
             "🔎 Escribe o busca la empresa/cliente:", 
-            options=list(dict_empresas.keys()),
+            options=opciones_select,
             help="Empieza a escribir el nombre para filtrar automáticamente."
         )
         
-        empresa_id_activo = dict_empresas[empresa_seleccionada_str]
-        empresa_info = empresas_df[empresas_df['id'] == empresa_id_activo].iloc[0]
-        
-        # Tarjeta desplegada con opciones de Editar y Eliminar
-        with st.container(border=True):
-            col_card1, col_card2, col_card_btn1, col_card_btn2 = st.columns([3, 2, 1, 1])
-            with col_card1:
-                st.markdown(f"### 🏢 {empresa_info['razon_social']}")
-                st.caption(f"**NIT / Cédula:** {empresa_info['nit']}")
-            with col_card2:
-                st.markdown(f"**📞 Tel:** {empresa_info['telefono'] or 'No registrado'}")
-                st.markdown(f"**✉️ Email:** {empresa_info['email'] or 'No registrado'}")
-            with col_card_btn1:
-                st.markdown("<br>", unsafe_allow_html=True)
-                if st.button("✏️ Editar", key=f"btn_edit_{empresa_info['id']}"):
-                    st.session_state[f"edit_emp_mode_{empresa_info['id']}"] = True
-                    st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = False
-            with col_card_btn2:
-                st.markdown("<br>", unsafe_allow_html=True)
-                if st.button("🗑️ Eliminar", key=f"btn_del_emp_{empresa_info['id']}"):
-                    st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = True
-                    st.session_state[f"edit_emp_mode_{empresa_info['id']}"] = False
-
-            # Confirmación de eliminación
-            if st.session_state.get(f"delete_emp_confirm_{empresa_info['id']}", False):
-                st.warning(f"⚠️ ¿Estás seguro de eliminar a **{empresa_info['razon_social']}**? Esta acción no se puede deshacer si tiene registros.")
-                col_conf1, col_conf2 = st.columns(2)
-                with col_conf1:
-                    if st.button("Sí, eliminar definitivamente", key=f"yes_del_emp_{empresa_info['id']}", type="primary"):
-                        try:
-                            with engine.begin() as conn_del:
-                                conn_del.execute(
-                                    text("DELETE FROM Empresas_Clientes WHERE id = :id AND usuario_id = :uid"),
-                                    {"id": empresa_info['id'], "uid": user_id}
-                                )
-                            st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = False
-                            st.success("✅ Empresa eliminada con éxito.")
-                            st.rerun()
-                        except Exception:
-                            st.error("⚠️ No se puede eliminar esta empresa porque tiene órdenes de trabajo o vehículos asociados en el historial.")
-                with col_conf2:
-                    if st.button("Cancelar", key=f"no_del_emp_{empresa_info['id']}"):
+        # Si el usuario no ha seleccionado ninguna empresa real, detenemos el despliegue aquí
+        if empresa_seleccionada_str == "-- Selecciona o busca una empresa --":
+            st.info("👆 Selecciona o busca una empresa en la casilla de arriba para ver su información y su historial.")
+        else:
+            empresa_id_activo = dict_empresas[empresa_seleccionada_str]
+            empresa_info = empresas_df[empresas_df['id'] == empresa_id_activo].iloc[0]
+            
+            # Tarjeta desplegada con opciones de Editar y Eliminar
+            with st.container(border=True):
+                col_card1, col_card2, col_card_btn1, col_card_btn2 = st.columns([3, 2, 1, 1])
+                with col_card1:
+                    st.markdown(f"### 🏢 {empresa_info['razon_social']}")
+                    st.caption(f"**NIT / Cédula:** {empresa_info['nit']}")
+                with col_card2:
+                    st.markdown(f"**📞 Tel:** {empresa_info['telefono'] or 'No registrado'}")
+                    st.markdown(f"**✉️ Email:** {empresa_info['email'] or 'No registrado'}")
+                with col_card_btn1:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    if st.button("✏️ Editar", key=f"btn_edit_{empresa_info['id']}"):
+                        st.session_state[f"edit_emp_mode_{empresa_info['id']}"] = True
                         st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = False
-                        st.rerun()
-
-            # Formulario de edición
-            if st.session_state.get(f"edit_emp_mode_{empresa_info['id']}", False):
-                st.markdown("---")
-                with st.form(key=f"form_update_emp_{empresa_info['id']}"):
-                    st.markdown(f"#### Actualizar datos de: {empresa_info['razon_social']}")
-                    upd_razon = st.text_input("Razón Social o Nombre", value=empresa_info['razon_social'])
-                    upd_nit = st.text_input("NIT o Cédula", value=empresa_info['nit'])
-                    upd_tel = st.text_input("Teléfono", value=empresa_info['telefono'] or "")
-                    upd_email = st.text_input("Correo Electrónico", value=empresa_info['email'] or "")
-                    
-                    col_f1, col_f2 = st.columns(2)
-                    with col_f1:
-                        guardar_emp = st.form_submit_button("💾 Guardar Cambios", type="primary")
-                    with col_f2:
-                        cancelar_emp = st.form_submit_button("❌ Cancelar")
-                        
-                    if guardar_emp:
-                        try:
-                            with engine.begin() as conn_upd:
-                                conn_upd.execute(
-                                    text('''
-                                        UPDATE Empresas_Clientes 
-                                        SET razon_social = :razon, nit = :nit, telefono = :tel, email = :email 
-                                        WHERE id = :id AND usuario_id = :uid
-                                    '''),
-                                    {
-                                        "razon": upd_razon,
-                                        "nit": upd_nit,
-                                        "tel": upd_tel,
-                                        "email": upd_email,
-                                        "id": empresa_info['id'],
-                                        "uid": user_id
-                                    }
-                                )
-                            st.session_state[f"edit_emp_mode_{empresa_info['id']}"] = False
-                            st.success("✅ ¡Empresa actualizada con éxito!")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"❌ Error al actualizar: {e}")
-                    if cancelar_emp:
+                with col_card_btn2:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    if st.button("🗑️ Eliminar", key=f"btn_del_emp_{empresa_info['id']}"):
+                        st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = True
                         st.session_state[f"edit_emp_mode_{empresa_info['id']}"] = False
-                        st.rerun()
 
-        st.markdown("---")
-        
-        # ==========================================
-        # HISTORIAL DE TRABAJOS DE LA EMPRESA SELECCIONADA
-        # ==========================================
-        st.subheader(f"📋 Historial de Trabajos y Flota")
-        
-        col_filtro2, col_filtro3 = st.columns([2, 1])
-        with col_filtro2:
-            hoy = datetime.today()
-            hace_un_mes = hoy - timedelta(days=30)
-            fechas = st.date_input("Rango de Fechas a consultar", [hace_un_mes, hoy], key="fechas_historial")
-        with col_filtro3:
-            filtro_placa_opcional = st.text_input("Filtrar por Placa (Opcional)").upper().strip()
-        
-        if len(fechas) == 2:
-            fecha_inicio, fecha_fin = fechas
-            fecha_fin_extendida = fecha_fin + timedelta(days=1) 
-            
-            params_query = {
-                "eid": empresa_id_activo, 
-                "uid": user_id, 
-                "f_ini": fecha_inicio.strftime('%Y-%m-%d'), 
-                "f_fin": fecha_fin_extendida.strftime('%Y-%m-%d')
-            }
-            
-            condicion_placa = ""
-            if filtro_placa_opcional:
-                condicion_placa = "AND h.placa LIKE :placa"
-                params_query["placa"] = f"%{filtro_placa_opcional}%"
+                # Confirmación de eliminación
+                if st.session_state.get(f"delete_emp_confirm_{empresa_info['id']}", False):
+                    st.warning(f"⚠️ ¿Estás seguro de eliminar a **{empresa_info['razon_social']}**? Esta acción no se puede deshacer si tiene registros.")
+                    col_conf1, col_conf2 = st.columns(2)
+                    with col_conf1:
+                        if st.button("Sí, eliminar definitivamente", key=f"yes_del_emp_{empresa_info['id']}", type="primary"):
+                            try:
+                                with engine.begin() as conn_del:
+                                    conn_del.execute(
+                                        text("DELETE FROM Empresas_Clientes WHERE id = :id AND usuario_id = :uid"),
+                                        {"id": empresa_info['id'], "uid": user_id}
+                                    )
+                                st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = False
+                                st.success("✅ Empresa eliminada con éxito.")
+                                st.rerun()
+                            except Exception:
+                                st.error("⚠️ No se puede eliminar esta empresa porque tiene órdenes de trabajo o vehículos asociados en el historial.")
+                    with col_conf2:
+                        if st.button("Cancelar", key=f"no_del_emp_{empresa_info['id']}"):
+                            st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = False
+                            st.rerun()
 
-            tipo_vista = st.radio(
-                "Selecciona el tipo de vista:", 
-                ["📋 Vista Resumida (Solo Órdenes)", "🔍 Vista Detallada (Ítems y Repuestos)"],
-                horizontal=True,
-                key="radio_vista_hist"
-            )
+                # Formulario de edición
+                if st.session_state.get(f"edit_emp_mode_{empresa_info['id']}", False):
+                    st.markdown("---")
+                    with st.form(key=f"form_update_emp_{empresa_info['id']}"):
+                        st.markdown(f"#### Actualizar datos de: {empresa_info['razon_social']}")
+                        upd_razon = st.text_input("Razón Social o Nombre", value=empresa_info['razon_social'])
+                        upd_nit = st.text_input("NIT o Cédula", value=empresa_info['nit'])
+                        upd_tel = st.text_input("Teléfono", value=empresa_info['telefono'] or "")
+                        upd_email = st.text_input("Correo Electrónico", value=empresa_info['email'] or "")
+                        
+                        col_f1, col_f2 = st.columns(2)
+                        with col_f1:
+                            guardar_emp = st.form_submit_button("💾 Guardar Cambios", type="primary")
+                        with col_f2:
+                            cancelar_emp = st.form_submit_button("❌ Cancelar")
+                            
+                        if guardar_emp:
+                            try:
+                                with engine.begin() as conn_upd:
+                                    conn_upd.execute(
+                                        text('''
+                                            UPDATE Empresas_Clientes 
+                                            SET razon_social = :razon, nit = :nit, telefono = :tel, email = :email 
+                                            WHERE id = :id AND usuario_id = :uid
+                                        '''),
+                                        {
+                                            "razon": upd_razon,
+                                            "nit": upd_nit,
+                                            "tel": upd_tel,
+                                            "email": upd_email,
+                                            "id": empresa_info['id'],
+                                            "uid": user_id
+                                        }
+                                    )
+                                st.session_state[f"edit_emp_mode_{empresa_info['id']}"] = False
+                                st.success("✅ ¡Empresa actualizada con éxito!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ Error al actualizar: {e}")
+                        if cancelar_emp:
+                            st.session_state[f"edit_emp_mode_{empresa_info['id']}"] = False
+                            st.rerun()
 
-            if "Resumida" in tipo_vista:
-                query_historial = f'''
-                    SELECT h.id as "N° Orden", date(h.fecha_ingreso) as "Fecha", h.placa as "Placa", 
-                           SUM(d.precio_venta) as "Total Cobrado", h.estado as "Estado"
-                    FROM Hojas_Trabajo h
-                    JOIN Detalles_Orden d ON h.id = d.hoja_id
-                    WHERE h.empresa_id = :eid AND h.usuario_id = :uid 
-                    AND h.fecha_ingreso >= :f_ini AND h.fecha_ingreso < :f_fin {condicion_placa}
-                    GROUP BY h.id, h.fecha_ingreso, h.placa, h.estado
-                    ORDER BY h.id DESC
-                '''
-            else:
-                query_historial = f'''
-                    SELECT h.id as "N° Orden", date(h.fecha_ingreso) as "Fecha", h.placa as "Placa", 
-                           d.tipo_item as "Tipo", d.descripcion as "Detalle", 
-                           d.precio_venta as "Cobrado", h.estado as "Estado"
-                    FROM Hojas_Trabajo h
-                    JOIN Detalles_Orden d ON h.id = d.hoja_id
-                    WHERE h.empresa_id = :eid AND h.usuario_id = :uid 
-                    AND h.fecha_ingreso >= :f_ini AND h.fecha_ingreso < :f_fin {condicion_placa}
-                    ORDER BY h.id DESC
-                '''
-                
-            with engine.connect() as conn:
-                df_historial = pd.read_sql_query(text(query_historial), con=conn, params=params_query)
+            st.markdown("---")
             
-            if not df_historial.empty:
-                columna_suma = 'Total Cobrado' if "Resumida" in tipo_vista else 'Cobrado'
-                total_facturado = df_historial[columna_suma].sum()
+            # ==========================================
+            # HISTORIAL DE TRABAJOS DE LA EMPRESA SELECCIONADA
+            # ==========================================
+            st.subheader(f"📋 Historial de Trabajos y Flota")
+            
+            col_filtro2, col_filtro3 = st.columns([2, 1])
+            with col_filtro2:
+                hoy = datetime.today()
+                hace_un_mes = hoy - timedelta(days=30)
+                fechas = st.date_input("Rango de Fechas a consultar", [hace_un_mes, hoy], key="fechas_historial")
+            with col_filtro3:
+                filtro_placa_opcional = st.text_input("Filtrar por Placa (Opcional)").upper().strip()
+            
+            if len(fechas) == 2:
+                fecha_inicio, fecha_fin = fechas
+                fecha_fin_extendida = fecha_fin + timedelta(days=1) 
                 
-                met1, met2 = st.columns(2)
-                met1.metric("Órdenes / Vehículos Atendidos", len(df_historial) if "Resumida" in tipo_vista else df_historial['N° Orden'].nunique())
-                met2.metric("Total Facturado en el Periodo", formato_cop(total_facturado))
+                params_query = {
+                    "eid": empresa_id_activo, 
+                    "uid": user_id, 
+                    "f_ini": fecha_inicio.strftime('%Y-%m-%d'), 
+                    "f_fin": fecha_fin_extendida.strftime('%Y-%m-%d')
+                }
                 
-                st.dataframe(df_historial.style.format({
-                    columna_suma: lambda x: formato_cop(x)
-                }), use_container_width=True, hide_index=True)
-                
-                csv = df_historial.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📥 Descargar Reporte en CSV (Para Excel)",
-                    data=csv,
-                    file_name=f"Reporte_{empresa_info['razon_social']}_{fecha_inicio}.csv",
-                    mime="text/csv",
+                condicion_placa = ""
+                if filtro_placa_opcional:
+                    condicion_placa = "AND h.placa LIKE :placa"
+                    params_query["placa"] = f"%{filtro_placa_opcional}%"
+
+                tipo_vista = st.radio(
+                    "Selecciona el tipo de vista:", 
+                    ["📋 Vista Resumida (Solo Órdenes)", "🔍 Vista Detallada (Ítems y Repuestos)"],
+                    horizontal=True,
+                    key="radio_vista_hist"
                 )
-            else:
-                st.info("No hay registros que coincidan con la empresa y el filtro de placa en este rango de fechas.")
+
+                if "Resumida" in tipo_vista:
+                    query_historial = f'''
+                        SELECT h.id as "N° Orden", date(h.fecha_ingreso) as "Fecha", h.placa as "Placa", 
+                               SUM(d.precio_venta) as "Total Cobrado", h.estado as "Estado"
+                        FROM Hojas_Trabajo h
+                        JOIN Detalles_Orden d ON h.id = d.hoja_id
+                        WHERE h.empresa_id = :eid AND h.usuario_id = :uid 
+                        AND h.fecha_ingreso >= :f_ini AND h.fecha_ingreso < :f_fin {condicion_placa}
+                        GROUP BY h.id, h.fecha_ingreso, h.placa, h.estado
+                        ORDER BY h.id DESC
+                    '''
+                else:
+                    query_historial = f'''
+                        SELECT h.id as "N° Orden", date(h.fecha_ingreso) as "Fecha", h.placa as "Placa", 
+                               d.tipo_item as "Tipo", d.descripcion as "Detalle", 
+                               d.precio_venta as "Cobrado", h.estado as "Estado"
+                        FROM Hojas_Trabajo h
+                        JOIN Detalles_Orden d ON h.id = d.hoja_id
+                        WHERE h.empresa_id = :eid AND h.usuario_id = :uid 
+                        AND h.fecha_ingreso >= :f_ini AND h.fecha_ingreso < :f_fin {condicion_placa}
+                        ORDER BY h.id DESC
+                    '''
+                    
+                with engine.connect() as conn:
+                    df_historial = pd.read_sql_query(text(query_historial), con=conn, params=params_query)
+                
+                if not df_historial.empty:
+                    columna_suma = 'Total Cobrado' if "Resumida" in tipo_vista else 'Cobrado'
+                    total_facturado = df_historial[columna_suma].sum()
+                    
+                    met1, met2 = st.columns(2)
+                    met1.metric("Órdenes / Vehículos Atendidos", len(df_historial) if "Resumida" in tipo_vista else df_historial['N° Orden'].nunique())
+                    met2.metric("Total Facturado en el Periodo", formato_cop(total_facturado))
+                    
+                    st.dataframe(df_historial.style.format({
+                        columna_suma: lambda x: formato_cop(x)
+                    }), use_container_width=True, hide_index=True)
+                    
+                    csv = df_historial.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Descargar Reporte en CSV (Para Excel)",
+                        data=csv,
+                        file_name=f"Reporte_{empresa_info['razon_social']}_{fecha_inicio}.csv",
+                        mime="text/csv",
+                    )
+                else:
+                    st.info("No hay registros que coincidan con la empresa y el filtro de placa en este rango de fechas.")
     else:
         st.info("Aún no tienes empresas registradas. Usa el formulario de arriba para agregar la primera.")
 
