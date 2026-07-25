@@ -16,7 +16,6 @@ def obtener_conexion():
     
     return engine
 
-# ... (el resto de tu código init_db se queda igual) ...
 def init_db():
     engine = obtener_conexion()
     is_sqlite = "sqlite" in str(engine.url)
@@ -31,6 +30,9 @@ def init_db():
                     email TEXT UNIQUE NOT NULL,
                     password TEXT NOT NULL,
                     estado_suscripcion TEXT DEFAULT 'Activo',
+                    codigo_verificacion TEXT,
+                    activo BOOLEAN DEFAULT 0,
+                    fecha_pago_limite DATE,
                     fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             '''))
@@ -84,6 +86,9 @@ def init_db():
                     email TEXT UNIQUE NOT NULL,
                     password TEXT NOT NULL,
                     estado_suscripcion TEXT DEFAULT 'Activo',
+                    codigo_verificacion TEXT,
+                    activo BOOLEAN DEFAULT FALSE,
+                    fecha_pago_limite DATE,
                     fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             '''))
