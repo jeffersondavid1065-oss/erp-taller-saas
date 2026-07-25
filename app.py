@@ -6,9 +6,14 @@ import hashlib
 
 st.set_page_config(page_title="Sistema ERP", layout="wide")
 
-# 1. ANIMACION DE ENTRADA
+# 1. ANIMACION DE ENTRADA Y OCULTAR BARRA SUPERIOR
 st.markdown("""
     <style>
+    /* Ocultar toda la esquina superior derecha (Fork, GitHub, Menu) */
+    [data-testid="stHeader"] {
+        display: none !important;
+    }
+
     @keyframes fade-in-up {
         0% { opacity: 0; transform: translateY(20px); }
         100% { opacity: 1; transform: translateY(0); }
@@ -46,12 +51,12 @@ if not st.session_state.user_logged:
     
     with col2:
         st.markdown("<h2 style='text-align: center;'>Sistema ERP Cloud</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: gray;'>Plataforma de gestion para talleres automotrices</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: gray;'>Plataforma de gestión para talleres automotrices</p>", unsafe_allow_html=True)
         st.markdown("---")
         
         with st.container(border=True):
-            st.subheader("Iniciar Sesion")
-            email_login = st.text_input("Correo Electronico", key="login_email")
+            st.subheader("Iniciar Sesión")
+            email_login = st.text_input("Correo Electrónico", key="login_email")
             pass_login = st.text_input("Contraseña", type="password", key="login_pass")
             
             st.markdown("")
@@ -78,8 +83,8 @@ if not st.session_state.user_logged:
             with st.form("form_registro"):
                 taller_reg = st.text_input("Nombre del Taller")
                 nombre_reg = st.text_input("Nombre del Propietario")
-                email_reg = st.text_input("Correo Electronico Comercial")
-                pass_reg = st.text_input("Contrasena", type="password")
+                email_reg = st.text_input("Correo Electrónico Comercial")
+                pass_reg = st.text_input("Contraseña", type="password")
                 
                 st.markdown("")
                 btn_reg = st.form_submit_button("Crear Cuenta y Activar", use_container_width=True)
@@ -100,7 +105,7 @@ if not st.session_state.user_logged:
                                         "pass": pass_hash_reg
                                     }
                                 )
-                            st.success("Cuenta creada con exito. Ya puedes iniciar sesion.")
+                            st.success("Cuenta creada con éxito. Ya puedes iniciar sesión.")
                         except Exception as e:
                             st.error(f"Error al registrar: {e}")
                     else:
@@ -141,8 +146,8 @@ else:
 
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Valor Trabajos Activos", formato_cop(total_activos))
-    m2.metric("Ordenes por Cotizar", total_cotizar)
-    m3.metric("Ordenes Activas en Taller", total_ordenes_activas)
+    m2.metric("Órdenes por Cotizar", total_cotizar)
+    m3.metric("Órdenes Activas en Taller", total_ordenes_activas)
     m4.metric("Empresas Registradas", total_empresas)
 
     st.markdown("---")
@@ -151,15 +156,15 @@ else:
     with col_info1:
         with st.container(border=True):
             st.subheader("Control Contable")
-            st.write("Desde este panel puedes supervisar de forma general el estado financiero de tus operaciones en curso. Utiliza los modulos laterales para gestionar la nomina, auditar precios o emitir facturas.")
+            st.write("Desde este panel puedes supervisar de forma general el estado financiero de tus operaciones en curso. Utiliza los módulos laterales para gestionar la nómina, auditar precios o emitir facturas.")
     with col_info2:
         with st.container(border=True):
-            st.subheader("Accesos Rapidos")
-            st.write("• Dirigete a Expediente para auditar estados y cotizar pendientes.")
-            st.write("• Consulta Nomina Mecanicos para calcular comisiones de personal.")
+            st.subheader("Accesos Rápidos")
+            st.write("• Dirígete a Expediente para auditar estados y cotizar pendientes.")
+            st.write("• Consulta Nómina Mecánicos para calcular comisiones de personal.")
             st.write("• Gestiona tu cartera de clientes desde el Directorio.")
 
     st.markdown("")
-    if st.button("Cerrar Sesion"):
+    if st.button("Cerrar Sesión"):
         st.session_state.user_logged = False
         st.rerun()
