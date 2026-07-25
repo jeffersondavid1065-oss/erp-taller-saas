@@ -5,25 +5,21 @@ from sqlalchemy import text
 from db import obtener_conexion
 
 st.set_page_config(page_title="Nómina y Comisiones", layout="wide")
-import streamlit as st
-import pandas as pd
-from sqlalchemy import text
-from db import obtener_conexion
 
-st.set_page_config(page_title="Recepción de Vehículos", layout="wide")
-
-# --- PEGAR CÓDIGO DE ANIMACIÓN AQUÍ ---
+# ==========================================
+# ESTILOS CSS: OCULTAR BARRA Y ANIMACIONES
+# ==========================================
 st.markdown("""
     <style>
+    /* Ocultar toda la esquina superior derecha (Fork, GitHub, Menu) */
+    [data-testid="stHeader"] {
+        display: none !important;
+    }
+
+    /* Animación de entrada */
     @keyframes fade-in-up {
-        0% { 
-            opacity: 0; 
-            transform: translateY(20px); 
-        }
-        100% { 
-            opacity: 1; 
-            transform: translateY(0); 
-        }
+        0% { opacity: 0; transform: translateY(20px); }
+        100% { opacity: 1; transform: translateY(0); }
     }
     
     [data-testid="stAppViewBlockContainer"] {
@@ -35,17 +31,7 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
-# --------------------------------------
 
-# Validación de Seguridad
-if not st.session_state.get('user_logged', False):
-    st.warning("Debes iniciar sesión en la página principal para acceder a este módulo.")
-    st.stop()
-
-engine = obtener_conexion()
-user_id = st.session_state.user_id
-
-# ... (el resto de tu código sigue igual hacia abajo)
 # Validación de Seguridad
 if not st.session_state.get('user_logged', False):
     st.warning("Debes iniciar sesión en la página principal para acceder a este módulo.")
