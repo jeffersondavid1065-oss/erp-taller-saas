@@ -142,32 +142,31 @@ with tab_empresas:
                         st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = True
                         st.session_state[f"edit_emp_mode_{empresa_info['id']}"] = False
 
-                # Confirmación de eliminación mejorada
+                # Confirmación de eliminación con limpieza en cascada para evitar bloqueos
                 if st.session_state.get(f"delete_emp_confirm_{empresa_info['id']}", False):
-                    st.warning(f"¿Estás seguro de eliminar a **{empresa_info['razon_social']}**?")
+                    st.warning(f"¿Estás seguro de eliminar a **{empresa_info['razon_social']}**? Si tiene órdenes asociadas, estas y sus detalles se eliminarán permanentemente.")
                     col_conf1, col_conf2 = st.columns(2)
                     with col_conf1:
                         if st.button("Sí, eliminar definitivamente", key=f"yes_del_emp_{empresa_info['id']}", type="primary"):
                             try:
                                 with engine.begin() as conn_del:
-                                    # Verificamos primero si tiene órdenes en Hojas_Trabajo
-                                    check_ordenes = conn_del.execute(
-                                        text("SELECT COUNT(*) FROM Hojas_Trabajo WHERE empresa_id = :eid"),
+                                    conn_del.execute(
+                                        text("DELETE FROM Detalles_Orden WHERE hoja_id IN (SELECT id FROM Hojas_Trabajo WHERE empresa_id = :eid)"),
                                         {"eid": empresa_info['id']}
-                                    ).scalar()
-                                    
-                                    if check_ordenes > 0:
-                                        st.error(f"⚠️ No se puede eliminar: esta empresa tiene {check_ordenes} orden(es) de trabajo asociadas en el sistema (incluso si no aparecen en los filtros actuales).")
-                                    else:
-                                        conn_del.execute(
-                                            text("DELETE FROM Empresas_Clientes WHERE id = :id AND usuario_id = :uid"),
-                                            {"id": empresa_info['id'], "uid": user_id}
-                                        )
-                                        st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = False
-                                        st.success("Empresa eliminada con éxito.")
-                                        st.rerun()
+                                    )
+                                    conn_del.execute(
+                                        text("DELETE FROM Hojas_Trabajo WHERE empresa_id = :eid"),
+                                        {"eid": empresa_info['id']}
+                                    )
+                                    conn_del.execute(
+                                        text("DELETE FROM Empresas_Clientes WHERE id = :id AND usuario_id = :uid"),
+                                        {"id": empresa_info['id'], "uid": user_id}
+                                    )
+                                st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = False
+                                st.success("Empresa eliminada con éxito.")
+                                st.rerun()
                             except Exception as e:
-                                st.error(f"No se pudo eliminar la empresa debido a registros vinculados en la base de datos.")
+                                st.error(f"Error al eliminar: {e}")
                     with col_conf2:
                         if st.button("Cancelar", key=f"no_del_emp_{empresa_info['id']}"):
                             st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = False
