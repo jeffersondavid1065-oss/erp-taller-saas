@@ -1,31 +1,26 @@
 import streamlit as st
 import pandas as pd
-import os
 import math
 from datetime import datetime, timedelta
 from sqlalchemy import text
 from db import obtener_conexion
 
 st.set_page_config(page_title="Expediente", layout="wide")
-import streamlit as st
-import pandas as pd
-from sqlalchemy import text
-from db import obtener_conexion
 
-st.set_page_config(page_title="Recepción de Vehículos", layout="wide")
-
-# --- PEGAR CÓDIGO DE ANIMACIÓN AQUÍ ---
+# ==========================================
+# ESTILOS CSS: OCULTAR BARRA, ANIMACIONES Y DISEÑO
+# ==========================================
 st.markdown("""
     <style>
+    /* Ocultar toda la esquina superior derecha (Fork, GitHub, Menu) */
+    [data-testid="stHeader"] {
+        display: none !important;
+    }
+
+    /* Animación de entrada */
     @keyframes fade-in-up {
-        0% { 
-            opacity: 0; 
-            transform: translateY(20px); 
-        }
-        100% { 
-            opacity: 1; 
-            transform: translateY(0); 
-        }
+        0% { opacity: 0; transform: translateY(20px); }
+        100% { opacity: 1; transform: translateY(0); }
     }
     
     [data-testid="stAppViewBlockContainer"] {
@@ -35,31 +30,8 @@ st.markdown("""
     div[data-testid="stVerticalBlock"] > div {
         animation: fade-in-up 0.5s ease-out;
     }
-    </style>
-""", unsafe_allow_html=True)
-# --------------------------------------
 
-# Validación de Seguridad
-if not st.session_state.get('user_logged', False):
-    st.warning("Debes iniciar sesión en la página principal para acceder a este módulo.")
-    st.stop()
-
-engine = obtener_conexion()
-user_id = st.session_state.user_id
-
-# ... (el resto de tu código sigue igual hacia abajo)
-
-# Validación de Seguridad
-if not st.session_state.get('user_logged', False):
-    st.warning("Debes iniciar sesión en la página principal para acceder a este módulo.")
-    st.stop()
-
-engine = obtener_conexion()
-user_id = st.session_state.user_id
-
-# Estilos CSS minimalistas para contenedores y tarjetas suaves
-st.markdown("""
-    <style>
+    /* Estilos minimalistas para contenedores */
     .expediente-card {
         background-color: #f8fafc;
         padding: 16px;
@@ -69,6 +41,14 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
+
+# Validación de Seguridad
+if not st.session_state.get('user_logged', False):
+    st.warning("Debes iniciar sesión en la página principal para acceder a este módulo.")
+    st.stop()
+
+engine = obtener_conexion()
+user_id = st.session_state.user_id
 
 st.title("Expediente de Orden y Facturación")
 st.markdown(f"Gestión de órdenes para: **{st.session_state.nombre_taller}**")
