@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import text
 from db import obtener_conexion
 
-st.set_page_config(page_title="Nomina y Comisiones", layout="wide")
+st.set_page_config(page_title="Nómina y Comisiones", layout="wide")
 
 # Validación de Seguridad
 if not st.session_state.get('user_logged', False):
