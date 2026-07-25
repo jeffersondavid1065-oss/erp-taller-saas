@@ -7,13 +7,21 @@ from db import obtener_conexion
 st.set_page_config(page_title="Nómina y Comisiones", layout="wide")
 
 # ==========================================
-# ESTILOS CSS: OCULTAR BARRA Y ANIMACIONES
+# ESTILOS CSS: MÁSCARA DERECHA Y ANIMACIONES
 # ==========================================
 st.markdown("""
     <style>
-    /* Ocultar toda la esquina superior derecha (Fork, GitHub, Menu) */
-    [data-testid="stHeader"] {
-        display: none !important;
+    /* Máscara sólida en la esquina superior derecha que bloquea botones y clics */
+    header::after {
+        content: "";
+        position: fixed !important;
+        top: 0 !important;
+        right: 0 !important;
+        width: 350px !important;
+        height: 60px !important;
+        background-color: #0e1117 !important;
+        z-index: 9999999 !important;
+        pointer-events: all !important;
     }
 
     /* Animación de entrada */
@@ -171,7 +179,7 @@ if not df_trabajos.empty:
                             )
                 
                 st.cache_data.clear()
-                st.success("¡Cambios aplicados y sincronizados con éxito!")
+                st.success("Cambios aplicados y sincronizados con éxito.")
                 st.rerun()
             except Exception as e:
                 st.error(f"Error al guardar: {e}")
