@@ -6,17 +6,30 @@ from datetime import datetime, timedelta
 from sqlalchemy import text
 from db import obtener_conexion
 
-st.set_page_config(page_title="Expediente y Edición", page_icon="📑", layout="wide")
+st.set_page_config(page_title="Expediente", layout="wide")
 
 # Validación de Seguridad
 if not st.session_state.get('user_logged', False):
-    st.warning("⚠️ Debes iniciar sesión en la página principal para acceder a este módulo.")
+    st.warning("Debes iniciar sesión en la página principal para acceder a este módulo.")
     st.stop()
 
 engine = obtener_conexion()
 user_id = st.session_state.user_id
 
-st.title("📑 Expediente de Orden y Facturación")
+# Estilos CSS minimalistas para contenedores y tarjetas suaves
+st.markdown("""
+    <style>
+    .expediente-card {
+        background-color: #f8fafc;
+        padding: 16px;
+        border-radius: 10px;
+        border: 1px solid #e2e8f0;
+        margin-bottom: 10px;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+st.title("Expediente de Orden y Facturación")
 st.markdown(f"Gestión de órdenes para: **{st.session_state.nombre_taller}**")
 st.markdown("---")
 
@@ -37,13 +50,13 @@ with engine.connect() as conn:
 dict_empresas_filtro = {row['razon_social']: row['id'] for index, row in empresas_db.iterrows()} if not empresas_db.empty else {}
 opciones_empresas_filtro = ["-- Todas las empresas --"] + list(dict_empresas_filtro.keys())
 
-st.subheader("📋 Historial y Filtros de Órdenes")
-st.info("💡 Usa los filtros opcionales de abajo para buscar por estado (ej. Cotizar), placa o empresa de forma inmediata.")
+st.subheader("Historial y Filtros de Órdenes")
+st.info("Utiliza los filtros de búsqueda avanzada para localizar órdenes por estado, placa o empresa de forma inmediata.")
 
 # ==========================================
 # PANEL DE FILTROS AVANZADOS OPCIONALES
 # ==========================================
-with st.expander("🔍 Filtros de Búsqueda Avanzada (Estado, Placa, Empresa)", expanded=True):
+with st.expander("Filtros de Búsqueda Avanzada", expanded=True):
     col_f1, col_f2, col_f3 = st.columns(3)
     with col_f1:
         hoy = datetime.today()
@@ -126,10 +139,10 @@ else:
 
 st.markdown("---")
 
-st.subheader("🔍 Abrir Expediente Específico")
-st.markdown("Mira el N° de Orden en la tabla de arriba y escríbelo aquí para ver sus detalles, editar o facturar.")
+st.subheader("Abrir Expediente Específico")
+st.markdown("Ingresa el número de orden para consultar detalles, auditar o modificar registros.")
 
-orden_busqueda = st.text_input("Ingresa el NÚMERO DE ORDEN (Ej: 1, 2, 3...)")
+orden_busqueda = st.text_input("Número de Orden")
 
 if orden_busqueda:
     if orden_busqueda.isdigit(): 
@@ -168,7 +181,7 @@ if orden_busqueda:
                     params={"hid": hoja_id}
                 )
             
-            tab_factura, tab_editar = st.tabs(["🧾 Ver y Copiar Ítems", "✏️ Editar Orden (Corregir / Agregar)"])
+            tab_factura, tab_editar = st.tabs(["Detalles y Copia de Ítems", "Edición y Gestión"])
             
             with tab_factura:
                 if not df_trabajos.empty:
@@ -177,10 +190,10 @@ if orden_busqueda:
                     st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
                     
                     gran_total = df_trabajos['precio_venta'].sum()
-                    st.success(f"**Total a cobrar al cliente:** ${gran_total:,.2f}")
+                    st.success(f"Total a cobrar al cliente: ${gran_total:,.2f}")
                     
                     st.markdown("---")
-                    st.markdown("#### 📋 Copiado Rápido de Ítems")
+                    st.markdown("#### Copiado Rápido de Ítems")
                     
                     for index, row in df_trabajos.iterrows():
                         col_i1, col_i2 = st.columns([3, 1])
@@ -192,7 +205,7 @@ if orden_busqueda:
                     st.info("No hay trabajos registrados para esta orden todavía.")
 
             with tab_editar:
-                st.markdown("### 1. Cambiar Estado del Vehículo")
+                st.subheader("1. Cambio de Estado Operativo")
                 col_est1, col_est2 = st.columns([2, 1])
                 with col_est1:
                     estados_disponibles = ["Cotizar", "En revisión", "Esperando repuestos", "En reparación", "Listo para facturar", "Facturado"]
@@ -200,7 +213,7 @@ if orden_busqueda:
                     nuevo_estado = st.selectbox("Selecciona el nuevo estado", estados_disponibles, index=indice_actual)
                 with col_est2:
                     st.write("") 
-                    if st.button("🔄 Guardar Cambio de Estado"):
+                    if st.button("Guardar Cambio de Estado", use_container_width=True):
                         try:
                             with engine.begin() as conn_est:
                                 conn_est.execute(
@@ -208,13 +221,13 @@ if orden_busqueda:
                                     {"est": nuevo_estado, "hid": hoja_id}
                                 )
                             st.cache_data.clear()
-                            st.success("Estado actualizado.")
+                            st.success("Estado actualizado correctamente.")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error: {e}")
                 
                 st.markdown("---")
-                st.markdown("### 2. Editar, Corregir o Eliminar Ítems")
+                st.subheader("2. Gestión y Modificación de Ítems")
                 if not df_trabajos.empty:
                     for index, row in df_trabajos.iterrows():
                         with st.container(border=True):
@@ -224,10 +237,10 @@ if orden_busqueda:
                             with col_e2:
                                 st.write(f"Valor: ${row['precio_venta']:,.0f}")
                             with col_e3:
-                                if st.button("✏️ Editar", key=f"edit_item_{row['id']}"):
+                                if st.button("Editar", key=f"edit_item_{row['id']}"):
                                     st.session_state[f"modo_edit_{row['id']}"] = True
                             with col_e4:
-                                if st.button("🗑️ Eliminar", key=f"del_{row['id']}"):
+                                if st.button("Eliminar", key=f"del_{row['id']}"):
                                     try:
                                         with engine.begin() as conn_del:
                                             conn_del.execute(
@@ -240,7 +253,6 @@ if orden_busqueda:
                                     except Exception as e:
                                         st.error(f"Error al eliminar: {e}")
 
-                            # 🌟 Formulario de edición desplegable para cada ítem
                             if st.session_state.get(f"modo_edit_{row['id']}", False):
                                 with st.form(key=f"form_edit_item_{row['id']}"):
                                     st.markdown(f"Editando ítem #{row['id']}")
@@ -249,7 +261,7 @@ if orden_busqueda:
                                     
                                     col_fe1, col_fe2 = st.columns(2)
                                     with col_fe1:
-                                        if st.form_submit_button("💾 Guardar Cambios", type="primary"):
+                                        if st.form_submit_button("Guardar Cambios", type="primary"):
                                             try:
                                                 with engine.begin() as conn_upd:
                                                     conn_upd.execute(
@@ -258,29 +270,29 @@ if orden_busqueda:
                                                     )
                                                 st.cache_data.clear()
                                                 st.session_state[f"modo_edit_{row['id']}"] = False
-                                                st.success("✅ ¡Ítem actualizado y sincronizado en todo el sistema!")
+                                                st.success("Ítem actualizado y sincronizado en todo el sistema.")
                                                 st.rerun()
                                             except Exception as e:
                                                 st.error(f"Error al actualizar: {e}")
                                     with col_fe2:
-                                        if st.form_submit_button("❌ Cancelar"):
+                                        if st.form_submit_button("Cancelar"):
                                             st.session_state[f"modo_edit_{row['id']}"] = False
                                             st.rerun()
                 else:
-                    st.warning("No hay ítems para corregir.")
+                    st.warning("No hay ítems para modificar.")
 
                 st.markdown("---")
-                st.markdown("### 3. Agregar Nuevos Ítems a esta Orden")
+                st.subheader("3. Adición de Nuevos Ítems")
                 dict_mecanicos = obtener_mecanicos()
                 
-                with st.expander("➕ Despliega para agregar un Trabajo o Repuesto nuevo"):
-                    tab_mo, tab_rep = st.tabs(["🔧 Mano de Obra", "📦 Repuesto"])
+                with st.expander("Desplegar formulario para agregar trabajo o repuesto"):
+                    tab_mo, tab_rep = st.tabs(["Mano de Obra", "Repuesto"])
                     
                     with tab_mo:
                         desc_mo = st.text_input("Descripción", key="e_desc_mo")
                         mec_sel = st.selectbox("Mecánico", options=list(dict_mecanicos.keys()), key="e_mec_mo") if dict_mecanicos else None
                         venta_mo = st.number_input("Cobro Cliente ($)", min_value=0, step=5000, key="e_venta_mo")
-                        if st.button("💾 Guardar Trabajo"):
+                        if st.button("Guardar Trabajo", use_container_width=True):
                             if desc_mo and venta_mo > 0 and mec_sel:
                                 try:
                                     with engine.begin() as conn_mo:
@@ -292,7 +304,7 @@ if orden_busqueda:
                                             {"hid": hoja_id, "desc": desc_mo, "mid": dict_mecanicos[mec_sel], "pvp": float(venta_mo)}
                                         )
                                     st.cache_data.clear()
-                                    st.success("¡Trabajo agregado con éxito!")
+                                    st.success("Trabajo agregado con éxito.")
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Error: {e}")
@@ -303,7 +315,7 @@ if orden_busqueda:
                         desc_rep = st.text_input("Nombre Repuesto", key="e_desc_rep")
                         costo_rep = st.number_input("Costo Compra ($)", min_value=0, step=1000, key="e_costo_rep")
                         venta_rep = st.number_input("Precio Venta ($)", min_value=0, step=1000, key="e_venta_rep")
-                        if st.button("💾 Guardar Repuesto"):
+                        if st.button("Guardar Repuesto", use_container_width=True):
                             if desc_rep and venta_rep > 0:
                                 try:
                                     with engine.begin() as conn_rep:
@@ -315,11 +327,11 @@ if orden_busqueda:
                                             {"hid": hoja_id, "desc": desc_rep, "costo": float(costo_rep), "pvp": float(venta_rep)}
                                         )
                                     st.cache_data.clear()
-                                    st.success("¡Repuesto agregado con éxito!")
+                                    st.success("Repuesto agregado con éxito.")
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Error: {e}")
                             else:
-                                st.error("Llenar descripción y precio de venta.")
+                                st.error("Completa la descripción y el precio de venta.")
     else:
-        st.error("Por favor, ingresa solo números (Ej: 1, 2, 3...)")
+        st.error("Por favor, ingresa un número de orden válido.")
