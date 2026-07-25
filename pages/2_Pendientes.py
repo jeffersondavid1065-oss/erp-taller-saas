@@ -4,25 +4,20 @@ from db import obtener_conexion
 
 st.set_page_config(page_title="Tablero de Control", layout="wide")
 
-import streamlit as st
-import pandas as pd
-from sqlalchemy import text
-from db import obtener_conexion
-
-st.set_page_config(page_title="Recepción de Vehículos", layout="wide")
-
-# --- PEGAR CÓDIGO DE ANIMACIÓN AQUÍ ---
+# ==========================================
+# ESTILOS CSS: OCULTAR BARRA, ANIMACIONES Y COLORES KANBAN
+# ==========================================
 st.markdown("""
     <style>
+    /* 1. Ocultar toda la esquina superior derecha (Fork, GitHub, Menu) */
+    [data-testid="stHeader"] {
+        display: none !important;
+    }
+
+    /* 2. Definir la animación de entrada */
     @keyframes fade-in-up {
-        0% { 
-            opacity: 0; 
-            transform: translateY(20px); 
-        }
-        100% { 
-            opacity: 1; 
-            transform: translateY(0); 
-        }
+        0% { opacity: 0; transform: translateY(20px); }
+        100% { opacity: 1; transform: translateY(0); }
     }
     
     [data-testid="stAppViewBlockContainer"] {
@@ -32,34 +27,8 @@ st.markdown("""
     div[data-testid="stVerticalBlock"] > div {
         animation: fade-in-up 0.5s ease-out;
     }
-    </style>
-""", unsafe_allow_html=True)
-# --------------------------------------
 
-# Validación de Seguridad
-if not st.session_state.get('user_logged', False):
-    st.warning("Debes iniciar sesión en la página principal para acceder a este módulo.")
-    st.stop()
-
-engine = obtener_conexion()
-user_id = st.session_state.user_id
-
-# ... (el resto de tu código sigue igual hacia abajo)
-# Validación de Seguridad
-if not st.session_state.get('user_logged', False):
-    st.warning("Debes iniciar sesión en la página principal para acceder a este módulo.")
-    st.stop()
-
-engine = obtener_conexion()
-user_id = st.session_state.user_id
-
-st.title("Tablero de Control Operativo")
-st.markdown(f"Patio de vehículos para: **{st.session_state.nombre_taller}**")
-st.markdown("---")
-
-# Estilos CSS personalizados para los fondos pastel difuminados de las columnas
-st.markdown("""
-    <style>
+    /* 3. Estilos personalizados para los fondos pastel de las columnas */
     .kanban-column {
         padding: 16px;
         border-radius: 12px;
@@ -73,6 +42,18 @@ st.markdown("""
     .bg-facturar { background-color: #edf7ed; }
     </style>
 """, unsafe_allow_html=True)
+
+# Validación de Seguridad
+if not st.session_state.get('user_logged', False):
+    st.warning("Debes iniciar sesión en la página principal para acceder a este módulo.")
+    st.stop()
+
+engine = obtener_conexion()
+user_id = st.session_state.user_id
+
+st.title("Tablero de Control Operativo")
+st.markdown(f"Patio de vehículos para: **{st.session_state.nombre_taller}**")
+st.markdown("---")
 
 def obtener_vehiculos():
     with engine.connect() as conn:
