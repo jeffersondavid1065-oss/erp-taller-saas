@@ -26,31 +26,73 @@ def obtener_mecanicos():
         datos = conn.execute(query, {"uid": user_id}).fetchall()
     return {f"{m[1]}": m[0] for m in datos}
 
-st.subheader("📋 Historial de Órdenes por Fecha")
+st.subheader("📋 Historial y Filtros de Órdenes")
+st.info("💡 Usa los filtros opcionales de abajo para buscar por estado (ej. Cotizar), placa o empresa de forma inmediata.")
 
-col_f1, col_f2 = st.columns([2, 2])
-with col_f1:
-    hoy = datetime.today()
-    hace_7_dias = hoy - timedelta(days=7)
-    fechas_filtro = st.date_input("Selecciona el rango de fechas a facturar", [hace_7_dias, hoy])
+# ==========================================
+# PANEL DE FILTROS AVANZADOS OPCIONALES
+# ==========================================
+with st.expander("🔍 Filtros de Búsqueda Avanzada (Estado, Placa, Empresa)", expanded=True):
+    col_f1, col_f2, col_f3 = st.columns(3)
+    with col_f1:
+        hoy = datetime.today()
+        hace_30_dias = hoy - timedelta(days=30)
+        fechas_filtro = st.date_input("Rango de fechas", [hace_30_dias, hoy])
+    with col_f2:
+        estados_opciones = ["-- Todos los estados --", "Cotizar", "En revisión", "Esperando repuestos", "En reparación", "Listo para facturar", "Facturado"]
+        filtro_estado_sel = st.selectbox("Estado del Trabajo", options=estados_opciones)
+    with col_f3:
+        filtro_placa_exp = st.text_input("Placa del Vehículo (Opcional)").upper().strip()
+        filtro_empresa_exp = st.text_input("Nombre de Empresa / Cliente (Opcional)").strip()
 
 if len(fechas_filtro) == 2:
     fecha_inicio, fecha_fin = fechas_filtro
     fecha_fin_extendida = fecha_fin + timedelta(days=1) 
 
+    # Construcción dinámica de la consulta con filtros opcionales
+    sql_count_parts = [
+        "SELECT COUNT(*) FROM Hojas_Trabajo h JOIN Empresas_Clientes e ON h.empresa_id = e.id WHERE h.usuario_id = :uid AND h.fecha_ingreso >= :f_ini AND h.fecha_ingreso < :f_fin"
+    ]
+    sql_list_parts = [
+        '''
+        SELECT h.id as "N° Orden", date(h.fecha_ingreso) as "Fecha", 
+               h.placa as "Placa", e.razon_social as "Empresa", h.estado as "Estado"
+        FROM Hojas_Trabajo h
+        JOIN Empresas_Clientes e ON h.empresa_id = e.id
+        WHERE h.usuario_id = :uid AND h.fecha_ingreso >= :f_ini AND h.fecha_ingreso < :f_fin
+        '''
+    ]
+
+    params_exp = {
+        "uid": user_id, 
+        "f_ini": fecha_inicio.strftime('%Y-%m-%d'), 
+        "f_fin": fecha_fin_extendida.strftime('%Y-%m-%d')
+    }
+
+    if filtro_estado_sel != "-- Todos los estados --":
+        sql_count_parts.append("AND h.estado = :est")
+        sql_list_parts.append("AND h.estado = :est")
+        params_exp["est"] = filtro_estado_sel
+
+    if filtro_placa_exp:
+        sql_count_parts.append("AND h.placa LIKE :placa")
+        sql_list_parts.append("AND h.placa LIKE :placa")
+        params_exp["placa"] = f"%{filtro_placa_exp}%"
+
+    if filtro_empresa_exp:
+        sql_count_parts.append("AND e.razon_social LIKE :empresa")
+        sql_list_parts.append("AND e.razon_social LIKE :empresa")
+        params_exp["empresa"] = f"%{filtro_empresa_exp}%"
+
     with engine.connect() as conn:
-        # Contamos las órdenes de este taller en el rango de fechas
-        query_count = text('''
-            SELECT COUNT(*) FROM Hojas_Trabajo 
-            WHERE usuario_id = :uid AND fecha_ingreso >= :f_ini AND fecha_ingreso < :f_fin
-        ''')
-        total_registros = conn.execute(query_count, {"uid": user_id, "f_ini": fecha_inicio, "f_fin": fecha_fin_extendida}).scalar()
+        total_registros = conn.execute(text(" ".join(sql_count_parts)), params_exp).scalar()
 
     if total_registros > 0:
         REGISTROS_POR_PAGINA = 20
         total_paginas = math.ceil(total_registros / REGISTROS_POR_PAGINA)
         
-        with col_f2:
+        col_pag1, col_pag2 = st.columns([2, 2])
+        with col_pag2:
             if total_paginas > 1:
                 pagina_actual = st.number_input("Ir a la Página", min_value=1, max_value=total_paginas, value=1)
             else:
@@ -59,33 +101,16 @@ if len(fechas_filtro) == 2:
         
         offset = (pagina_actual - 1) * REGISTROS_POR_PAGINA
         
-        # Traemos las órdenes conectadas a Supabase
-        query_lista = text('''
-            SELECT h.id as "N° Orden", date(h.fecha_ingreso) as "Fecha", 
-                   h.placa as "Placa", e.razon_social as "Empresa", h.estado as "Estado"
-            FROM Hojas_Trabajo h
-            JOIN Empresas_Clientes e ON h.empresa_id = e.id
-            WHERE h.usuario_id = :uid AND h.fecha_ingreso >= :f_ini AND h.fecha_ingreso < :f_fin
-            ORDER BY h.id DESC
-            LIMIT :limit OFFSET :offset
-        ''')
-        
+        sql_final_list = " ".join(sql_list_parts) + " ORDER BY h.id DESC LIMIT :limit OFFSET :offset"
+        params_exp["limit"] = REGISTROS_POR_PAGINA
+        params_exp["offset"] = offset
+
         with engine.connect() as conn:
-            df_lista = pd.read_sql_query(
-                query_lista, 
-                con=conn, 
-                params={
-                    "uid": user_id, 
-                    "f_ini": fecha_inicio, 
-                    "f_fin": fecha_fin_extendida, 
-                    "limit": REGISTROS_POR_PAGINA, 
-                    "offset": offset
-                }
-            )
+            df_lista = pd.read_sql_query(text(sql_final_list), con=conn, params=params_exp)
         
         st.dataframe(df_lista, use_container_width=True, hide_index=True)
     else:
-        st.info("No hay órdenes registradas en el rango de fechas seleccionado.")
+        st.info("No se encontraron órdenes que coincidan con los filtros seleccionados.")
 else:
     st.warning("Por favor selecciona un rango de fechas válido.")
 
