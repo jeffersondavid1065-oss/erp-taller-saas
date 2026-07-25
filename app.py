@@ -4,7 +4,7 @@ from sqlalchemy import text
 from db import obtener_conexion
 import hashlib
 
-st.set_page_config(page_title="Sistema ERP", layout="wide")
+st.set_page_config(page_title="MyTaller", layout="wide")
 
 engine = obtener_conexion()
 
