@@ -27,7 +27,7 @@ st.markdown("---")
 st.subheader("🛠️ Auditoría y Corrección de Trabajos")
 st.info("💡 Por defecto se muestran los trabajos recientes. Puedes usar los filtros opcionales de abajo para buscar una orden específica por número, placa, fecha, mecánico o empresa.")
 
-# 🌟 Contenedor de Filtros Opcionales para Auditoría
+# Contenedor de Filtros Opcionales para Auditoría
 with st.expander("🔍 Filtros de Búsqueda Avanzada (Opcional)", expanded=False):
     f_col1, f_col2, f_col3 = st.columns(3)
     with f_col1:
@@ -51,7 +51,8 @@ with st.expander("🔍 Filtros de Búsqueda Avanzada (Opcional)", expanded=False
             rango_auditoria = None
 
 # Construcción dinámica de la consulta de auditoría basada en filtros opcionales
-query_base_sql = '''
+query_base_sql = [
+    '''
     SELECT 
         d.id as detalle_id, 
         h.id as orden_nro,
@@ -67,7 +68,8 @@ query_base_sql = '''
     JOIN Empresas_Clientes e ON h.empresa_id = e.id
     LEFT JOIN Mecanicos m ON d.mecanico_id = m.id
     WHERE h.usuario_id = :uid AND h.estado != 'Facturado'
-''']
+    '''
+]
 
 params_auditoria = {"uid": user_id}
 
@@ -104,7 +106,6 @@ with engine.connect() as conn:
     df_trabajos = pd.read_sql_query(text(query_final_str), con=conn, params=params_auditoria)
 
 if not df_trabajos.empty:
-    # Ocultamos la columna auxiliar fecha_ingreso para el editor visual
     df_para_editar = df_trabajos.drop(columns=['fecha_ingreso'])
     
     df_editado = st.data_editor(
