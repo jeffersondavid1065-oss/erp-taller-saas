@@ -138,23 +138,9 @@ if not st.session_state.user_logged:
                         except Exception as e:
                             st.error(f"Error al registrar: {e}")
                     else:
-                        st.warning("Completa todos los campos.")
-        
-        # ==========================================
-        # BOTÓN REPARADOR TEMPORAL (AUTO-ACTIVACIÓN)
-        # ==========================================
-        st.markdown("<hr>", unsafe_allow_html=True)
-        if st.button("👑 Activar mi cuenta de Admin", use_container_width=True):
-            try:
-                with engine.begin() as conn:
-                    # Le damos suscripción hasta el año 2036 a tu cuenta administradora
-                    conn.execute(
-                        text("UPDATE Usuarios SET fecha_pago_limite = '2036-12-31' WHERE email = 'jefferson.david1065@gmail.com'")
-                    )
-                st.success("✅ ¡Tu cuenta de administrador ha sido activada con éxito! Dale al botón rojo de 'Ingresar' arriba.")
-            except Exception as e:
-                st.error(f"Error activando cuenta: {e}")
-
+                        st.warning("Completa todos los campos")
+            
+       
 else:
     user_id = st.session_state.user_id
     
