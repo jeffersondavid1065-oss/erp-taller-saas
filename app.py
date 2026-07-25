@@ -4,7 +4,7 @@ from sqlalchemy import text
 from db import obtener_conexion
 import hashlib
 
-st.set_page_config(page_title="Sistema ERP", layout="wide")
+st.set_page_config(page_title="My Taller", layout="wide")
 
 # Ocultar la barra lateral de navegacion si el usuario NO ha iniciado sesion
 if not st.session_state.get('user_logged', False):
