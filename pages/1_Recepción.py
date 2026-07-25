@@ -6,8 +6,11 @@ from db import obtener_conexion
 st.set_page_config(page_title="Recepción de Vehículos", layout="wide")
 st.markdown("""
     <style>
-    /* Ocultar el encabezado superior donde sale el icono de GitHub */
-    [data-testid="stHeader"] {
+    /* Ocultar SOLO el icono de GitHub y opciones de Deploy, dejando el menú para el modo oscuro */
+    [data-testid="stToolbar"] {
+        display: none !important;
+    }
+    .stAppDeployButton {
         display: none !important;
     }
 
