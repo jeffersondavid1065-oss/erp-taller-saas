@@ -82,23 +82,25 @@ if not st.session_state.user_logged:
         with st.expander("Registrar Nuevo Taller"):
             with st.form("form_registro"):
                 taller_reg = st.text_input("Nombre del Taller")
+                dueno_reg = st.text_input("Nombre del Dueño")
                 email_reg = st.text_input("Correo Electrónico Comercial")
                 pass_reg = st.text_input("Contraseña", type="password")
                 
                 st.markdown("")
                 btn_reg = st.form_submit_button("Crear Cuenta y Activar", use_container_width=True)
                 if btn_reg:
-                    if taller_reg and email_reg and pass_reg:
+                    if taller_reg and dueno_reg and email_reg and pass_reg:
                         pass_hash_reg = hashlib.sha256(pass_reg.encode()).hexdigest()
                         try:
                             with engine.begin() as conn_reg:
                                 conn_reg.execute(
                                     text("""
-                                        INSERT INTO Usuarios (nombre_taller, email, password)
-                                        VALUES (:taller, :email, :pass)
+                                        INSERT INTO Usuarios (nombre_taller, nombre_dueno, email, password)
+                                        VALUES (:taller, :dueno, :email, :pass)
                                     """),
                                     {
                                         "taller": taller_reg,
+                                        "dueno": dueno_reg,
                                         "email": email_reg,
                                         "pass": pass_hash_reg
                                     }
