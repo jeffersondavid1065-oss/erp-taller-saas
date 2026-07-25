@@ -28,7 +28,6 @@ st.subheader("🛠️ Auditoría y Corrección de Trabajos Activos")
 st.info("💡 Haz doble clic en la **Descripción** o el **Precio** de la tabla para corregirlos si hubo algún cambio. Luego haz clic en el botón de guardar.")
 
 with engine.connect() as conn:
-    # 🌟 Agregamos el JOIN con Empresas_Clientes para traer el nombre del cliente/empresa
     query_trabajos = text('''
         SELECT 
             d.id as detalle_id, 
@@ -112,12 +111,13 @@ if not mecanicos:
     st.info("No hay mecánicos registrados en tu taller.")
 else:
     dict_mecanicos = {f"{m[1]}": m[0] for m in mecanicos}
+    opciones_mecanicos = ["-- Selecciona un trabajador --"] + list(dict_mecanicos.keys())
     
     st.subheader("📊 Filtros y Parámetros de Liquidación")
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        mecanico_sel = st.selectbox("Selecciona el Técnico", options=list(dict_mecanicos.keys()))
+        mecanico_sel = st.selectbox("Selecciona el Técnico", options=opciones_mecanicos)
     with col2:
         hoy = datetime.today()
         hace_15_dias = hoy - timedelta(days=15)
@@ -125,66 +125,69 @@ else:
     with col3:
         porcentaje_pago = st.number_input("Porcentaje a Pagar (%)", min_value=0, max_value=100, value=50, step=5)
         
-    if len(fechas) == 2:
-        fecha_inicio, fecha_fin = fechas
-        fecha_fin_extendida = fecha_fin + timedelta(days=1) 
-        mecanico_id = dict_mecanicos[mecanico_sel]
-        
-        query_nomina = text('''
-            SELECT h.id as orden_id, h.placa, e.razon_social as empresa, date(h.fecha_ingreso) as fecha, 
-                   d.descripcion as descripcion_trabajo, 
-                   d.precio_venta as valor_mano_obra
-            FROM Detalles_Orden d
-            JOIN Hojas_Trabajo h ON d.hoja_id = h.id
-            JOIN Empresas_Clientes e ON h.empresa_id = e.id
-            WHERE d.mecanico_id = :mid 
-            AND d.tipo_item = 'Mano de Obra'
-            AND h.usuario_id = :uid
-            AND h.fecha_ingreso >= :f_inicio AND h.fecha_ingreso < :f_fin
-            ORDER BY h.fecha_ingreso DESC
-        ''')
-        
-        with engine.connect() as conn:
-            df_nomina = pd.read_sql_query(
-                query_nomina, 
-                conn, 
-                params={
-                    "mid": mecanico_id, 
-                    "uid": user_id, 
-                    "f_inicio": fecha_inicio.strftime('%Y-%m-%d'), 
-                    "f_fin": fecha_fin_extendida.strftime('%Y-%m-%d')
-                }
-            )
-        
-        st.markdown("---")
-        
-        if not df_nomina.empty:
-            df_nomina['comision_mecanico'] = (df_nomina['valor_mano_obra'] * (porcentaje_pago / 100)).round(2)
+    if mecanico_sel == "-- Selecciona un trabajador --":
+        st.info("👆 Selecciona un trabajador en la casilla de arriba para ver su resumen de liquidación y detalle de pagos.")
+    else:
+        if len(fechas) == 2:
+            fecha_inicio, fecha_fin = fechas
+            fecha_fin_extendida = fecha_fin + timedelta(days=1) 
+            mecanico_id = dict_mecanicos[mecanico_sel]
             
-            total_mo = df_nomina['valor_mano_obra'].sum()
-            total_comision = df_nomina['comision_mecanico'].sum()
+            query_nomina = text('''
+                SELECT h.id as orden_id, h.placa, e.razon_social as empresa, date(h.fecha_ingreso) as fecha, 
+                       d.descripcion as descripcion_trabajo, 
+                       d.precio_venta as valor_mano_obra
+                FROM Detalles_Orden d
+                JOIN Hojas_Trabajo h ON d.hoja_id = h.id
+                JOIN Empresas_Clientes e ON h.empresa_id = e.id
+                WHERE d.mecanico_id = :mid 
+                AND d.tipo_item = 'Mano de Obra'
+                AND h.usuario_id = :uid
+                AND h.fecha_ingreso >= :f_inicio AND h.fecha_ingreso < :f_fin
+                ORDER BY h.fecha_ingreso DESC
+            ''')
             
-            st.subheader(f"Resumen de Liquidación: {mecanico_sel}")
-            met1, met2, met3 = st.columns(3)
-            met1.metric("Trabajos Realizados", len(df_nomina))
-            met2.metric("Base (Mano de Obra Ajustada)", formato_cop(total_mo))
-            met3.metric(f"Total a Pagar ({porcentaje_pago}%)", formato_cop(total_comision))
+            with engine.connect() as conn:
+                df_nomina = pd.read_sql_query(
+                    query_nomina, 
+                    conn, 
+                    params={
+                        "mid": mecanico_id, 
+                        "uid": user_id, 
+                        "f_inicio": fecha_inicio.strftime('%Y-%m-%d'), 
+                        "f_fin": fecha_fin_extendida.strftime('%Y-%m-%d')
+                    }
+                )
             
-            st.markdown("#### Detalle de Trabajos para el Recibo de Pago")
-            df_mostrar = df_nomina.copy()
-            df_mostrar.columns = ['N° Orden', 'Placa', 'Cliente / Empresa', 'Fecha de Ingreso', 'Descripción del Trabajo', 'Cobrado al Cliente ($)', 'Comisión del Técnico ($)']
+            st.markdown("---")
             
-            st.dataframe(df_mostrar.style.format({
-                'Cobrado al Cliente ($)': lambda x: formato_cop(x),
-                'Comisión del Técnico ($)': lambda x: formato_cop(x)
-            }), use_container_width=True, hide_index=True)
-            
-            csv = df_mostrar.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label=f"📥 Descargar Soporte de Pago - {mecanico_sel}",
-                data=csv,
-                file_name=f"Liquidacion_{mecanico_sel}.csv",
-                mime="text/csv",
-            )
-        else:
-            st.info(f"No se encontraron trabajos de mano de obra para {mecanico_sel} en este periodo.")
+            if not df_nomina.empty:
+                df_nomina['comision_mecanico'] = (df_nomina['valor_mano_obra'] * (porcentaje_pago / 100)).round(2)
+                
+                total_mo = df_nomina['valor_mano_obra'].sum()
+                total_comision = df_nomina['comision_mecanico'].sum()
+                
+                st.subheader(f"Resumen de Liquidación: {mecanico_sel}")
+                met1, met2, met3 = st.columns(3)
+                met1.metric("Trabajos Realizados", len(df_nomina))
+                met2.metric("Base (Mano de Obra Ajustada)", formato_cop(total_mo))
+                met3.metric(f"Total a Pagar ({porcentaje_pago}%)", formato_cop(total_comision))
+                
+                st.markdown("#### Detalle de Trabajos para el Recibo de Pago")
+                df_mostrar = df_nomina.copy()
+                df_mostrar.columns = ['N° Orden', 'Placa', 'Cliente / Empresa', 'Fecha de Ingreso', 'Descripción del Trabajo', 'Cobrado al Cliente ($)', 'Comisión del Técnico ($)']
+                
+                st.dataframe(df_mostrar.style.format({
+                    'Cobrado al Cliente ($)': lambda x: formato_cop(x),
+                    'Comisión del Técnico ($)': lambda x: formato_cop(x)
+                }), use_container_width=True, hide_index=True)
+                
+                csv = df_mostrar.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label=f"📥 Descargar Soporte de Pago - {mecanico_sel}",
+                    data=csv,
+                    file_name=f"Liquidacion_{mecanico_sel}.csv",
+                    mime="text/csv",
+                )
+            else:
+                st.info(f"No se encontraron trabajos de mano de obra para {mecanico_sel} en este periodo.")
