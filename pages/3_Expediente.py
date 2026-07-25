@@ -225,6 +225,44 @@ if orden_busqueda:
                     st.success(f"Total a cobrar al cliente: {formato_cop(gran_total)}")
                     
                     st.markdown("---")
+                    
+                    # ==========================================
+                    # VISTA PREVIA DE FACTURA / COTIZACIÓN OFICIAL
+                    # ==========================================
+                    with st.expander("📄 Ver Formato de Impresión / Cotización Oficial", expanded=False):
+                        with st.container(border=True):
+                            col_fac1, col_fac2 = st.columns(2)
+                            with col_fac1:
+                                st.markdown(f"### **{st.session_state.nombre_taller}**")
+                                st.caption("Comprobante de Servicio Autorizado")
+                            with col_fac2:
+                                st.markdown(f"**Orden N°:** #{hoja_id}")
+                                st.markdown(f"**Fecha:** {fecha}")
+                            
+                            st.markdown("---")
+                            st.markdown(f"**Cliente / Empresa:** {cliente}")
+                            st.markdown(f"**NIT / CC:** {nit} | **Placa del Vehículo:** `{placa}`")
+                            st.markdown(f"**Estado del Servicio:** {estado_actual}")
+                            
+                            st.markdown("---")
+                            st.markdown("#### Detalle de Conceptos")
+                            
+                            for index, row in df_trabajos.iterrows():
+                                c1, c2 = st.columns([3, 1])
+                                with c1:
+                                    st.write(f"• **{row['tipo_item']}**: {row['descripcion']}")
+                                    if row['tipo_item'] == 'Mano de Obra' and row['mecanico']:
+                                        st.caption(f"Técnico responsable: {row['mecanico']}")
+                                with c2:
+                                    st.write(f"**{formato_cop(row['precio_venta'])}**")
+                            
+                            st.markdown("---")
+                            st.markdown(f"### Total General: {formato_cop(gran_total)}")
+                            st.markdown("<br><p style='text-align: center; color: gray; font-size: 0.8rem;'>Gracias por confiar en nuestros servicios. Conserve este documento para reclamar su vehículo.</p>", unsafe_allow_html=True)
+                        
+                        st.info("💡 **Consejo:** Para entregar este recibo o cotización, presiona `Ctrl + P` (o `Cmd + P` en Mac) en tu navegador para guardarlo como PDF o imprimirlo directamente.")
+
+                    st.markdown("---")
                     st.markdown("#### Copiado Rápido de Ítems")
                     
                     for index, row in df_trabajos.iterrows():
