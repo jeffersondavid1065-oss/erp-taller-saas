@@ -5,13 +5,21 @@ from db import obtener_conexion
 st.set_page_config(page_title="Tablero de Control", layout="wide")
 
 # ==========================================
-# ESTILOS CSS
+# ESTILOS CSS CON MÁSCARA DERECHA Y ANIMACIÓN
 # ==========================================
 st.markdown("""
     <style>
-    /* Ocultar barra superior */
-    [data-testid="stHeader"] {
-        display: none !important;
+    /* Máscara sólida en la esquina superior derecha que bloquea botones y clics */
+    header::after {
+        content: "";
+        position: fixed !important;
+        top: 0 !important;
+        right: 0 !important;
+        width: 350px !important;
+        height: 60px !important;
+        background-color: #0e1117 !important;
+        z-index: 9999999 !important;
+        pointer-events: all !important;
     }
 
     /* Animación de entrada */
