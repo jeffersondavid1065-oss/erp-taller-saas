@@ -31,7 +31,7 @@ if not is_logged:
             background-color: transparent !important;
         }
 
-        /* EFECTO DE APARICIÓN SUAVE (ANIMACIÓN FADE-IN-UP) */
+        /* EFECTO DE APARICIÓN SUAVE */
         @keyframes fade-in-up {
             0% { opacity: 0; transform: translateY(20px); }
             100% { opacity: 1; transform: translateY(0); }
@@ -45,7 +45,7 @@ if not is_logged:
         </style>
     """, unsafe_allow_html=True)
 else:
-    # Cuando SÍ hay sesión, aseguramos que la barra lateral y su botón EXISTAN y se muestren bien
+    # Cuando SÍ hay sesión, mostramos la barra y empujamos la opción de Admin hacia abajo
     st.markdown("""
         <style>
         [data-testid="stSidebar"] {
@@ -62,7 +62,14 @@ else:
             background-color: transparent !important;
         }
 
-        /* EFECTO DE APARICIÓN SUAVE (ANIMACIÓN FADE-IN-UP) */
+        /* SEPARAR EL ÚLTIMO ITEM DEL MENÚ LATERAL (ADMIN) */
+        [data-testid="stSidebarNav"] ul li:last-child {
+            margin-top: 80px !important;
+            border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
+            padding-top: 12px !important;
+        }
+
+        /* EFECTO DE APARICIÓN SUAVE */
         @keyframes fade-in-up {
             0% { opacity: 0; transform: translateY(20px); }
             100% { opacity: 1; transform: translateY(0); }
