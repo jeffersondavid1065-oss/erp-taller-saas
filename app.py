@@ -4,7 +4,17 @@ from sqlalchemy import text
 from db import obtener_conexion
 import hashlib
 
-st.set_page_config(page_title="MyTaller", layout="wide")
+st.set_page_config(page_title="Sistema ERP", layout="wide")
+
+# Ocultar la barra lateral de navegacion si el usuario NO ha iniciado sesion
+if not st.session_state.get('user_logged', False):
+    st.markdown("""
+        <style>
+        [data-testid="stSidebar"] {
+            display: none;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 
 engine = obtener_conexion()
 
@@ -86,9 +96,7 @@ else:
     st.markdown(f"Resumen gerencial y contable para: **{st.session_state.get('nombre_taller', '')}**")
     st.markdown("---")
 
-    # Consultas para obtener indicadores contables y operativos en tiempo real
     with engine.connect() as conn:
-        # Valor total de trabajos activos (no facturados)
         q_valor_activos = text('''
             SELECT SUM(d.precio_venta) 
             FROM Detalles_Orden d
@@ -97,28 +105,24 @@ else:
         ''')
         total_activos = conn.execute(q_valor_activos, {"uid": user_id}).scalar() or 0.0
 
-        # Conteo de ordenes en estado Cotizar
         q_cotizar = text('''
             SELECT COUNT(*) FROM Hojas_Trabajo 
             WHERE usuario_id = :uid AND estado = 'Cotizar'
         ''')
         total_cotizar = conn.execute(q_cotizar, {"uid": user_id}).scalar() or 0
 
-        # Conteo de ordenes activas totales
         q_ordenes = text('''
             SELECT COUNT(*) FROM Hojas_Trabajo 
             WHERE usuario_id = :uid AND estado != 'Facturado'
         ''')
         total_ordenes_activas = conn.execute(q_ordenes, {"uid": user_id}).scalar() or 0
 
-        # Conteo de empresas/clientes registrados
         q_empresas = text('''
             SELECT COUNT(*) FROM Empresas_Clientes 
             WHERE usuario_id = :uid
         ''')
         total_empresas = conn.execute(q_empresas, {"uid": user_id}).scalar() or 0
 
-    # Bloque de metricas financieras y operativas
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Valor Trabajos Activos", formato_cop(total_activos))
     m2.metric("Ordenes por Cotizar", total_cotizar)
@@ -127,7 +131,6 @@ else:
 
     st.markdown("---")
     
-    # Seccion informativa rapida
     col_info1, col_info2 = st.columns(2)
     with col_info1:
         with st.container(border=True):
