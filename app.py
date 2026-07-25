@@ -14,52 +14,45 @@ st.set_page_config(
 
 is_logged = st.session_state.get('user_logged', False)
 
-# 2. ESTILOS CSS
-if not is_logged:
-    st.markdown("""
-        <style>
-        /* Ocultar la barra lateral en la pantalla de inicio de sesión */
-        [data-testid="stSidebar"] { display: none !important; }
-        [data-testid="stSidebarCollapsedControl"] { display: none !important; }
-        
-        /* Ocultar únicamente el menú derecho superior (Share, GitHub, Editar, Deploy) */
-        [data-testid="stStatusWidget"], .stAppDeployButton, #MainMenu, footer {
-            display: none !important;
-        }
+# 2. ESTILOS CSS DEFINITIVOS PARA OCULTAR LA BARRA SUPERIOR DERECHA
+st.markdown("""
+    <style>
+    /* Ocultar el menú superior derecho por completo (Share, Star, Edit, GitHub, Deploy, Status) */
+    [data-testid="stStatusWidget"],
+    [data-testid="stToolbar"],
+    [data-testid="stAppDeployButton"],
+    .stAppDeployButton,
+    #MainMenu,
+    footer,
+    header > div:nth-child(2) {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+    }
 
-        /* Animación suave de entrada */
-        @keyframes fade-in-up {
-            0% { opacity: 0; transform: translateY(20px); }
-            100% { opacity: 1; transform: translateY(0); }
-        }
-        [data-testid="stAppViewBlockContainer"] { animation: fade-in-up 0.6s ease-out; }
-        div[data-testid="stVerticalBlock"] > div { animation: fade-in-up 0.5s ease-out; }
-        </style>
-    """, unsafe_allow_html=True)
-else:
-    st.markdown("""
-        <style>
-        /* Ocultar únicamente el menú derecho superior (Share, GitHub, Editar, Deploy) */
-        [data-testid="stStatusWidget"], .stAppDeployButton, #MainMenu, footer {
-            display: none !important;
-        }
+    /* Ocultar la barra lateral cuando NO hay sesión */
+    """ + ("" if is_logged else """
+    [data-testid="stSidebar"] { display: none !important; }
+    [data-testid="stSidebarCollapsedControl"] { display: none !important; }
+    """) + """
 
-        /* Separar la opción de Admin en el menú lateral */
-        [data-testid="stSidebarNav"] ul li:last-child {
-            margin-top: 50px !important;
-            border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
-            padding-top: 10px !important;
-        }
+    /* Separar la opción de Admin en el menú lateral */
+    [data-testid="stSidebarNav"] ul li:last-child {
+        margin-top: 50px !important;
+        border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
+        padding-top: 10px !important;
+    }
 
-        /* Animación suave de entrada */
-        @keyframes fade-in-up {
-            0% { opacity: 0; transform: translateY(20px); }
-            100% { opacity: 1; transform: translateY(0); }
-        }
-        [data-testid="stAppViewBlockContainer"] { animation: fade-in-up 0.6s ease-out; }
-        div[data-testid="stVerticalBlock"] > div { animation: fade-in-up 0.5s ease-out; }
-        </style>
-    """, unsafe_allow_html=True)
+    /* Animación suave de entrada */
+    @keyframes fade-in-up {
+        0% { opacity: 0; transform: translateY(20px); }
+        100% { opacity: 1; transform: translateY(0); }
+    }
+    [data-testid="stAppViewBlockContainer"] { animation: fade-in-up 0.6s ease-out; }
+    div[data-testid="stVerticalBlock"] > div { animation: fade-in-up 0.5s ease-out; }
+    </style>
+""", unsafe_allow_html=True)
 
 engine = obtener_conexion()
 
