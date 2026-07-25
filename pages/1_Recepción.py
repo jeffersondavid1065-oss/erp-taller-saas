@@ -3,7 +3,7 @@ import pandas as pd
 from sqlalchemy import text
 from db import obtener_conexion
 
-st.set_page_config(page_title="Recepcion de Vehiculos", layout="wide")
+st.set_page_config(page_title="Recepción de Vehiculos", layout="wide")
 
 # Validacion de Seguridad
 if not st.session_state.get('user_logged', False):
