@@ -168,39 +168,31 @@ if orden_busqueda:
                     params={"hid": hoja_id}
                 )
             
-            tab_factura, tab_editar = st.tabs(["🧾 Ver, Cotizar y Copiar", "✏️ Editar Orden (Corregir / Agregar)"])
+            tab_factura, tab_editar = st.tabs(["🧾 Ver, Cotizar y Copiar Ítems", "✏️ Editar Orden (Corregir / Agregar)"])
             
             with tab_factura:
                 if not df_trabajos.empty:
-                    st.markdown("#### 📋 Detalle de Ítems (Copia rápida para cotizar)")
+                    # 1. Mantenemos la tabla limpia original que te gusta
+                    df_mostrar = df_trabajos[['tipo_item', 'descripcion', 'mecanico', 'precio_venta']].copy()
+                    df_mostrar.columns = ['Tipo', 'Descripción', 'Técnico', 'Cobro al Cliente']
+                    st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
                     
-                    # Recorremos cada ítem para mostrarlo en formato de tarjeta limpia con botón de copia
-                    for index, row in df_trabajos.iterrows():
-                        with st.container(border=True):
-                            c_info1, c_info2, c_info3, c_btn = st.columns([2, 4, 2, 1])
-                            with c_info1:
-                                st.caption(f"Tipo: **{row['tipo_item']}**")
-                            with c_info2:
-                                st.markdown(f"**{row['descripcion']}**")
-                            with c_info3:
-                                st.caption(f"Técnico: {row['mecanico'] or 'N/A'} | Venta: **${row['precio_venta']:,.0f}**")
-                            with c_btn:
-                                # Usamos un bloque de texto desplegable o de código para facilitar la copia con 1 clic
-                                pass
-                    
-                    # 🌟 Bloque interactivo para copiar descripciones en bloque o ver en código de texto fácil
-                    st.markdown("---")
-                    st.markdown("#### 📥 Bloque de Texto Rápido para Cotizar / Facturar")
-                    texto_copiable = ""
-                    for index, row in df_trabajos.iterrows():
-                        texto_copiable += f"{row['descripcion']}\n"
-                    
-                    st.code(texto_copiable, language="text")
-                    st.caption("💡 Haz clic en el icono de copiar en la esquina superior derecha del recuadro de arriba para copiar todas las descripciones de golpe al portapapeles.")
-
                     gran_total = df_trabajos['precio_venta'].sum()
                     st.success(f"**Total a cobrar al cliente:** ${gran_total:,.2f}")
                     
+                    # 2. 🌟 Sección de Copiado Rápido por Ítem Individual para Dataico
+                    st.markdown("---")
+                    st.markdown("#### 📋 Copiado Rápido Individual (Ideal para Dataico)")
+                    st.caption("💡 Haz clic en el botón de copiar en cada cajita para llevarte únicamente la descripción de ese ítem exacto.")
+                    
+                    for index, row in df_trabajos.iterrows():
+                        col_i1, col_i2 = st.columns([3, 1])
+                        with col_i1:
+                            st.text(f"[{row['tipo_item']}] - {row['descripcion']} (${row['precio_venta']:,.0f})")
+                        with col_i2:
+                            # Recuadro individual corto que trae el botón nativo de copia en la esquina superior derecha
+                            st.code(row['descripcion'], language="text")
+
                     if estado_actual == "Listo para facturar" or estado_actual == "Cotizar":
                         texto_factura = f"ORDEN DE SERVICIO: #{hoja_id}\nCLIENTE: {cliente}\nNIT: {nit}\nPLACA: {placa}\n\nSERVICIOS Y REPUESTOS:\n"
                         for index, row in df_trabajos.iterrows():
