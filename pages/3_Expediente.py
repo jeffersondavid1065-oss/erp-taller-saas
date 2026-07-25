@@ -4,6 +4,8 @@ import math
 from datetime import datetime, timedelta
 from sqlalchemy import text
 from db import obtener_conexion
+from io import BytesIO
+from fpdf import FPDF
 
 st.set_page_config(page_title="Expediente", layout="wide")
 
@@ -52,6 +54,66 @@ user_id = st.session_state.user_id
 
 def formato_cop(numero):
     return f"${numero:,.0f}".replace(",", ".")
+
+# ==========================================
+# FUNCIÓN PARA GENERAR EL PDF DE LA ORDEN
+# ==========================================
+def generar_pdf_orden(taller, hoja_id, fecha, cliente, nit, placa, estado, df_items, total):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    
+    # Encabezado
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.cell(0, 10, taller, ln=True, align="C")
+    
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 6, "Comprobante de Servicio Autorizado / Cotización", ln=True, align="C")
+    pdf.ln(5)
+    
+    # Datos de la Orden
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(100, 6, f"Orden N°: #{hoja_id}", ln=0)
+    pdf.cell(90, 6, f"Fecha: {fecha}", ln=1, align="R")
+    
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(100, 6, f"Cliente / Empresa: {cliente}", ln=0)
+    pdf.cell(90, 6, f"Placa: {placa}", ln=1, align="R")
+    
+    pdf.cell(100, 6, f"NIT / CC: {nit}", ln=0)
+    pdf.cell(90, 6, f"Estado: {estado}", ln=1, align="R")
+    
+    pdf.ln(5)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(5)
+    
+    # Tabla de Conceptos
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(140, 8, "Descripción del Concepto", 1)
+    pdf.cell(50, 8, "Valor Total", 1, ln=1, align="R")
+    
+    pdf.set_font("Helvetica", "", 10)
+    for index, row in df_items.iterrows():
+        desc = f"[{row['tipo_item']}] {row['descripcion']}"
+        if row['tipo_item'] == 'Mano de Obra' and pd.notna(row['mecanico']) and row['mecanico'] != '':
+            desc += f" (Tec: {row['mecanico']})"
+            
+        pdf.cell(140, 8, desc[:75], 1)
+        pdf.cell(50, 8, f"${row['precio_venta']:,.0f}".replace(",", "."), 1, ln=1, align="R")
+        
+    pdf.ln(5)
+    
+    # Total General
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(140, 10, "TOTAL GENERAL A PAGAR:", 0, align="R")
+    pdf.cell(50, 10, f"${total:,.0f}".replace(",", "."), 0, ln=1, align="R")
+    
+    pdf.ln(15)
+    pdf.set_font("Helvetica", "I", 9)
+    pdf.cell(0, 6, "Gracias por confiar en nuestros servicios. Conserve este documento para reclamar su vehículo.", ln=True, align="C")
+    
+    # Retornar los bytes del PDF para que Streamlit cree el botón de descarga
+    return bytes(pdf.output())
 
 st.title("Expediente de Orden y Facturación")
 st.markdown(f"Gestión de órdenes para: **{st.session_state.nombre_taller}**")
@@ -152,7 +214,6 @@ if len(fechas_filtro) == 2:
         
         offset = (pagina_actual - 1) * REGISTROS_POR_PAGINA
         
-        # Ensamblamos la consulta sumando el GROUP BY para consolidar los montos
         sql_final_list = sql_list_select + " " + " ".join(sql_conditions) + " GROUP BY h.id, h.fecha_ingreso, h.placa, e.razon_social, h.estado ORDER BY h.id DESC LIMIT :limit OFFSET :offset"
         params_exp["limit"] = REGISTROS_POR_PAGINA
         params_exp["offset"] = offset
@@ -160,7 +221,6 @@ if len(fechas_filtro) == 2:
         with engine.connect() as conn:
             df_lista = pd.read_sql_query(text(sql_final_list), con=conn, params=params_exp)
             
-        # Formatear la columna de total a moneda
         df_lista['Total'] = df_lista['Total'].apply(formato_cop)
         
         st.dataframe(df_lista, use_container_width=True, hide_index=True)
@@ -227,40 +287,29 @@ if orden_busqueda:
                     st.markdown("---")
                     
                     # ==========================================
-                    # VISTA PREVIA DE FACTURA / COTIZACIÓN OFICIAL
+                    # BOTÓN DE DESCARGA DIRECTA EN PDF
                     # ==========================================
-                    with st.expander("📄 Ver Formato de Impresión / Cotización Oficial", expanded=False):
-                        with st.container(border=True):
-                            col_fac1, col_fac2 = st.columns(2)
-                            with col_fac1:
-                                st.markdown(f"### **{st.session_state.nombre_taller}**")
-                                st.caption("Comprobante de Servicio Autorizado")
-                            with col_fac2:
-                                st.markdown(f"**Orden N°:** #{hoja_id}")
-                                st.markdown(f"**Fecha:** {fecha}")
-                            
-                            st.markdown("---")
-                            st.markdown(f"**Cliente / Empresa:** {cliente}")
-                            st.markdown(f"**NIT / CC:** {nit} | **Placa del Vehículo:** `{placa}`")
-                            st.markdown(f"**Estado del Servicio:** {estado_actual}")
-                            
-                            st.markdown("---")
-                            st.markdown("#### Detalle de Conceptos")
-                            
-                            for index, row in df_trabajos.iterrows():
-                                c1, c2 = st.columns([3, 1])
-                                with c1:
-                                    st.write(f"• **{row['tipo_item']}**: {row['descripcion']}")
-                                    if row['tipo_item'] == 'Mano de Obra' and row['mecanico']:
-                                        st.caption(f"Técnico responsable: {row['mecanico']}")
-                                with c2:
-                                    st.write(f"**{formato_cop(row['precio_venta'])}**")
-                            
-                            st.markdown("---")
-                            st.markdown(f"### Total General: {formato_cop(gran_total)}")
-                            st.markdown("<br><p style='text-align: center; color: gray; font-size: 0.8rem;'>Gracias por confiar en nuestros servicios. Conserve este documento para reclamar su vehículo.</p>", unsafe_allow_html=True)
-                        
-                        st.info("💡 **Consejo:** Para entregar este recibo o cotización, presiona `Ctrl + P` (o `Cmd + P` en Mac) en tu navegador para guardarlo como PDF o imprimirlo directamente.")
+                    st.markdown("#### Exportar Documento")
+                    pdf_bytes = generar_pdf_orden(
+                        taller=st.session_state.nombre_taller,
+                        hoja_id=hoja_id,
+                        fecha=fecha,
+                        cliente=cliente,
+                        nit=nit,
+                        placa=placa,
+                        estado=estado_actual,
+                        df_items=df_trabajos,
+                        total=gran_total
+                    )
+                    
+                    st.download_button(
+                        label="📥 Descargar Factura / Cotización en PDF",
+                        data=pdf_bytes,
+                        file_name=f"Orden_{hoja_id}_Placa_{placa}.pdf",
+                        mime="application/pdf",
+                        type="primary",
+                        use_container_width=True
+                    )
 
                     st.markdown("---")
                     st.markdown("#### Copiado Rápido de Ítems")
@@ -391,7 +440,7 @@ if orden_busqueda:
                                     with engine.begin() as conn_rep:
                                         conn_rep.execute(
                                             text('''
-                                                INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, costo_compra, precio_venta)
+                                                INSERT INTO Detalles_Orden (hoja_id, tipo_id, descripcion, costo_compra, precio_venta)
                                                 VALUES (:hid, 'Repuesto', :desc, :costo, :pvp)
                                             '''),
                                             {"hid": hoja_id, "desc": desc_rep, "costo": float(costo_rep), "pvp": float(venta_rep)}
