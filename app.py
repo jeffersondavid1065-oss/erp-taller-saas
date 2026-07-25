@@ -5,55 +5,39 @@ from db import obtener_conexion
 import hashlib
 from datetime import date
 
-st.set_page_config(page_title="MyTaller", layout="wide")
+# 1. CONFIGURACIÓN DE PÁGINA (Control nativo del Sidebar)
+st.set_page_config(
+    page_title="MyTaller", 
+    layout="wide",
+    initial_sidebar_state="expanded" if st.session_state.get('user_logged', False) else "collapsed"
+)
 
-# 1. ANIMACION DE ENTRADA Y CONTROL DINÁMICO DE LA BARRA LATERAL
-if not st.session_state.get('user_logged', False):
-    st.markdown("""
-        <style>
-        [data-testid="stHeader"] {
-            display: none !important;
-        }
-        [data-testid="stSidebar"] {
-            display: none !important;
-        }
-        @keyframes fade-in-up {
-            0% { opacity: 0; transform: translateY(20px); }
-            100% { opacity: 1; transform: translateY(0); }
-        }
-        [data-testid="stAppViewBlockContainer"] {
-            animation: fade-in-up 0.6s ease-out;
-        }
-        div[data-testid="stVerticalBlock"] > div {
-            animation: fade-in-up 0.5s ease-out;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-else:
-    st.markdown("""
-        <style>
-        /* Ocultar solo el menú derecho (3 puntos y deploy) para no borrar la flecha de colapsar */
-        [data-testid="stToolbar"], #MainMenu {
-            display: none !important;
-        }
-        /* Hacemos transparente el fondo de la cabecera para que se vea limpio */
-        [data-testid="stHeader"] {
-            background-color: transparent !important;
-        }
-        
-        @keyframes fade-in-up {
-            0% { opacity: 0; transform: translateY(20px); }
-            100% { opacity: 1; transform: translateY(0); }
-        }
-        [data-testid="stAppViewBlockContainer"] {
-            animation: fade-in-up 0.6s ease-out;
-        }
-        div[data-testid="stVerticalBlock"] > div {
-            animation: fade-in-up 0.5s ease-out;
-        }
-        </style>
-    """, unsafe_allow_html=True)
- 
+# 2. ESTILOS GLOBALES E INTERFAZ
+st.markdown("""
+    <style>
+    /* Ocultar únicamente el menú superior derecho y el botón de Deploy */
+    [data-testid="stToolbar"], #MainMenu {
+        display: none !important;
+    }
+    
+    /* Fondo transparente de la cabecera para mantener visible la flecha de colapso */
+    [data-testid="stHeader"] {
+        background-color: transparent !important;
+    }
+    
+    @keyframes fade-in-up {
+        0% { opacity: 0; transform: translateY(20px); }
+        100% { opacity: 1; transform: translateY(0); }
+    }
+    [data-testid="stAppViewBlockContainer"] {
+        animation: fade-in-up 0.6s ease-out;
+    }
+    div[data-testid="stVerticalBlock"] > div {
+        animation: fade-in-up 0.5s ease-out;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 engine = obtener_conexion()
 
 if 'user_logged' not in st.session_state:
@@ -105,7 +89,7 @@ if not st.session_state.user_logged:
                         else:
                             st.error("Credenciales incorrectas.")
                     except Exception as e:
-                        st.error(f"Error de base de datos. Si dice 'ProgrammingError', usa el botón de arreglo de abajo. Detalle: {e}")
+                        st.error(f"Error de base de datos: {e}")
                 else:
                     st.warning("Completa todos los campos.")
         
@@ -141,9 +125,8 @@ if not st.session_state.user_logged:
                         except Exception as e:
                             st.error(f"Error al registrar: {e}")
                     else:
-                        st.warning("Completa todos los campos")
-            
-       
+                        st.warning("Completa todos los campos.")
+
 else:
     user_id = st.session_state.user_id
     
