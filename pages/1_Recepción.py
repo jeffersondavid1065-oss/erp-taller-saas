@@ -6,7 +6,7 @@ from db import obtener_conexion
 st.set_page_config(page_title="Recepción de Vehículos", layout="wide")
 st.markdown("""
     <style>
-    /* Ocultar SOLO el icono de GitHub y opciones de Deploy, dejando el menú para el modo oscuro */
+    /* Ocultar SOLO el icono de GitHub y opciones de Deploy */
     [data-testid="stToolbar"] {
         display: none !important;
     }
@@ -14,24 +14,15 @@ st.markdown("""
         display: none !important;
     }
 
-    /* Definir la animacion */
     @keyframes fade-in-up {
-        0% { 
-            opacity: 0; 
-            transform: translateY(20px); 
-        }
-        100% { 
-            opacity: 1; 
-            transform: translateY(0); 
-        }
+        0% { opacity: 0; transform: translateY(20px); }
+        100% { opacity: 1; transform: translateY(0); }
     }
     
-    /* Aplicar la animacion al contenedor principal de la aplicacion */
     [data-testid="stAppViewBlockContainer"] {
         animation: fade-in-up 0.6s ease-out;
     }
     
-    /* Opcional: Aplicar animacion en cascada a las tarjetas y contenedores */
     div[data-testid="stVerticalBlock"] > div {
         animation: fade-in-up 0.5s ease-out;
     }
@@ -101,12 +92,12 @@ with tab1:
             desc_mo = st.text_input("Descripción del trabajo realizado", key="desc_mo")
             mecanico_sel = st.selectbox("Mecánico responsable", options=opciones_mecanicos, key="mec_mo")
         with col_mo2:
-            venta_mo = st.number_input("Cobro al Cliente", min_value=0, step=5000, key="venta_mo")
+            venta_mo = st.number_input("Cobro al Cliente ($0 si está pendiente)", min_value=0, step=5000, key="venta_mo")
             st.caption(f"Valor a cobrar: {formato_cop(venta_mo)}")
             
             st.markdown("")
             if st.button("Agregar Trabajo", use_container_width=True):
-                if desc_mo and venta_mo > 0 and mecanico_sel != "-- Seleccionar Mecánico --":
+                if desc_mo and mecanico_sel != "-- Seleccionar Mecánico --":
                     st.session_state.carrito_items.append({
                         'Tipo': 'Mano de Obra', 'Descripción': desc_mo, 
                         'Mecánico': mecanico_sel, 'Mecánico_ID': dict_mecanicos[mecanico_sel],
@@ -114,7 +105,7 @@ with tab1:
                     })
                     st.rerun()
                 else:
-                    st.error("Completa la descripción, el precio y selecciona un mecánico.")
+                    st.error("Completa la descripción y selecciona un mecánico.")
 
 with tab2:
     with st.container(border=True):
@@ -125,12 +116,12 @@ with tab2:
             costo_rep = st.number_input("Costo Compra", min_value=0, step=1000, key="costo_rep")
             st.caption(f"Costo: {formato_cop(costo_rep)}")
         with col_rep3:
-            venta_rep = st.number_input("Precio Venta", min_value=0, step=1000, key="venta_rep")
+            venta_rep = st.number_input("Precio Venta ($0 si está pendiente)", min_value=0, step=1000, key="venta_rep")
             st.caption(f"Venta: {formato_cop(venta_rep)}")
             
         st.markdown("")
         if st.button("Agregar Repuesto", use_container_width=True):
-            if desc_rep and venta_rep > 0:
+            if desc_rep:
                 st.session_state.carrito_items.append({
                     'Tipo': 'Repuesto', 'Descripción': desc_rep, 
                     'Mecánico': '-', 'Mecánico_ID': None,
@@ -138,7 +129,7 @@ with tab2:
                 })
                 st.rerun()
             else:
-                st.error("Completa la descripción y el precio de venta.")
+                st.error("Completa la descripción del repuesto.")
 
 st.markdown("---")
 
@@ -156,7 +147,10 @@ if st.session_state.carrito_items:
                 else:
                     st.caption(f"Costo: {formato_cop(item['Costo'])}")
             with col_res3:
-                st.markdown(f"**Cobro: {formato_cop(item['PVP Cliente'])}**")
+                if item['PVP Cliente'] == 0:
+                    st.markdown("⚠️ **Por Cotizar ($0)**")
+                else:
+                    st.markdown(f"**Cobro: {formato_cop(item['PVP Cliente'])}**")
             with col_res4:
                 if st.button("Quitar", key=f"borrar_{i}", use_container_width=True):
                     st.session_state.carrito_items.pop(i)
@@ -167,7 +161,7 @@ if st.session_state.carrito_items:
     
     col_tot1, col_tot2 = st.columns([2, 1])
     with col_tot1:
-        st.success(f"Total a cobrar al cliente: {formato_cop(total_cobro)}")
+        st.success(f"Total actual a cobrar al cliente: {formato_cop(total_cobro)}")
     with col_tot2:
         if st.button("Guardar Orden Completa", type="primary", use_container_width=True):
             if not placa:
