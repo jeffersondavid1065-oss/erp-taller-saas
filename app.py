@@ -8,91 +8,47 @@ from datetime import date
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(
     page_title="MyTaller", 
-    layout="wide",
-    initial_sidebar_state="expanded" if st.session_state.get('user_logged', False) else "collapsed"
+    layout="wide"
 )
 
-# Control de visibilidad del Sidebar según la sesión
 is_logged = st.session_state.get('user_logged', False)
 
+# 2. ESTILOS Y ANIMACIÓN FADE-IN
 if not is_logged:
-    # Ocultar barra lateral en pantalla de Login
     st.markdown("""
         <style>
-        [data-testid="stSidebar"] {
-            display: none !important;
-        }
-        [data-testid="stSidebarCollapsedControl"] {
-            display: none !important;
-        }
-        [data-testid="stToolbar"], #MainMenu, footer {
-            visibility: hidden !important;
-        }
-        [data-testid="stHeader"] {
-            background-color: transparent !important;
-        }
+        [data-testid="stSidebar"] { display: none !important; }
+        [data-testid="stSidebarCollapsedControl"] { display: none !important; }
+        [data-testid="stToolbar"], #MainMenu, footer { visibility: hidden !important; }
+        [data-testid="stHeader"] { background-color: transparent !important; }
 
-        /* EFECTO FADE-IN-UP */
         @keyframes fade-in-up {
             0% { opacity: 0; transform: translateY(20px); }
             100% { opacity: 1; transform: translateY(0); }
         }
-        [data-testid="stAppViewBlockContainer"] {
-            animation: fade-in-up 0.6s ease-out;
-        }
-        div[data-testid="stVerticalBlock"] > div {
-            animation: fade-in-up 0.5s ease-out;
-        }
+        [data-testid="stAppViewBlockContainer"] { animation: fade-in-up 0.6s ease-out; }
+        div[data-testid="stVerticalBlock"] > div { animation: fade-in-up 0.5s ease-out; }
         </style>
     """, unsafe_allow_html=True)
 else:
-    # Cuando SÍ hay sesión, forzamos que el botón flotante exista y sea táctil siempre
     st.markdown("""
         <style>
-        /* Ocultar barra superior nativa (tres puntos/deploy) */
-        [data-testid="stToolbar"], #MainMenu, footer {
-            visibility: hidden !important;
-            height: 0px !important;
-        }
-        
-        /* Transparentar cabecera para liberar espacio */
-        [data-testid="stHeader"] {
-            background-color: transparent !important;
-        }
+        [data-testid="stToolbar"], #MainMenu, footer { visibility: hidden !important; }
+        [data-testid="stHeader"] { background-color: transparent !important; }
 
-        /* BOTÓN FLOTANTE PERMANENTE PARA ABRIR EL MENU (MÓVIL Y ESCRITORIO) */
-        [data-testid="stSidebarCollapsedControl"] {
-            display: flex !important;
-            visibility: visible !important;
-            position: fixed !important;
-            top: 10px !important;
-            left: 10px !important;
-            z-index: 999999 !important;
-            background-color: #1e1e24 !important;
-            border: 1px solid rgba(255, 255, 255, 0.2) !important;
-            border-radius: 8px !important;
-            padding: 4px !important;
-            opacity: 1 !important;
-        }
-
-        /* SEPARAR EL ÚLTIMO ITEM DEL MENÚ LATERAL (ADMIN) */
+        /* Separar Admin en el Sidebar */
         [data-testid="stSidebarNav"] ul li:last-child {
-            margin-top: 60px !important;
+            margin-top: 50px !important;
             border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
-            padding-top: 12px !important;
+            padding-top: 10px !important;
         }
 
-        /* EFECTO FADE-IN-UP */
         @keyframes fade-in-up {
             0% { opacity: 0; transform: translateY(20px); }
             100% { opacity: 1; transform: translateY(0); }
         }
-        [data-testid="stAppViewBlockContainer"] {
-            animation: fade-in-up 0.6s ease-out;
-        }
-        div[data-testid="stVerticalBlock"] > div {
-            animation: fade-in-up 0.5s ease-out;
-        }
+        [data-testid="stAppViewBlockContainer"] { animation: fade-in-up 0.6s ease-out; }
+        div[data-testid="stVerticalBlock"] > div { animation: fade-in-up 0.5s ease-out; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -104,8 +60,9 @@ if 'user_logged' not in st.session_state:
 def formato_cop(numero):
     return f"${numero:,.0f}".replace(",", ".")
 
+# 3. PANTALLAS
 if not st.session_state.user_logged:
-    # Pantalla de Inicio de Sesión
+    # Login
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
@@ -187,7 +144,10 @@ if not st.session_state.user_logged:
                         st.warning("Completa todos los campos.")
 
 else:
-    # Panel Principal del Taller
+    # BOTÓN DE RESPALDO PARA MÓVILES (Despliega el menú si se oculta)
+    with st.sidebar:
+        st.markdown("### Menú del Taller")
+
     user_id = st.session_state.user_id
     
     st.title("Panel Principal")
