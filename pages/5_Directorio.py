@@ -70,7 +70,7 @@ with tab_empresas:
     st.markdown("---")
     
     # ==========================================
-    # BUSCADOR DINÁMICO Y TARJETA DE EDICIÓN
+    # BUSCADOR DINÁMICO, EDICIÓN Y ELIMINACIÓN DE EMPRESAS
     # ==========================================
     st.subheader("🔍 Buscador y Gestión de Clientes / Empresas")
     
@@ -82,7 +82,6 @@ with tab_empresas:
         )
 
     if not empresas_df.empty:
-        # Creamos la casilla de búsqueda inteligente (puedes escribir o seleccionar)
         dict_empresas = {f"{row['razon_social']} (NIT/CC: {row['nit']})": row['id'] for index, row in empresas_df.iterrows()}
         
         empresa_seleccionada_str = st.selectbox(
@@ -91,30 +90,53 @@ with tab_empresas:
             help="Empieza a escribir el nombre para filtrar automáticamente."
         )
         
-        # Obtenemos el ID de la empresa seleccionada en la casilla
         empresa_id_activo = dict_empresas[empresa_seleccionada_str]
-        
-        # Filtramos los datos exactos de esa empresa
         empresa_info = empresas_df[empresas_df['id'] == empresa_id_activo].iloc[0]
         
-        # Mostramos la tarjeta desplegada de la empresa
+        # Tarjeta desplegada con opciones de Editar y Eliminar
         with st.container(border=True):
-            col_card1, col_card2, col_card_btn = st.columns([3, 3, 1])
+            col_card1, col_card2, col_card_btn1, col_card_btn2 = st.columns([3, 2, 1, 1])
             with col_card1:
                 st.markdown(f"### 🏢 {empresa_info['razon_social']}")
                 st.caption(f"**NIT / Cédula:** {empresa_info['nit']}")
             with col_card2:
-                st.markdown(f"**📞 Teléfono:** {empresa_info['telefono'] or 'No registrado'}")
-                st.markdown(f"**✉️ Correo:** {empresa_info['email'] or 'No registrado'}")
-            with col_card_btn:
+                st.markdown(f"**📞 Tel:** {empresa_info['telefono'] or 'No registrado'}")
+                st.markdown(f"**✉️ Email:** {empresa_info['email'] or 'No registrado'}")
+            with col_card_btn1:
                 st.markdown("<br>", unsafe_allow_html=True)
-                editar_toggle = st.button("✏️ Editar", key=f"btn_edit_{empresa_info['id']}")
+                if st.button("✏️ Editar", key=f"btn_edit_{empresa_info['id']}"):
+                    st.session_state[f"edit_emp_mode_{empresa_info['id']}"] = True
+                    st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = False
+            with col_card_btn2:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("🗑️ Eliminar", key=f"btn_del_emp_{empresa_info['id']}"):
+                    st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = True
+                    st.session_state[f"edit_emp_mode_{empresa_info['id']}"] = False
 
-            # Si hace clic en editar, despliega el formulario de actualización limpio
-            if editar_toggle:
-                st.session_state[f"edit_mode_{empresa_info['id']}"] = True
+            # Confirmación de eliminación
+            if st.session_state.get(f"delete_emp_confirm_{empresa_info['id']}", False):
+                st.warning(f"⚠️ ¿Estás seguro de eliminar a **{empresa_info['razon_social']}**? Esta acción no se puede deshacer si tiene registros.")
+                col_conf1, col_conf2 = st.columns(2)
+                with col_conf1:
+                    if st.button("Sí, eliminar definitivamente", key=f"yes_del_emp_{empresa_info['id']}", type="primary"):
+                        try:
+                            with engine.begin() as conn_del:
+                                conn_del.execute(
+                                    text("DELETE FROM Empresas_Clientes WHERE id = :id AND usuario_id = :uid"),
+                                    {"id": empresa_info['id'], "uid": user_id}
+                                )
+                            st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = False
+                            st.success("✅ Empresa eliminada con éxito.")
+                            st.rerun()
+                        except Exception:
+                            st.error("⚠️ No se puede eliminar esta empresa porque tiene órdenes de trabajo o vehículos asociados en el historial.")
+                with col_conf2:
+                    if st.button("Cancelar", key=f"no_del_emp_{empresa_info['id']}"):
+                        st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = False
+                        st.rerun()
 
-            if st.session_state.get(f"edit_mode_{empresa_info['id']}", False):
+            # Formulario de edición
+            if st.session_state.get(f"edit_emp_mode_{empresa_info['id']}", False):
                 st.markdown("---")
                 with st.form(key=f"form_update_emp_{empresa_info['id']}"):
                     st.markdown(f"#### Actualizar datos de: {empresa_info['razon_social']}")
@@ -147,13 +169,13 @@ with tab_empresas:
                                         "uid": user_id
                                     }
                                 )
-                            st.session_state[f"edit_mode_{empresa_info['id']}"] = False
+                            st.session_state[f"edit_emp_mode_{empresa_info['id']}"] = False
                             st.success("✅ ¡Empresa actualizada con éxito!")
                             st.rerun()
                         except Exception as e:
                             st.error(f"❌ Error al actualizar: {e}")
                     if cancelar_emp:
-                        st.session_state[f"edit_mode_{empresa_info['id']}"] = False
+                        st.session_state[f"edit_emp_mode_{empresa_info['id']}"] = False
                         st.rerun()
 
         st.markdown("---")
