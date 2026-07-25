@@ -10,13 +10,21 @@ from fpdf import FPDF
 st.set_page_config(page_title="Expediente", layout="wide")
 
 # ==========================================
-# ESTILOS CSS: OCULTAR BARRA, ANIMACIONES Y DISEÑO
+# ESTILOS CSS: MÁSCARA DERECHA, ANIMACIONES Y DISEÑO
 # ==========================================
 st.markdown("""
     <style>
-    /* Ocultar toda la esquina superior derecha (Fork, GitHub, Menu) */
-    [data-testid="stHeader"] {
-        display: none !important;
+    /* Máscara sólida en la esquina superior derecha que bloquea botones y clics */
+    header::after {
+        content: "";
+        position: fixed !important;
+        top: 0 !important;
+        right: 0 !important;
+        width: 350px !important;
+        height: 60px !important;
+        background-color: #0e1117 !important;
+        z-index: 9999999 !important;
+        pointer-events: all !important;
     }
 
     /* Animación de entrada */
@@ -112,7 +120,6 @@ def generar_pdf_orden(taller, hoja_id, fecha, cliente, nit, placa, estado, df_it
     pdf.set_font("Helvetica", "I", 9)
     pdf.cell(0, 6, "Gracias por confiar en nuestros servicios. Conserve este documento para reclamar su vehículo.", ln=True, align="C")
     
-    # Retornar los bytes del PDF para que Streamlit cree el botón de descarga
     return bytes(pdf.output())
 
 st.title("Expediente de Orden y Facturación")
@@ -303,7 +310,7 @@ if orden_busqueda:
                     )
                     
                     st.download_button(
-                        label="📥 Descargar Factura / Cotización en PDF",
+                        label="Descargar Factura / Cotización en PDF",
                         data=pdf_bytes,
                         file_name=f"Orden_{hoja_id}_Placa_{placa}.pdf",
                         mime="application/pdf",
@@ -440,7 +447,7 @@ if orden_busqueda:
                                     with engine.begin() as conn_rep:
                                         conn_rep.execute(
                                             text('''
-                                                INSERT INTO Detalles_Orden (hoja_id, tipo_id, descripcion, costo_compra, precio_venta)
+                                                INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, costo_compra, precio_venta)
                                                 VALUES (:hid, 'Repuesto', :desc, :costo, :pvp)
                                             '''),
                                             {"hid": hoja_id, "desc": desc_rep, "costo": float(costo_rep), "pvp": float(venta_rep)}
