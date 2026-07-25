@@ -141,18 +141,19 @@ if not st.session_state.user_logged:
                         st.warning("Completa todos los campos.")
         
         # ==========================================
-        # BOTÓN REPARADOR TEMPORAL
+        # BOTÓN REPARADOR TEMPORAL (AUTO-ACTIVACIÓN)
         # ==========================================
         st.markdown("<hr>", unsafe_allow_html=True)
-        if st.button("🔧 Arreglar Base de Datos (Admin)", use_container_width=True):
+        if st.button("👑 Activar mi cuenta de Admin", use_container_width=True):
             try:
                 with engine.begin() as conn:
-                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS codigo_verificacion TEXT;"))
-                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS activo BOOLEAN DEFAULT FALSE;"))
-                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS fecha_pago_limite DATE;"))
-                st.success("✅ ¡Columnas inyectadas con éxito! Intenta iniciar sesión de nuevo arriba.")
+                    # Le damos suscripción hasta el año 2036 a tu cuenta administradora
+                    conn.execute(
+                        text("UPDATE Usuarios SET fecha_pago_limite = '2036-12-31' WHERE email = 'jefferson.david1065@gmail.com'")
+                    )
+                st.success("✅ ¡Tu cuenta de administrador ha sido activada con éxito! Dale al botón rojo de 'Ingresar' arriba.")
             except Exception as e:
-                st.error(f"Error inyectando columnas: {e}")
+                st.error(f"Error activando cuenta: {e}")
 
 else:
     user_id = st.session_state.user_id
