@@ -89,6 +89,32 @@ def init_db():
                     precio_venta REAL NOT NULL DEFAULT 0
                 )
             '''))
+            # ==========================================
+            # NUEVAS TABLAS PARA EL MÓDULO DE ACEITES (SQLITE)
+            # ==========================================
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS Vehiculos_Flota (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    usuario_id INTEGER NOT NULL,
+                    empresa_id INTEGER NOT NULL,
+                    placa TEXT NOT NULL,
+                    modelo_vehiculo TEXT,
+                    fecha_ultimo_servicio DATE,
+                    fecha_proximo_servicio DATE,
+                    kilometraje_actual INTEGER DEFAULT 0,
+                    intervalo_meses INTEGER DEFAULT 3
+                )
+            '''))
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS Recetas_Vehiculo (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    vehiculo_id INTEGER NOT NULL,
+                    inventario_id INTEGER NOT NULL,
+                    cantidad INTEGER DEFAULT 1,
+                    FOREIGN KEY (vehiculo_id) REFERENCES Vehiculos_Flota(id) ON DELETE CASCADE,
+                    FOREIGN KEY (inventario_id) REFERENCES Inventario(id) ON DELETE CASCADE
+                )
+            '''))
         else:
             conn.execute(text('''
                 CREATE TABLE IF NOT EXISTS Usuarios (
@@ -156,5 +182,33 @@ def init_db():
                     costo_compra NUMERIC(12, 2) NOT NULL DEFAULT 0,
                     precio_venta NUMERIC(12, 2) NOT NULL DEFAULT 0,
                     FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE
+                )
+            '''))
+            # ==========================================
+            # NUEVAS TABLAS PARA EL MÓDULO DE ACEITES (POSTGRESQL)
+            # ==========================================
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS Vehiculos_Flota (
+                    id SERIAL PRIMARY KEY,
+                    usuario_id INTEGER NOT NULL,
+                    empresa_id INTEGER NOT NULL,
+                    placa VARCHAR(50) NOT NULL,
+                    modelo_vehiculo VARCHAR(255),
+                    fecha_ultimo_servicio DATE,
+                    fecha_proximo_servicio DATE,
+                    kilometraje_actual INTEGER DEFAULT 0,
+                    intervalo_meses INTEGER DEFAULT 3,
+                    FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE,
+                    FOREIGN KEY (empresa_id) REFERENCES Empresas_Clientes(id) ON DELETE CASCADE
+                )
+            '''))
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS Recetas_Vehiculo (
+                    id SERIAL PRIMARY KEY,
+                    vehiculo_id INTEGER NOT NULL,
+                    inventario_id INTEGER NOT NULL,
+                    cantidad INTEGER DEFAULT 1,
+                    FOREIGN KEY (vehiculo_id) REFERENCES Vehiculos_Flota(id) ON DELETE CASCADE,
+                    FOREIGN KEY (inventario_id) REFERENCES Inventario(id) ON DELETE CASCADE
                 )
             '''))
