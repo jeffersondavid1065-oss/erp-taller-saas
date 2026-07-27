@@ -6,6 +6,7 @@ from db import obtener_conexion
 
 st.set_page_config(page_title="Control de Aceites y Flotas", layout="wide")
 
+# Animaciones y estilos
 st.markdown("""
     <style>
     header::after {
@@ -30,7 +31,7 @@ engine = obtener_conexion()
 user_id = st.session_state.user_id
 
 def formato_cop(numero):
-    return f"${numero:,.0f}".replace(",", ".")
+    return f"${float(numero):,.0f}".replace(",", ".")
 
 st.title("Control de Cambios de Aceite y Flotas")
 st.markdown(f"Mantenimiento preventivo e insumos para: **{st.session_state.nombre_taller}**")
@@ -199,13 +200,13 @@ with tab_flota:
                                 if is_sqlite:
                                     cur = conn_r.execute(
                                         text("INSERT INTO Inventario (usuario_id, nombre_producto, costo_compra, precio_venta, stock_actual) VALUES (:uid, :nom, :costo, :pvp, 0)"),
-                                        {"uid": user_id, "nom": item_desc, "costo": costo_compra, "pvp": precio_venta}
+                                        {"uid": user_id, "nom": item_desc, "costo": float(costo_compra), "pvp": float(precio_venta)}
                                     )
                                     nuevo_inv_id = cur.lastrowid
                                 else:
                                     res = conn_r.execute(
                                         text("INSERT INTO Inventario (usuario_id, nombre_producto, costo_compra, precio_venta, stock_actual) VALUES (:uid, :nom, :costo, :pvp, 0) RETURNING id"),
-                                        {"uid": user_id, "nom": item_desc, "costo": costo_compra, "pvp": precio_venta}
+                                        {"uid": user_id, "nom": item_desc, "costo": float(costo_compra), "pvp": float(precio_venta)}
                                     )
                                     nuevo_inv_id = res.scalar()
                                 
@@ -240,10 +241,13 @@ with tab_flota:
             if recetas_actuales:
                 dict_mec = {m[1]: m[0] for m in mecanicos} if mecanicos else {}
                 
-                total_insumos = sum([r[3] * r[2] for r in recetas_actuales])
+                # Conversión explícita a float/int para evitar bloqueos con Decimal de Postgres
+                total_insumos = sum([float(r[3]) * int(r[2]) for r in recetas_actuales])
+                
                 st.write("**Insumos a Despachar:**")
                 for r in recetas_actuales:
-                    st.write(f"- {r[1]} (x{r[2]}) - {formato_cop(r[3] * r[2])}")
+                    subtotal_item = float(r[3]) * int(r[2])
+                    st.write(f"- {r[1]} (x{r[2]}) - {formato_cop(subtotal_item)}")
                 
                 st.markdown("---")
                 col_d1, col_d2 = st.columns(2)
@@ -254,7 +258,8 @@ with tab_flota:
 
                 nuevo_km = st.number_input("Kilometraje de Ingreso", min_value=int(veh_info[7] or 0), value=int(veh_info[7] or 0) + 5000, step=500)
                 
-                st.markdown(f"### Total Orden: {formato_cop(total_insumos + valor_mo)}")
+                gran_total = float(total_insumos) + float(valor_mo)
+                st.markdown(f"### Total Orden: {formato_cop(gran_total)}")
 
                 if st.button("Ejecutar y Crear Orden", type="primary", use_container_width=True):
                     if not mec_sel:
@@ -274,13 +279,12 @@ with tab_flota:
 
                                 # 2. Registrar Repuestos y Descontar Inventario
                                 for r in recetas_actuales:
-                                    # Insertar detalle orden
+                                    pvp_item = float(r[3]) * int(r[2])
                                     conn_gen.execute(
                                         text("INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, precio_venta) VALUES (:hid, 'Repuesto', :desc, :pvp)"),
-                                        {"hid": nueva_hoja_id, "desc": f"{r[1]} (x{r[2]})", "pvp": float(r[3] * r[2])}
+                                        {"hid": nueva_hoja_id, "desc": f"{r[1]} (x{r[2]})", "pvp": pvp_item}
                                     )
-                                    # Descontar stock
-                                    conn_gen.execute(text("UPDATE Inventario SET stock_actual = stock_actual - :cant WHERE id = :inv_id"), {"cant": r[2], "inv_id": r[0]})
+                                    conn_gen.execute(text("UPDATE Inventario SET stock_actual = stock_actual - :cant WHERE id = :inv_id"), {"cant": int(r[2]), "inv_id": r[0]})
 
                                 # 3. Registrar Mano de Obra (Sincroniza con Nomina)
                                 conn_gen.execute(
@@ -297,6 +301,7 @@ with tab_flota:
                                 )
 
                             st.success(f"Orden #{nueva_hoja_id} creada. Repuestos descontados y mano de obra sumada a {mec_sel}.")
+                            st.rerun()
                         except Exception as e:
                             st.error(f"Error: {e}")
             else:
