@@ -3,15 +3,15 @@ import pandas as pd
 from sqlalchemy import text
 from db import obtener_conexion, init_db
 
-st.set_page_config(page_title="Recepción de Vehículos", layout="wide")
+st.set_page_config(page_title="Recepcion de Vehiculos", layout="wide")
 
 # Inicializa la estructura de la base de datos si no existe
 init_db()
 
-# ESTILOS CSS ADAPTABLES CON MÁSCARA DERECHA Y ANIMACIÓN DE ENTRADA
+# ESTILOS CSS ADAPTABLES CON MASCARA DERECHA Y ANIMACION DE ENTRADA
 st.markdown("""
     <style>
-    /* Máscara sólida adaptable en la esquina superior derecha que bloquea botones y clics */
+    /* Mascara solida adaptable en la esquina superior derecha que bloquea botones y clics */
     header::after {
         content: "";
         position: fixed !important;
@@ -24,7 +24,7 @@ st.markdown("""
         pointer-events: all !important;
     }
 
-    /* Animación de entrada */
+    /* Animacion de entrada */
     @keyframes fade-in-up {
         0% { opacity: 0; transform: translateY(20px); }
         100% { opacity: 1; transform: translateY(0); }
@@ -40,9 +40,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Validación de Seguridad
+# Validacion de Seguridad
 if not st.session_state.get('user_logged', False):
-    st.warning("Debes iniciar sesión en la página principal para acceder a este módulo.")
+    st.warning("Debes iniciar sesion en la pagina principal para acceder a este modulo.")
     st.stop()
 
 engine = obtener_conexion()
@@ -57,38 +57,38 @@ def obtener_datos(query, params={}):
     return data
 
 def formato_cop(numero):
-    return f"${numero:,.0f}".replace(",", ".")
+    return f"${float(numero):,.0f}".replace(",", ".")
 
-st.title("Recepción y Asignación de Trabajos")
-st.markdown(f"Registrando órdenes para: **{st.session_state.nombre_taller}**")
+st.title("Recepcion y Asignacion de Trabajos")
+st.markdown(f"Registrando ordenes para: **{st.session_state.nombre_taller}**")
 st.markdown("---")
 
 empresas = obtener_datos("SELECT id, razon_social FROM Empresas_Clientes WHERE usuario_id = :uid", {"uid": user_id})
 mecanicos = obtener_datos("SELECT id, nombre FROM Mecanicos WHERE usuario_id = :uid", {"uid": user_id})
 
 if not empresas or not mecanicos:
-    st.warning("Tu taller aún no tiene empresas o mecánicos registrados en la base de datos.")
-    st.info("Debes registrar al menos 1 mecánico y 1 cliente para poder asignar trabajos.")
+    st.warning("Tu taller aun no tiene empresas o mecanicos registrados en la base de datos.")
+    st.info("Debes registrar al menos 1 mecanico y 1 cliente para poder asignar trabajos.")
     st.stop()
 
 # Diccionarios para cruzar nombres con IDs
 dict_empresas = {f"{e[1]}": e[0] for e in empresas}
 dict_mecanicos = {f"{m[1]}": m[0] for m in mecanicos}
 
-# Listas con opción vacía por defecto
+# Listas con opcion vacia por defecto
 opciones_empresas = ["-- Seleccionar Empresa --"] + list(dict_empresas.keys())
-opciones_mecanicos = ["-- Seleccionar Mecánico --"] + list(dict_mecanicos.keys())
+opciones_mecanicos = ["-- Seleccionar Mecanico --"] + list(dict_mecanicos.keys())
 
-# 1. DATOS DEL VEHÍCULO
-st.subheader("1. Datos del Vehículo")
+# 1. DATOS DEL VEHICULO
+st.subheader("1. Datos del Vehiculo")
 with st.container(border=True):
     col1, col2, col3 = st.columns(3)
     with col1:
-        placa = st.text_input("Placa del Vehículo").upper()
+        placa = st.text_input("Placa del Vehiculo").upper()
     with col2:
         empresa_sel = st.selectbox("Empresa / Cliente", options=opciones_empresas)
     with col3:
-        estado = st.selectbox("Estado Operativo", ["Cotizar", "En revisión", "Esperando repuestos", "En reparación", "Listo para facturar"])
+        estado = st.selectbox("Estado Operativo", ["Cotizar", "En revision", "Esperando repuestos", "En reparacion", "Listo para facturar"])
 
 st.markdown("---")
 
@@ -98,32 +98,42 @@ tab1, tab2 = st.tabs(["Mano de Obra", "Repuestos"])
 
 with tab1:
     with st.container(border=True):
-        col_mo1, col_mo2 = st.columns([2, 1])
+        st.markdown("**Agregar Mano de Obra con Retencion Fiscal**")
+        col_mo1, col_mo2, col_mo3 = st.columns([2, 1, 1])
+        
         with col_mo1:
-            desc_mo = st.text_input("Descripción del trabajo realizado", key="desc_mo")
-            mecanico_sel = st.selectbox("Mecánico responsable", options=opciones_mecanicos, key="mec_mo")
+            desc_mo = st.text_input("Descripcion del trabajo realizado", key="desc_mo")
+            mecanico_sel = st.selectbox("Mecanico responsable", options=opciones_mecanicos, key="mec_mo")
         with col_mo2:
-            venta_mo = st.number_input("Cobro al Cliente ($0 si está pendiente)", min_value=0, step=5000, key="venta_mo")
-            st.caption(f"Valor a cobrar: {formato_cop(venta_mo)}")
+            venta_mo = st.number_input("Cobro Bruto al Cliente ($0 si pdte)", min_value=0.0, step=5000.0, key="venta_mo")
+        with col_mo3:
+            retencion_mo = st.number_input("Retencion Fiscal ($)", min_value=0.0, step=1000.0, key="ret_mo", help="Valor que la empresa te descuenta sobre el servicio.")
+        
+        # Calculo del neto real
+        neto_mo = max(0.0, float(venta_mo) - float(retencion_mo))
+        st.caption(f"Valor Neto (Base para Nomina del Mecanico): **{formato_cop(neto_mo)}**")
             
-            st.markdown("")
-            if st.button("Agregar Trabajo", use_container_width=True):
-                if desc_mo and mecanico_sel != "-- Seleccionar Mecánico --":
-                    st.session_state.carrito_items.append({
-                        'Tipo': 'Mano de Obra', 'Descripción': desc_mo, 
-                        'Mecánico': mecanico_sel, 'Mecánico_ID': dict_mecanicos[mecanico_sel],
-                        'Costo': 0, 'PVP Cliente': venta_mo,
-                        'Inventario_ID': None, 'Cantidad_Descontar': 0
-                    })
-                    st.rerun()
-                else:
-                    st.error("Completa la descripción y selecciona un mecánico.")
+        st.markdown("")
+        if st.button("Agregar Trabajo", use_container_width=True):
+            if desc_mo and mecanico_sel != "-- Seleccionar Mecanico --":
+                # Guardamos la trazabilidad de la retencion en la descripcion
+                desc_final = f"{desc_mo} (Bruto: {formato_cop(venta_mo)} - Ret: {formato_cop(retencion_mo)})" if retencion_mo > 0 else desc_mo
+                
+                st.session_state.carrito_items.append({
+                    'Tipo': 'Mano de Obra', 'Descripción': desc_final, 
+                    'Mecánico': mecanico_sel, 'Mecánico_ID': dict_mecanicos[mecanico_sel],
+                    'Costo': 0, 'PVP Cliente': neto_mo,
+                    'Inventario_ID': None, 'Cantidad_Descontar': 0
+                })
+                st.rerun()
+            else:
+                st.error("Completa la descripcion y selecciona un mecanico.")
 
 with tab2:
     with st.container(border=True):
         origen_rep = st.radio(
             "Origen del Repuesto:",
-            ["Comprado afuera (Encargo)", "Tomado del Almacén Propio"],
+            ["Comprado afuera (Encargo)", "Tomado del Almacen Propio"],
             horizontal=True
         )
 
@@ -132,10 +142,10 @@ with tab2:
             with col_rep1:
                 desc_rep = st.text_input("Nombre del Repuesto", key="desc_rep_ext")
             with col_rep2:
-                costo_rep = st.number_input("Costo Compra", min_value=0, step=1000, key="costo_rep_ext")
+                costo_rep = st.number_input("Costo Compra", min_value=0.0, step=1000.0, key="costo_rep_ext")
                 st.caption(f"Costo: {formato_cop(costo_rep)}")
             with col_rep3:
-                venta_rep = st.number_input("Precio Venta ($0 si está pendiente)", min_value=0, step=1000, key="venta_rep_ext")
+                venta_rep = st.number_input("Precio Venta ($0 si esta pendiente)", min_value=0.0, step=1000.0, key="venta_rep_ext")
                 st.caption(f"Venta: {formato_cop(venta_rep)}")
                 
             st.markdown("")
@@ -149,7 +159,7 @@ with tab2:
                     })
                     st.rerun()
                 else:
-                    st.error("Completa la descripción del repuesto.")
+                    st.error("Completa la descripcion del repuesto.")
 
         else:
             with engine.connect() as conn_inv:
@@ -160,7 +170,7 @@ with tab2:
 
             if prods:
                 dict_prods = {f"{p[1]} (Stock: {p[2]} un) - PVP: {formato_cop(p[4])}": p for p in prods}
-                prod_sel_key = st.selectbox("Selecciona un producto del almacén:", options=list(dict_prods.keys()))
+                prod_sel_key = st.selectbox("Selecciona un producto del almacen:", options=list(dict_prods.keys()))
                 prod_data = dict_prods[prod_sel_key]
 
                 col_inv1, col_inv2 = st.columns(2)
@@ -171,7 +181,7 @@ with tab2:
                     st.markdown(f"**Total Cobro:** {formato_cop(pvp_unitario * cant_usar)}")
 
                 st.markdown("")
-                if st.button("Agregar del Almacén Propio", use_container_width=True):
+                if st.button("Agregar del Almacen Propio", use_container_width=True):
                     st.session_state.carrito_items.append({
                         'Tipo': 'Repuesto', 
                         'Descripción': f"{prod_data[1]} (x{cant_usar})",
@@ -183,7 +193,7 @@ with tab2:
                     })
                     st.rerun()
             else:
-                st.info("No tienes productos con stock disponible en tu almacén.")
+                st.info("No tienes productos con stock disponible en tu almacen.")
 
 st.markdown("---")
 
@@ -197,21 +207,21 @@ if st.session_state.carrito_items:
                 st.markdown(f"**{item['Tipo']}**: {item['Descripción']}")
             with col_res2:
                 if item['Tipo'] == 'Mano de Obra':
-                    st.caption(f"Técnico: {item['Mecánico']}")
+                    st.caption(f"Tecnico: {item['Mecánico']}")
                 else:
                     st.caption(f"Costo: {formato_cop(item['Costo'])}")
             with col_res3:
                 if item['PVP Cliente'] == 0:
                     st.markdown("**Por Cotizar ($0)**")
                 else:
-                    st.markdown(f"**Cobro: {formato_cop(item['PVP Cliente'])}**")
+                    st.markdown(f"**Cobro Neto: {formato_cop(item['PVP Cliente'])}**")
             with col_res4:
                 if st.button("Quitar", key=f"borrar_{i}", use_container_width=True):
                     st.session_state.carrito_items.pop(i)
                     st.rerun()
 
     st.markdown("---")
-    total_cobro = sum(item['PVP Cliente'] for item in st.session_state.carrito_items)
+    total_cobro = sum(float(item['PVP Cliente']) for item in st.session_state.carrito_items)
     
     col_tot1, col_tot2 = st.columns([2, 1])
     with col_tot1:
@@ -219,9 +229,9 @@ if st.session_state.carrito_items:
     with col_tot2:
         if st.button("Guardar Orden Completa", type="primary", use_container_width=True):
             if not placa:
-                st.error("Falta ingresar la placa del vehículo.")
+                st.error("Falta ingresar la placa del vehiculo.")
             elif empresa_sel == "-- Seleccionar Empresa --":
-                st.error("Por favor, selecciona una Empresa / Cliente válida.")
+                st.error("Por favor, selecciona una Empresa / Cliente valida.")
             else:
                 try:
                     empresa_id = dict_empresas[empresa_sel]
@@ -265,7 +275,7 @@ if st.session_state.carrito_items:
                                 }
                             )
                             
-                            # Descontar del inventario si proviene del almacén propio
+                            # Descontar del inventario si proviene del almacen propio
                             if item.get('Inventario_ID'):
                                 conn.execute(
                                     text("UPDATE Inventario SET stock_actual = stock_actual - :cant WHERE id = :inv_id"),
@@ -273,9 +283,9 @@ if st.session_state.carrito_items:
                                 )
                     
                     st.session_state.carrito_items = [] 
-                    st.success(f"Orden #{hoja_id} guardada con éxito para el vehículo {placa}.")
+                    st.success(f"Orden #{hoja_id} guardada con exito para el vehiculo {placa}.")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error al guardar: {e}")
 else:
-    st.info("Aún no se han agregado trabajos ni repuestos a la orden actual.")
+    st.info("Aun no se han agregado trabajos ni repuestos a la orden actual.")
