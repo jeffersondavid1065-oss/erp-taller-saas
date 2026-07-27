@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from sqlalchemy import text
-from db import obtener_conexion
+from db import obtener_conexion, init_db
 import hashlib
 from datetime import date
 
@@ -11,6 +11,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded" if st.session_state.get('user_logged', False) else "collapsed"
 )
+
+# Inicializar Base de Datos (Se ejecuta una sola vez al arrancar por el caché de db.py)
+init_db()
 
 is_logged = st.session_state.get('user_logged', False)
 
@@ -60,6 +63,38 @@ if 'user_logged' not in st.session_state:
 
 def formato_cop(numero):
     return f"${numero:,.0f}".replace(",", ".")
+
+# FUNCIÓN CON CACHÉ PARA CONSULTAR MÉTRICAS DEL DASHBOARD
+@st.cache_data(ttl=15)
+def obtener_metricas_dashboard(uid):
+    with engine.connect() as conn:
+        q_valor_activos = text('''
+            SELECT SUM(d.precio_venta) 
+            FROM Detalles_Orden d
+            JOIN Hojas_Trabajo h ON d.hoja_id = h.id
+            WHERE h.usuario_id = :uid AND h.estado != 'Facturado'
+        ''')
+        total_activos = conn.execute(q_valor_activos, {"uid": uid}).scalar() or 0.0
+
+        q_cotizar = text('''
+            SELECT COUNT(*) FROM Hojas_Trabajo 
+            WHERE usuario_id = :uid AND estado = 'Cotizar'
+        ''')
+        total_cotizar = conn.execute(q_cotizar, {"uid": uid}).scalar() or 0
+
+        q_ordenes = text('''
+            SELECT COUNT(*) FROM Hojas_Trabajo 
+            WHERE usuario_id = :uid AND estado != 'Facturado'
+        ''')
+        total_ordenes_activas = conn.execute(q_ordenes, {"uid": uid}).scalar() or 0
+
+        q_empresas = text('''
+            SELECT COUNT(*) FROM Empresas_Clientes 
+            WHERE usuario_id = :uid
+        ''')
+        total_empresas = conn.execute(q_empresas, {"uid": uid}).scalar() or 0
+
+    return total_activos, total_cotizar, total_ordenes_activas, total_empresas
 
 # 3. PANTALLAS
 if not st.session_state.user_logged:
@@ -138,6 +173,7 @@ if not st.session_state.user_logged:
                                         "pass": pass_hash_reg
                                     }
                                 )
+                            st.cache_data.clear()
                             st.success("Cuenta creada con éxito. Contacta al administrador para activar tu suscripción.")
                         except Exception as e:
                             st.error(f"Error al registrar el taller: {e}")
@@ -151,32 +187,7 @@ else:
     st.markdown(f"Resumen gerencial y contable para: **{st.session_state.get('nombre_taller', '')}**")
     st.markdown("---")
 
-    with engine.connect() as conn:
-        q_valor_activos = text('''
-            SELECT SUM(d.precio_venta) 
-            FROM Detalles_Orden d
-            JOIN Hojas_Trabajo h ON d.hoja_id = h.id
-            WHERE h.usuario_id = :uid AND h.estado != 'Facturado'
-        ''')
-        total_activos = conn.execute(q_valor_activos, {"uid": user_id}).scalar() or 0.0
-
-        q_cotizar = text('''
-            SELECT COUNT(*) FROM Hojas_Trabajo 
-            WHERE usuario_id = :uid AND estado = 'Cotizar'
-        ''')
-        total_cotizar = conn.execute(q_cotizar, {"uid": user_id}).scalar() or 0
-
-        q_ordenes = text('''
-            SELECT COUNT(*) FROM Hojas_Trabajo 
-            WHERE usuario_id = :uid AND estado != 'Facturado'
-        ''')
-        total_ordenes_activas = conn.execute(q_ordenes, {"uid": user_id}).scalar() or 0
-
-        q_empresas = text('''
-            SELECT COUNT(*) FROM Empresas_Clientes 
-            WHERE usuario_id = :uid
-        ''')
-        total_empresas = conn.execute(q_empresas, {"uid": user_id}).scalar() or 0
+    total_activos, total_cotizar, total_ordenes_activas, total_empresas = obtener_metricas_dashboard(user_id)
 
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Valor Trabajos Activos", formato_cop(total_activos))
@@ -201,4 +212,5 @@ else:
     st.markdown("")
     if st.button("Cerrar Sesión"):
         st.session_state.user_logged = False
+        st.cache_data.clear()
         st.rerun()
