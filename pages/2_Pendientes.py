@@ -62,14 +62,11 @@ user_id = st.session_state.user_id
 def formato_cop(numero):
     return f"${numero:,.0f}".replace(",", ".")
 
-st.title("Tablero de Control Operativo")
-st.markdown(f"Patio de vehículos para: **{st.session_state.nombre_taller}**")
-st.markdown("---")
-
 # ==========================================
-# 1. MÓDULO PARA LIQUIDAR Y COTIZAR TRABAJOS EN $0
+# FUNCIONES OPTIMIZADAS CON CACHÉ
 # ==========================================
-def obtener_ordenes_con_items_pendientes():
+@st.cache_data(ttl=15)
+def obtener_ordenes_con_items_pendientes(uid):
     with engine.connect() as conn:
         query = text('''
             SELECT DISTINCT h.id, h.placa, e.razon_social
@@ -79,9 +76,30 @@ def obtener_ordenes_con_items_pendientes():
             WHERE h.usuario_id = :uid AND (d.precio_venta = 0 OR d.precio_venta IS NULL)
             ORDER BY h.id DESC
         ''')
-        return conn.execute(query, {"uid": user_id}).fetchall()
+        return conn.execute(query, {"uid": uid}).fetchall()
 
-ordenes_sin_precio = obtener_ordenes_con_items_pendientes()
+@st.cache_data(ttl=15)
+def obtener_vehiculos(uid):
+    with engine.connect() as conn:
+        query = text('''
+            SELECT h.id, h.placa, e.razon_social, h.estado,
+                   SUM(CASE WHEN d.precio_venta = 0 OR d.precio_venta IS NULL THEN 1 ELSE 0 END) as items_sin_precio
+            FROM Hojas_Trabajo h
+            JOIN Empresas_Clientes e ON h.empresa_id = e.id
+            LEFT JOIN Detalles_Orden d ON d.hoja_id = h.id
+            WHERE h.usuario_id = :uid
+            GROUP BY h.id, h.placa, e.razon_social, h.estado
+        ''')
+        return conn.execute(query, {"uid": uid}).fetchall()
+
+st.title("Tablero de Control Operativo")
+st.markdown(f"Patio de vehículos para: **{st.session_state.nombre_taller}**")
+st.markdown("---")
+
+# ==========================================
+# 1. MÓDULO PARA LIQUIDAR Y COTIZAR TRABAJOS EN $0
+# ==========================================
+ordenes_sin_precio = obtener_ordenes_con_items_pendientes(user_id)
 
 if ordenes_sin_precio:
     with st.expander(f"Atención: Hay {len(ordenes_sin_precio)} orden(es) con trabajos sin precio asignado", expanded=True):
@@ -147,6 +165,7 @@ if ordenes_sin_precio:
                                 '''),
                                 {"costo": c_compra, "pvp": p_venta, "id": item_id}
                             )
+                    st.cache_data.clear()
                     st.success("Precios actualizados y sincronizados en el sistema.")
                     st.rerun()
                 except Exception as e:
@@ -157,22 +176,8 @@ if ordenes_sin_precio:
 # ==========================================
 # 2. TABLERO KANBAN DE PENDIENTES
 # ==========================================
-def obtener_vehiculos():
-    with engine.connect() as conn:
-        query = text('''
-            SELECT h.id, h.placa, e.razon_social, h.estado,
-                   SUM(CASE WHEN d.precio_venta = 0 OR d.precio_venta IS NULL THEN 1 ELSE 0 END) as items_sin_precio
-            FROM Hojas_Trabajo h
-            JOIN Empresas_Clientes e ON h.empresa_id = e.id
-            LEFT JOIN Detalles_Orden d ON d.hoja_id = h.id
-            WHERE h.usuario_id = :uid
-            GROUP BY h.id, h.placa, e.razon_social, h.estado
-        ''')
-        datos = conn.execute(query, {"uid": user_id}).fetchall()
-    return datos
-
 try:
-    vehiculos = obtener_vehiculos()
+    vehiculos = obtener_vehiculos(user_id)
 except Exception as e:
     vehiculos = []
     st.error(f"Error al conectar con la base de datos: {e}")
@@ -212,4 +217,5 @@ dibujar_columna(col5, "Listo para Facturar", "Listo para facturar", "bg-facturar
 
 st.markdown("---")
 if st.button("Actualizar Tablero", use_container_width=True):
+    st.cache_data.clear()
     st.rerun()
