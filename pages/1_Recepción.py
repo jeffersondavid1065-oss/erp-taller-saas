@@ -98,7 +98,7 @@ tab1, tab2 = st.tabs(["Mano de Obra", "Repuestos"])
 
 with tab1:
     with st.container(border=True):
-        st.markdown("**Agregar Mano de Obra con Retencion Fiscal**")
+        st.markdown("**Agregar Mano de Obra con Retencion Fiscal (%)**")
         col_mo1, col_mo2, col_mo3 = st.columns([2, 1, 1])
         
         with col_mo1:
@@ -107,17 +107,22 @@ with tab1:
         with col_mo2:
             venta_mo = st.number_input("Cobro Bruto al Cliente ($0 si pdte)", min_value=0.0, step=5000.0, key="venta_mo")
         with col_mo3:
-            retencion_mo = st.number_input("Retencion Fiscal ($)", min_value=0.0, step=1000.0, key="ret_mo", help="Valor que la empresa te descuenta sobre el servicio.")
+            porcentaje_ret = st.number_input("Retencion Fiscal (%)", min_value=0.0, max_value=100.0, step=1.0, key="ret_mo", help="Porcentaje de descuento, ej. 4 o 11.")
         
-        # Calculo del neto real
-        neto_mo = max(0.0, float(venta_mo) - float(retencion_mo))
-        st.caption(f"Valor Neto (Base para Nomina del Mecanico): **{formato_cop(neto_mo)}**")
+        # Calculo del porcentaje a dinero y el neto real
+        valor_descontado = float(venta_mo) * (float(porcentaje_ret) / 100.0)
+        neto_mo = max(0.0, float(venta_mo) - valor_descontado)
+        
+        st.caption(f"Descuento estimado: {formato_cop(valor_descontado)} | Valor Neto para Nomina: **{formato_cop(neto_mo)}**")
             
         st.markdown("")
         if st.button("Agregar Trabajo", use_container_width=True):
             if desc_mo and mecanico_sel != "-- Seleccionar Mecanico --":
                 # Guardamos la trazabilidad de la retencion en la descripcion
-                desc_final = f"{desc_mo} (Bruto: {formato_cop(venta_mo)} - Ret: {formato_cop(retencion_mo)})" if retencion_mo > 0 else desc_mo
+                if porcentaje_ret > 0:
+                    desc_final = f"{desc_mo} (Bruto: {formato_cop(venta_mo)} - Ret {porcentaje_ret}%: {formato_cop(valor_descontado)})"
+                else:
+                    desc_final = desc_mo
                 
                 st.session_state.carrito_items.append({
                     'Tipo': 'Mano de Obra', 'Descripción': desc_final, 
