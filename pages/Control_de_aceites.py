@@ -6,7 +6,6 @@ from db import obtener_conexion
 
 st.set_page_config(page_title="Control de Aceites y Flotas", layout="wide")
 
-# Animaciones y estilos
 st.markdown("""
     <style>
     header::after {
@@ -33,17 +32,17 @@ user_id = st.session_state.user_id
 def formato_cop(numero):
     return f"${numero:,.0f}".replace(",", ".")
 
-st.title("🛢️ Control de Cambios de Aceite y Flotas")
+st.title("Control de Cambios de Aceite y Flotas")
 st.markdown(f"Mantenimiento preventivo e insumos para: **{st.session_state.nombre_taller}**")
 st.markdown("---")
 
-tab_agenda, tab_flota = st.tabs(["📅 Agenda y Próximos Servicios", "🚗 Gestión de Vehículos y Filtros"])
+tab_agenda, tab_flota = st.tabs(["Agenda y Proximos Servicios", "Gestion de Vehiculos y Filtros"])
 
 # ==========================================
 # PESTAÑA 1: AGENDA Y RECORDATORIOS
 # ==========================================
 with tab_agenda:
-    st.subheader("Vehículos con Mantenimiento Próximo o Vencido")
+    st.subheader("Vehiculos con Mantenimiento Proximo o Vencido")
     
     with engine.connect() as conn:
         df_agenda = pd.read_sql_query(
@@ -71,26 +70,26 @@ with tab_agenda:
                     st.markdown(f"#### Placa: {row['placa']}")
                     st.caption(f"Cliente: {row['empresa']}")
                 with col_a2:
-                    st.write(f"**Vehículo:** {row['modelo_vehiculo'] or 'No especificado'}")
+                    st.write(f"**Vehiculo:** {row['modelo_vehiculo'] or 'No especificado'}")
                     st.write(f"**Km Actual:** {row['kilometraje_actual']:,}")
                 with col_a3:
-                    st.write(f"**Último Serv:** {row['fecha_ultimo_servicio'] or 'N/A'}")
-                    st.write(f"**Próximo Serv:** {row['fecha_proximo_servicio']}")
+                    st.write(f"**Ultimo Serv:** {row['fecha_ultimo_servicio'] or 'N/A'}")
+                    st.write(f"**Proximo Serv:** {row['fecha_proximo_servicio']}")
                 with col_a4:
                     if dias_restantes < 0:
-                        st.error(f"⚠️ Vencido hace {abs(dias_restantes)} días")
+                        st.error(f"Vencido hace {abs(dias_restantes)} dias")
                     elif dias_restantes <= 10:
-                        st.warning(f"⚠️ Toca en {dias_restantes} días")
+                        st.warning(f"Programado en {dias_restantes} dias")
                     else:
-                        st.success(f"✅ Al día (en {dias_restantes} días)")
+                        st.success(f"Al dia (en {dias_restantes} dias)")
     else:
-        st.info("No hay vehículos registrados en el sistema de flotas todavía.")
+        st.info("No hay vehiculos registrados en el sistema de flotas todavia.")
 
 # ==========================================
-# PESTAÑA 2: GESTIÓN DE VEHÍCULOS Y FILTROS
+# PESTAÑA 2: GESTION DE VEHICULOS Y FILTROS
 # ==========================================
 with tab_flota:
-    with st.expander("Registrar Nuevo Vehículo a una Empresa", expanded=False):
+    with st.expander("Registrar Nuevo Vehiculo a una Empresa", expanded=False):
         with engine.connect() as conn:
             empresas = conn.execute(text("SELECT id, razon_social FROM Empresas_Clientes WHERE usuario_id = :uid"), {"uid": user_id}).fetchall()
         
@@ -99,15 +98,15 @@ with tab_flota:
             with st.form("form_nuevo_vehiculo", clear_on_submit=True):
                 col_f1, col_f2 = st.columns(2)
                 with col_f1:
-                    placa_v = st.text_input("Placa del Vehículo").upper().strip()
+                    placa_v = st.text_input("Placa del Vehiculo").upper().strip()
                     empresa_sel_v = st.selectbox("Empresa / Propietario", options=list(dict_emp.keys()))
                     modelo_v = st.text_input("Modelo / Marca (Ej: Chevrolet NPR)")
                 with col_f2:
                     km_v = st.number_input("Kilometraje Actual", min_value=0, value=50000, step=1000)
                     intervalo_v = st.number_input("Intervalo de Recordatorio (Meses)", min_value=1, value=3, step=1)
-                    fecha_ult_v = st.date_input("Fecha del Último Servicio", value=datetime.today())
+                    fecha_ult_v = st.date_input("Fecha del Ultimo Servicio", value=datetime.today())
 
-                if st.form_submit_button("Guardar Vehículo", type="primary"):
+                if st.form_submit_button("Guardar Vehiculo", type="primary"):
                     if placa_v:
                         try:
                             proxima_fecha = fecha_ult_v + timedelta(days=int(intervalo_v * 30))
@@ -119,7 +118,7 @@ with tab_flota:
                                     """),
                                     {"uid": user_id, "eid": dict_emp[empresa_sel_v], "placa": placa_v, "modelo": modelo_v, "f_ult": fecha_ult_v.strftime('%Y-%m-%d'), "f_prox": proxima_fecha.strftime('%Y-%m-%d'), "km": int(km_v), "inter": int(intervalo_v)}
                                 )
-                            st.success(f"Vehículo {placa_v} registrado.")
+                            st.success(f"Vehiculo {placa_v} registrado.")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error al registrar: {e}")
@@ -135,19 +134,21 @@ with tab_flota:
 
     if not vehiculos_db.empty:
         dict_veh = {f"{r['placa']} - {r['modelo_vehiculo']} ({r['razon_social']})": r['id'] for idx, r in vehiculos_db.iterrows()}
-        veh_sel_str = st.selectbox("Selecciona un vehículo para configurar o despachar:", options=list(dict_veh.keys()))
+        veh_sel_str = st.selectbox("Selecciona un vehiculo para configurar o despachar:", options=list(dict_veh.keys()))
         veh_id_activo = int(dict_veh[veh_sel_str])
 
         with engine.connect() as conn:
             veh_info = conn.execute(text("SELECT * FROM Vehiculos_Flota WHERE id = :vid"), {"vid": veh_id_activo}).fetchone()
 
-        st.info(f"📋 **Placa:** {veh_info[3]} | **Último servicio:** {veh_info[5] or 'Pendiente'} | **Próximo:** {veh_info[6]}")
+        st.info(f"Placa: {veh_info[3]} | Ultimo servicio: {veh_info[5] or 'Pendiente'} | Proximo: {veh_info[6]}")
 
-        tab_receta, tab_despacho = st.tabs(["⚙️ Configurar Filtros e Insumos (Catálogo)", "🚀 Generar Orden de Trabajo (Despachar)"])
+        tab_receta, tab_despacho = st.tabs(["Configurar Filtros e Insumos (Lista)", "Generar Orden de Trabajo (Despachar)"])
 
+        # ==========================================
         # PESTAÑA: CONFIGURAR RECETA E INVENTARIO
+        # ==========================================
         with tab_receta:
-            st.write("Agrega los filtros o aceites que usa este vehículo. Si es un repuesto nuevo, el sistema lo agregará a tu Almacén General automáticamente.")
+            st.write("Agrega los insumos uno por uno. Ejemplo: agrega 1 Filtro de Aceite, luego 2 Filtros de ACPM, luego 4 Cuartos de Aceite.")
             
             with engine.connect() as conn:
                 recetas_df = pd.read_sql_query(
@@ -161,21 +162,35 @@ with tab_flota:
                 )
 
             if not recetas_df.empty:
-                st.dataframe(recetas_df.rename(columns={"nombre_producto": "Insumo / Filtro", "cantidad": "Cant.", "precio_venta": "Precio Unitario"}), hide_index=True, use_container_width=True)
+                st.markdown("**Insumos actuales del vehiculo:**")
+                for idx, row in recetas_df.iterrows():
+                    col_item1, col_item2, col_item3, col_item4 = st.columns([3, 1, 2, 1])
+                    col_item1.write(f"{row['nombre_producto']}")
+                    col_item2.write(f"Cant: {row['cantidad']}")
+                    col_item3.write(f"Unidad: {formato_cop(row['precio_venta'])}")
+                    with col_item4:
+                        if st.button("Eliminar", key=f"del_receta_{row['id']}"):
+                            try:
+                                with engine.begin() as conn_del:
+                                    conn_del.execute(text("DELETE FROM Recetas_Vehiculo WHERE id = :rid"), {"rid": row['id']})
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error: {e}")
             else:
-                st.caption("No hay insumos configurados para este vehículo.")
+                st.caption("No hay insumos configurados para este vehiculo.")
 
+            st.markdown("---")
             with st.form("form_add_receta_inventario", clear_on_submit=True):
-                st.markdown("**Agregar Insumo**")
+                st.markdown("**Agregar Insumo a la Lista**")
                 col_r1, col_r2 = st.columns(2)
                 with col_r1:
-                    item_desc = st.text_input("Nombre del Filtro o Aceite (Ej: Filtro de Aceite W712)")
+                    item_desc = st.text_input("Nombre del Filtro o Aceite (Ej: Filtro ACPM, Cuarto Aceite 15W40)")
                     cant_item = st.number_input("Cantidad que usa el carro", min_value=1, value=1, step=1)
                 with col_r2:
                     costo_compra = st.number_input("Costo de Compra ($)", min_value=0.0, step=1000.0)
                     precio_venta = st.number_input("Precio de Venta ($)", min_value=0.0, step=1000.0)
 
-                if st.form_submit_button("Guardar en Receta y Almacén", type="primary"):
+                if st.form_submit_button("Guardar en Lista y Almacen", type="primary"):
                     if item_desc:
                         try:
                             with engine.begin() as conn_r:
@@ -194,19 +209,21 @@ with tab_flota:
                                     )
                                     nuevo_inv_id = res.scalar()
                                 
-                                # 2. Ligar a la Receta del Vehículo
+                                # 2. Ligar a la Receta del Vehiculo
                                 conn_r.execute(
                                     text("INSERT INTO Recetas_Vehiculo (vehiculo_id, inventario_id, cantidad) VALUES (:vid, :iid, :cant)"),
                                     {"vid": veh_id_activo, "iid": nuevo_inv_id, "cant": int(cant_item)}
                                 )
-                            st.success("Insumo guardado en el almacén y asignado a este vehículo.")
+                            st.success("Insumo guardado.")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error: {e}")
 
-        # PESTAÑA: DESPACHO Y ÓRDENES
+        # ==========================================
+        # PESTAÑA: DESPACHO Y ORDENES
+        # ==========================================
         with tab_despacho:
-            st.write("Genera la orden de trabajo. El sistema cobrará los insumos, descontará el stock y sumará la mano de obra a la nómina del técnico.")
+            st.write("Genera la orden de trabajo. El sistema cobrara los insumos, descontara el stock y sumara la mano de obra a la nomina del tecnico.")
 
             with engine.connect() as conn:
                 recetas_actuales = conn.execute(
@@ -226,12 +243,12 @@ with tab_flota:
                 total_insumos = sum([r[3] * r[2] for r in recetas_actuales])
                 st.write("**Insumos a Despachar:**")
                 for r in recetas_actuales:
-                    st.write(f"- {r[1]} (x{r[2]}) — {formato_cop(r[3] * r[2])}")
+                    st.write(f"- {r[1]} (x{r[2]}) - {formato_cop(r[3] * r[2])}")
                 
                 st.markdown("---")
                 col_d1, col_d2 = st.columns(2)
                 with col_d1:
-                    mec_sel = st.selectbox("Técnico a cargo", options=list(dict_mec.keys())) if dict_mec else None
+                    mec_sel = st.selectbox("Tecnico a cargo", options=list(dict_mec.keys())) if dict_mec else None
                 with col_d2:
                     valor_mo = st.number_input("Valor Mano de Obra ($)", min_value=0.0, value=30000.0, step=5000.0)
 
@@ -239,9 +256,9 @@ with tab_flota:
                 
                 st.markdown(f"### Total Orden: {formato_cop(total_insumos + valor_mo)}")
 
-                if st.button("🚀 Ejecutar y Crear Orden", type="primary", use_container_width=True):
+                if st.button("Ejecutar y Crear Orden", type="primary", use_container_width=True):
                     if not mec_sel:
-                        st.error("Registra un mecánico en el Directorio primero.")
+                        st.error("Registra un mecanico en el Directorio primero.")
                     else:
                         try:
                             with engine.begin() as conn_gen:
@@ -265,7 +282,7 @@ with tab_flota:
                                     # Descontar stock
                                     conn_gen.execute(text("UPDATE Inventario SET stock_actual = stock_actual - :cant WHERE id = :inv_id"), {"cant": r[2], "inv_id": r[0]})
 
-                                # 3. Registrar Mano de Obra (Sincroniza con Nómina)
+                                # 3. Registrar Mano de Obra (Sincroniza con Nomina)
                                 conn_gen.execute(
                                     text("INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, mecanico_id, precio_venta) VALUES (:hid, 'Mano de Obra', :desc, :mid, :pvp)"),
                                     {"hid": nueva_hoja_id, "desc": f"Servicio Cambio de Aceite", "mid": dict_mec[mec_sel], "pvp": float(valor_mo)}
@@ -279,8 +296,8 @@ with tab_flota:
                                     {"f_ult": hoy.strftime('%Y-%m-%d'), "f_prox": proxima.strftime('%Y-%m-%d'), "km": int(nuevo_km), "vid": veh_id_activo}
                                 )
 
-                            st.success(f"¡Orden #{nueva_hoja_id} creada! Repuestos descontados y mano de obra sumada a {mec_sel}.")
+                            st.success(f"Orden #{nueva_hoja_id} creada. Repuestos descontados y mano de obra sumada a {mec_sel}.")
                         except Exception as e:
                             st.error(f"Error: {e}")
             else:
-                st.warning("Configura los filtros de este vehículo en la pestaña anterior para poder despachar.")
+                st.warning("Configura los insumos de este vehiculo en la pestaña anterior para poder despachar.")
