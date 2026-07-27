@@ -7,11 +7,11 @@ from db import obtener_conexion
 st.set_page_config(page_title="Nómina y Comisiones", layout="wide")
 
 # ==========================================
-# ESTILOS CSS: MÁSCARA DERECHA Y ANIMACIONES
+# ESTILOS CSS: MÁSCARA DERECHA ADAPTABLE Y ANIMACIONES
 # ==========================================
 st.markdown("""
     <style>
-    /* Máscara sólida en la esquina superior derecha que bloquea botones y clics */
+    /* Máscara sólida adaptable en la esquina superior derecha que bloquea botones y clics */
     header::after {
         content: "";
         position: fixed !important;
@@ -19,7 +19,7 @@ st.markdown("""
         right: 0 !important;
         width: 350px !important;
         height: 60px !important;
-        background-color: #0e1117 !important;
+        background-color: var(--background-color) !important;
         z-index: 9999999 !important;
         pointer-events: all !important;
     }
