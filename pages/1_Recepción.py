@@ -44,9 +44,9 @@ def formato_cop(numero):
     return f"${float(numero):,.0f}".replace(",", ".")
 
 # ==========================================
-# CONSULTAS CACHEADAS (SÚPER RÁPIDAS)
+# OPTIMIZACIÓN: CONSULTAS CACHEADAS (SÚPER RÁPIDAS)
 # ==========================================
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300) # Guarda clientes y mecánicos en RAM por 5 minutos
 def obtener_catalogos(uid):
     engine = obtener_conexion()
     with engine.connect() as conn:
@@ -54,7 +54,7 @@ def obtener_catalogos(uid):
         mecanicos_db = conn.execute(text("SELECT id, nombre FROM Mecanicos WHERE usuario_id = :uid"), {"uid": uid}).fetchall()
     return [tuple(e) for e in empresas_db], [tuple(m) for m in mecanicos_db]
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=60) # Guarda el inventario en RAM por 1 minuto
 def obtener_inventario_activo(uid):
     engine = obtener_conexion()
     with engine.connect() as conn:
@@ -68,6 +68,7 @@ st.title("Recepcion y Asignacion de Trabajos")
 st.markdown(f"Registrando ordenes para: **{st.session_state.nombre_taller}**")
 st.markdown("---")
 
+# Llamadas instantáneas desde la caché
 empresas, mecanicos = obtener_catalogos(user_id)
 
 if not empresas or not mecanicos:
@@ -96,34 +97,32 @@ with st.container(border=True):
 st.markdown("---")
 
 # ==========================================
-# 2. AGREGAR TRABAJOS Y REPUESTOS (SIN EFECTO BORROSO)
+# 2. AGREGAR TRABAJOS Y REPUESTOS
 # ==========================================
 st.subheader("2. Agregar Trabajos y Repuestos")
 tab1, tab2 = st.tabs(["Mano de Obra", "Repuestos"])
 
 with tab1:
-    # EL FORMULARIO EVITA QUE SE RECARGUE AL ESCRIBIR
-    with st.form("form_mano_obra", clear_on_submit=True):
+    with st.container(border=True):
         st.markdown("**Agregar Mano de Obra con Retencion Fiscal (%)**")
         col_mo1, col_mo2, col_mo3 = st.columns([2, 1, 1])
         
         with col_mo1:
-            desc_mo = st.text_input("Descripcion del trabajo realizado")
-            mecanico_sel = st.selectbox("Mecanico responsable", options=opciones_mecanicos)
+            desc_mo = st.text_input("Descripcion del trabajo realizado", key="desc_mo")
+            mecanico_sel = st.selectbox("Mecanico responsable", options=opciones_mecanicos, key="mec_mo")
         with col_mo2:
-            venta_mo = st.number_input("Cobro Bruto al Cliente ($0 si pdte)", min_value=0.0, step=5000.0)
+            venta_mo = st.number_input("Cobro Bruto al Cliente ($0 si pdte)", min_value=0.0, step=5000.0, key="venta_mo")
         with col_mo3:
-            porcentaje_ret = st.number_input("Retencion Fiscal (%)", min_value=0.0, max_value=100.0, step=1.0, help="Porcentaje de descuento, ej. 4 o 11.")
+            porcentaje_ret = st.number_input("Retencion Fiscal (%)", min_value=0.0, max_value=100.0, step=1.0, key="ret_mo", help="Porcentaje de descuento, ej. 4 o 11.")
         
-        st.caption("Nota: El cálculo final de la base para nómina se aplicará al agregar el trabajo a la orden.")
+        valor_descontado = float(venta_mo) * (float(porcentaje_ret) / 100.0)
+        neto_mo = max(0.0, float(venta_mo) - valor_descontado)
+        
+        st.caption(f"Descuento estimado: {formato_cop(valor_descontado)} | Valor Neto para Nomina: **{formato_cop(neto_mo)}**")
             
         st.markdown("")
-        # EL BOTÓN SUBMIT ES EL ÚNICO QUE MANDA LA SEÑAL
-        if st.form_submit_button("Agregar Trabajo", use_container_width=True):
+        if st.button("Agregar Trabajo", use_container_width=True):
             if desc_mo and mecanico_sel != "-- Seleccionar Mecanico --":
-                valor_descontado = float(venta_mo) * (float(porcentaje_ret) / 100.0)
-                neto_mo = max(0.0, float(venta_mo) - valor_descontado)
-                
                 if porcentaje_ret > 0:
                     desc_final = f"{desc_mo} (Ret {porcentaje_ret}% aplicada a la nomina)"
                 else:
@@ -142,20 +141,22 @@ with tab1:
                 st.error("Completa la descripcion y selecciona un mecanico.")
 
 with tab2:
-    origen_rep = st.radio("Origen del Repuesto:", ["Comprado afuera (Encargo)", "Tomado del Almacen Propio"], horizontal=True)
+    with st.container(border=True):
+        origen_rep = st.radio("Origen del Repuesto:", ["Comprado afuera (Encargo)", "Tomado del Almacen Propio"], horizontal=True)
 
-    if origen_rep == "Comprado afuera (Encargo)":
-        with st.form("form_rep_ext", clear_on_submit=True):
+        if origen_rep == "Comprado afuera (Encargo)":
             col_rep1, col_rep2, col_rep3 = st.columns([2, 1, 1])
             with col_rep1:
-                desc_rep = st.text_input("Nombre del Repuesto")
+                desc_rep = st.text_input("Nombre del Repuesto", key="desc_rep_ext")
             with col_rep2:
-                costo_rep = st.number_input("Costo Compra", min_value=0.0, step=1000.0)
+                costo_rep = st.number_input("Costo Compra", min_value=0.0, step=1000.0, key="costo_rep_ext")
+                st.caption(f"Costo: {formato_cop(costo_rep)}")
             with col_rep3:
-                venta_rep = st.number_input("Precio Venta ($0 si esta pendiente)", min_value=0.0, step=1000.0)
+                venta_rep = st.number_input("Precio Venta ($0 si esta pendiente)", min_value=0.0, step=1000.0, key="venta_rep_ext")
+                st.caption(f"Venta: {formato_cop(venta_rep)}")
                 
             st.markdown("")
-            if st.form_submit_button("Agregar Repuesto Externo", use_container_width=True):
+            if st.button("Agregar Repuesto Externo", use_container_width=True):
                 if desc_rep:
                     st.session_state.carrito_items.append({
                         'Tipo': 'Repuesto', 'Descripción': desc_rep, 
@@ -168,39 +169,36 @@ with tab2:
                 else:
                     st.error("Completa la descripcion del repuesto.")
 
-    else:
-        with st.form("form_rep_int", clear_on_submit=True):
+        else:
             prods = obtener_inventario_activo(user_id)
 
             if prods:
                 dict_prods = {f"{p[1]} (Stock: {p[2]} un) - PVP: {formato_cop(p[4])}": p for p in prods}
                 prod_sel_key = st.selectbox("Selecciona un producto del almacen:", options=list(dict_prods.keys()))
-                
+                prod_data = dict_prods[prod_sel_key]
+
                 col_inv1, col_inv2 = st.columns(2)
                 with col_inv1:
-                    cant_usar = st.number_input("Cantidad a Usar", min_value=1, value=1, step=1)
-                
+                    cant_usar = st.number_input("Cantidad a Usar", min_value=1, max_value=int(prod_data[2]), value=1, step=1)
+                with col_inv2:
+                    pvp_unitario = float(prod_data[4])
+                    st.markdown(f"**Total Cobro:** {formato_cop(pvp_unitario * cant_usar)}")
+
                 st.markdown("")
-                if st.form_submit_button("Agregar del Almacen Propio", use_container_width=True):
-                    prod_data = dict_prods[prod_sel_key]
-                    if cant_usar > int(prod_data[2]):
-                        st.error(f"Error: El stock máximo disponible es de {prod_data[2]} unidades.")
-                    else:
-                        pvp_unitario = float(prod_data[4])
-                        st.session_state.carrito_items.append({
-                            'Tipo': 'Repuesto', 
-                            'Descripción': f"{prod_data[1]} (x{cant_usar})",
-                            'Mecánico': '-', 'Mecánico_ID': None,
-                            'Costo': float(prod_data[3]) * cant_usar,
-                            'PVP Cliente': pvp_unitario * cant_usar,
-                            'Base_Nomina': None,
-                            'Inventario_ID': prod_data[0],
-                            'Cantidad_Descontar': cant_usar
-                        })
-                        st.rerun()
+                if st.button("Agregar del Almacen Propio", use_container_width=True):
+                    st.session_state.carrito_items.append({
+                        'Tipo': 'Repuesto', 
+                        'Descripción': f"{prod_data[1]} (x{cant_usar})",
+                        'Mecánico': '-', 'Mecánico_ID': None,
+                        'Costo': float(prod_data[3]) * cant_usar,
+                        'PVP Cliente': pvp_unitario * cant_usar,
+                        'Base_Nomina': None,
+                        'Inventario_ID': prod_data[0],
+                        'Cantidad_Descontar': cant_usar
+                    })
+                    st.rerun()
             else:
                 st.info("No tienes productos con stock disponible en tu almacen.")
-                st.form_submit_button("Sin inventario", disabled=True)
 
 st.markdown("---")
 
@@ -278,7 +276,7 @@ if st.session_state.carrito_items:
                                 )
                     
                     st.session_state.carrito_items = []
-                    st.cache_data.clear()
+                    st.cache_data.clear() # Limpia la RAM para que el inventario se actualice en la próxima carga
                     st.success(f"Orden #{hoja_id} guardada con exito para el vehiculo {placa}.")
                     st.rerun()
                 except Exception as e:
