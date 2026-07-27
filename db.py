@@ -6,7 +6,7 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOCAL_DB_PATH = os.path.join(BASE_DIR, "erp_taller.db")
 
-@st.cache_resource  # ESTA ES LA MAGIA QUE ACELERA TODO
+@st.cache_resource
 def obtener_conexion():
     try:
         db_url = st.secrets["postgres"]["url"]
@@ -77,6 +77,18 @@ def init_db():
                     comision_mecanico REAL DEFAULT 0
                 )
             '''))
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS Inventario (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    usuario_id INTEGER NOT NULL,
+                    nombre_producto TEXT NOT NULL,
+                    codigo_ref TEXT,
+                    stock_actual INTEGER NOT NULL DEFAULT 0,
+                    stock_minimo INTEGER NOT NULL DEFAULT 2,
+                    costo_compra REAL DEFAULT 0,
+                    precio_venta REAL NOT NULL DEFAULT 0
+                )
+            '''))
         else:
             conn.execute(text('''
                 CREATE TABLE IF NOT EXISTS Usuarios (
@@ -131,5 +143,18 @@ def init_db():
                     costo_compra REAL DEFAULT 0,
                     precio_venta REAL NOT NULL,
                     comision_mecanico REAL DEFAULT 0
+                )
+            '''))
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS Inventario (
+                    id SERIAL PRIMARY KEY,
+                    usuario_id INTEGER NOT NULL,
+                    nombre_producto VARCHAR(255) NOT NULL,
+                    codigo_ref VARCHAR(100),
+                    stock_actual INTEGER NOT NULL DEFAULT 0,
+                    stock_minimo INTEGER NOT NULL DEFAULT 2,
+                    costo_compra NUMERIC(12, 2) NOT NULL DEFAULT 0,
+                    precio_venta NUMERIC(12, 2) NOT NULL DEFAULT 0,
+                    FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE
                 )
             '''))
