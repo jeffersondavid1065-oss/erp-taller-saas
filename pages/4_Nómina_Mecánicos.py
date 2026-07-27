@@ -51,6 +51,20 @@ user_id = st.session_state.user_id
 def formato_cop(numero):
     return f"${numero:,.0f}".replace(",", ".")
 
+# ==========================================
+# FUNCIONES DE CONSULTA OPTIMIZADAS CON CACHÉ
+# ==========================================
+@st.cache_data(ttl=30)
+def obtener_mecanicos_filtro(uid):
+    with engine.connect() as conn_m:
+        return conn_m.execute(text("SELECT nombre FROM Mecanicos WHERE usuario_id = :uid"), {"uid": uid}).fetchall()
+
+@st.cache_data(ttl=30)
+def obtener_mecanicos_nomina(uid):
+    with engine.connect() as conn:
+        query = text("SELECT id, nombre FROM Mecanicos WHERE usuario_id = :uid AND estado = 'Activo'")
+        return conn.execute(query, {"uid": uid}).fetchall()
+
 st.title("Liquidación de Nómina Dinámica")
 st.markdown(f"Auditoría de comisiones y ajustes para: **{st.session_state.nombre_taller}**")
 st.markdown("---")
@@ -70,9 +84,8 @@ with st.expander("Filtros de Búsqueda Avanzada (Opcional)", expanded=False):
     with f_col2:
         filtro_empresa = st.text_input("Nombre de Empresa / Cliente (Opcional)")
         
-        # Obtenemos lista de mecánicos para el filtro
-        with engine.connect() as conn_m:
-            mecanicos_filtro = conn_m.execute(text("SELECT nombre FROM Mecanicos WHERE usuario_id = :uid"), {"uid": user_id}).fetchall()
+        # Obtenemos lista de mecánicos con caché
+        mecanicos_filtro = obtener_mecanicos_filtro(user_id)
         lista_nombres_mec = ["-- Todos --"] + [m[0] for m in mecanicos_filtro]
         filtro_mecanico_sel = st.selectbox("Mecánico (Opcional)", options=lista_nombres_mec)
     with f_col3:
@@ -130,7 +143,6 @@ if activar_filtro_fechas and rango_auditoria and len(rango_auditoria) == 2:
     params_auditoria["f_ini"] = f_ini.strftime('%Y-%m-%d')
     params_auditoria["f_fin"] = f_fin_ext.strftime('%Y-%m-%d')
 
-# Si no hay filtros estrictos aplicados, limitamos a los últimos 20 trabajos recientes por defecto
 if not filtro_nro_orden and not filtro_placa and not filtro_empresa and filtro_mecanico_sel == "-- Todos --" and not activar_filtro_fechas:
     query_final_str = " ".join(query_base_sql) + " ORDER BY h.fecha_ingreso DESC LIMIT 20"
 else:
@@ -193,13 +205,7 @@ st.markdown("---")
 # ==========================================
 # 2. LIQUIDACIÓN DE NÓMINA (FILTROS Y CÁLCULO)
 # ==========================================
-def obtener_mecanicos():
-    with engine.connect() as conn:
-        query = text("SELECT id, nombre FROM Mecanicos WHERE usuario_id = :uid")
-        datos = conn.execute(query, {"uid": user_id}).fetchall()
-    return datos
-
-mecanicos = obtener_mecanicos()
+mecanicos = obtener_mecanicos_nomina(user_id)
 
 if not mecanicos:
     st.info("No hay mecánicos registrados en tu taller.")
