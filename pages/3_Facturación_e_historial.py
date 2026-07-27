@@ -3,11 +3,14 @@ import pandas as pd
 import math
 from datetime import datetime, timedelta
 from sqlalchemy import text
-from db import obtener_conexion
+from db import obtener_conexion, init_db
 from io import BytesIO
 from fpdf import FPDF
 
 st.set_page_config(page_title="Expediente", layout="wide")
+
+# Inicializa tablas de la base de datos si no existen
+init_db()
 
 # ==========================================
 # ESTILOS CSS: MÁSCARA DERECHA ADAPTABLE, ANIMACIONES Y DISEÑO
@@ -438,26 +441,82 @@ if orden_busqueda:
                                 st.error("Completa la descripción, el precio y asegúrate de tener mecánicos registrados.")
                             
                     with tab_rep:
-                        desc_rep = st.text_input("Nombre Repuesto", key="e_desc_rep")
-                        costo_rep = st.number_input("Costo Compra ($)", min_value=0, step=1000, key="e_costo_rep")
-                        venta_rep = st.number_input("Precio Venta ($)", min_value=0, step=1000, key="e_venta_rep")
-                        if st.button("Guardar Repuesto", use_container_width=True):
-                            if desc_rep and venta_rep > 0:
-                                try:
-                                    with engine.begin() as conn_rep:
-                                        conn_rep.execute(
-                                            text('''
-                                                INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, costo_compra, precio_venta)
-                                                VALUES (:hid, 'Repuesto', :desc, :costo, :pvp)
-                                            '''),
-                                            {"hid": hoja_id, "desc": desc_rep, "costo": float(costo_rep), "pvp": float(venta_rep)}
-                                        )
-                                    st.cache_data.clear()
-                                    st.success("Repuesto agregado con éxito.")
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Error: {e}")
+                        origen_rep_exp = st.radio(
+                            "Origen del Repuesto:",
+                            ["Comprado afuera (Encargo)", "Tomado del Almacén Propio"],
+                            horizontal=True,
+                            key="origen_rep_exp"
+                        )
+
+                        if origen_rep_exp == "Comprado afuera (Encargo)":
+                            desc_rep = st.text_input("Nombre Repuesto", key="e_desc_rep_ext")
+                            costo_rep = st.number_input("Costo Compra ($)", min_value=0, step=1000, key="e_costo_rep_ext")
+                            venta_rep = st.number_input("Precio Venta ($)", min_value=0, step=1000, key="e_venta_rep_ext")
+                            
+                            if st.button("Guardar Repuesto Externo", use_container_width=True):
+                                if desc_rep and venta_rep > 0:
+                                    try:
+                                        with engine.begin() as conn_rep:
+                                            conn_rep.execute(
+                                                text('''
+                                                    INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, costo_compra, precio_venta)
+                                                    VALUES (:hid, 'Repuesto', :desc, :costo, :pvp)
+                                                '''),
+                                                {"hid": hoja_id, "desc": desc_rep, "costo": float(costo_rep), "pvp": float(venta_rep)}
+                                            )
+                                        st.cache_data.clear()
+                                        st.success("Repuesto agregado con éxito.")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Error: {e}")
+                                else:
+                                    st.error("Completa la descripción y el precio de venta.")
+                        else:
+                            with engine.connect() as conn_inv:
+                                prods = conn_inv.execute(
+                                    text("SELECT id, nombre_producto, stock_actual, costo_compra, precio_venta FROM Inventario WHERE usuario_id = :uid AND stock_actual > 0 ORDER BY nombre_producto ASC"),
+                                    {"uid": user_id}
+                                ).fetchall()
+
+                            if prods:
+                                dict_prods = {f"{p[1]} (Stock: {p[2]} un) - PVP: {formato_cop(p[4])}": p for p in prods}
+                                prod_sel_key = st.selectbox("Selecciona un producto del almacén:", options=list(dict_prods.keys()), key="exp_prod_sel")
+                                prod_data = dict_prods[prod_sel_key]
+
+                                col_exp_inv1, col_exp_inv2 = st.columns(2)
+                                with col_exp_inv1:
+                                    cant_usar_exp = st.number_input("Cantidad a Usar", min_value=1, max_value=int(prod_data[2]), value=1, step=1, key="exp_cant_usar")
+                                with col_exp_inv2:
+                                    pvp_unitario_exp = float(prod_data[4])
+                                    st.markdown(f"**Total Cobro:** {formato_cop(pvp_unitario_exp * cant_usar_exp)}")
+
+                                if st.button("Guardar Repuesto de Almacén", use_container_width=True):
+                                    try:
+                                        with engine.begin() as conn_rep_inv:
+                                            # 1. Insertar ítem en Detalles_Orden
+                                            conn_rep_inv.execute(
+                                                text('''
+                                                    INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, costo_compra, precio_venta)
+                                                    VALUES (:hid, 'Repuesto', :desc, :costo, :pvp)
+                                                '''),
+                                                {
+                                                    "hid": hoja_id, 
+                                                    "desc": f"{prod_data[1]} (x{cant_usar_exp})", 
+                                                    "costo": float(prod_data[3]) * cant_usar_exp, 
+                                                    "pvp": pvp_unitario_exp * cant_usar_exp
+                                                }
+                                            )
+                                            # 2. Descontar del Inventario
+                                            conn_rep_inv.execute(
+                                                text("UPDATE Inventario SET stock_actual = stock_actual - :cant WHERE id = :inv_id"),
+                                                {"cant": cant_usar_exp, "inv_id": prod_data[0]}
+                                            )
+                                        st.cache_data.clear()
+                                        st.success("Repuesto asignado y descontado del almacén.")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Error al asignar repuesto del almacén: {e}")
                             else:
-                                st.error("Completa la descripción y el precio de venta.")
+                                st.info("No tienes productos con stock disponible en tu almacén.")
     else:
         st.error("Por favor, ingresa un número de orden válido.")
