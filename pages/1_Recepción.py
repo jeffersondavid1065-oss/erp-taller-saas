@@ -1,9 +1,12 @@
 import streamlit as st
 import pandas as pd
 from sqlalchemy import text
-from db import obtener_conexion
+from db import obtener_conexion, init_db
 
 st.set_page_config(page_title="Recepción de Vehículos", layout="wide")
+
+# Inicializa la estructura de la base de datos si no existe
+init_db()
 
 # ESTILOS CSS ADAPTABLES CON MÁSCARA DERECHA Y ANIMACIÓN DE ENTRADA
 st.markdown("""
@@ -109,7 +112,8 @@ with tab1:
                     st.session_state.carrito_items.append({
                         'Tipo': 'Mano de Obra', 'Descripción': desc_mo, 
                         'Mecánico': mecanico_sel, 'Mecánico_ID': dict_mecanicos[mecanico_sel],
-                        'Costo': 0, 'PVP Cliente': venta_mo
+                        'Costo': 0, 'PVP Cliente': venta_mo,
+                        'Inventario_ID': None, 'Cantidad_Descontar': 0
                     })
                     st.rerun()
                 else:
@@ -117,27 +121,69 @@ with tab1:
 
 with tab2:
     with st.container(border=True):
-        col_rep1, col_rep2, col_rep3 = st.columns([2, 1, 1])
-        with col_rep1:
-            desc_rep = st.text_input("Nombre del Repuesto", key="desc_rep")
-        with col_rep2:
-            costo_rep = st.number_input("Costo Compra", min_value=0, step=1000, key="costo_rep")
-            st.caption(f"Costo: {formato_cop(costo_rep)}")
-        with col_rep3:
-            venta_rep = st.number_input("Precio Venta ($0 si está pendiente)", min_value=0, step=1000, key="venta_rep")
-            st.caption(f"Venta: {formato_cop(venta_rep)}")
-            
-        st.markdown("")
-        if st.button("Agregar Repuesto", use_container_width=True):
-            if desc_rep:
-                st.session_state.carrito_items.append({
-                    'Tipo': 'Repuesto', 'Descripción': desc_rep, 
-                    'Mecánico': '-', 'Mecánico_ID': None,
-                    'Costo': costo_rep, 'PVP Cliente': venta_rep
-                })
-                st.rerun()
+        origen_rep = st.radio(
+            "Origen del Repuesto:",
+            ["Comprado afuera (Encargo)", "Tomado del Almacén Propio"],
+            horizontal=True
+        )
+
+        if origen_rep == "Comprado afuera (Encargo)":
+            col_rep1, col_rep2, col_rep3 = st.columns([2, 1, 1])
+            with col_rep1:
+                desc_rep = st.text_input("Nombre del Repuesto", key="desc_rep_ext")
+            with col_rep2:
+                costo_rep = st.number_input("Costo Compra", min_value=0, step=1000, key="costo_rep_ext")
+                st.caption(f"Costo: {formato_cop(costo_rep)}")
+            with col_rep3:
+                venta_rep = st.number_input("Precio Venta ($0 si está pendiente)", min_value=0, step=1000, key="venta_rep_ext")
+                st.caption(f"Venta: {formato_cop(venta_rep)}")
+                
+            st.markdown("")
+            if st.button("Agregar Repuesto Externo", use_container_width=True):
+                if desc_rep:
+                    st.session_state.carrito_items.append({
+                        'Tipo': 'Repuesto', 'Descripción': desc_rep, 
+                        'Mecánico': '-', 'Mecánico_ID': None,
+                        'Costo': costo_rep, 'PVP Cliente': venta_rep,
+                        'Inventario_ID': None, 'Cantidad_Descontar': 0
+                    })
+                    st.rerun()
+                else:
+                    st.error("Completa la descripción del repuesto.")
+
+        else:
+            with engine.connect() as conn_inv:
+                prods = conn_inv.execute(
+                    text("SELECT id, nombre_producto, stock_actual, costo_compra, precio_venta FROM Inventario WHERE usuario_id = :uid AND stock_actual > 0 ORDER BY nombre_producto ASC"),
+                    {"uid": user_id}
+                ).fetchall()
+
+            if prods:
+                dict_prods = {f"{p[1]} (Stock: {p[2]} un) - PVP: {formato_cop(p[4])}": p for p in prods}
+                prod_sel_key = st.selectbox("Selecciona un producto del almacén:", options=list(dict_prods.keys()))
+                prod_data = dict_prods[prod_sel_key]
+
+                col_inv1, col_inv2 = st.columns(2)
+                with col_inv1:
+                    cant_usar = st.number_input("Cantidad a Usar", min_value=1, max_value=int(prod_data[2]), value=1, step=1)
+                with col_inv2:
+                    pvp_unitario = float(prod_data[4])
+                    st.markdown(f"**Total Cobro:** {formato_cop(pvp_unitario * cant_usar)}")
+
+                st.markdown("")
+                if st.button("Agregar del Almacén Propio", use_container_width=True):
+                    st.session_state.carrito_items.append({
+                        'Tipo': 'Repuesto', 
+                        'Descripción': f"{prod_data[1]} (x{cant_usar})",
+                        'Mecánico': '-', 'Mecánico_ID': None,
+                        'Costo': float(prod_data[3]) * cant_usar,
+                        'PVP Cliente': pvp_unitario * cant_usar,
+                        'Inventario_ID': prod_data[0],
+                        'Cantidad_Descontar': cant_usar
+                    })
+                    st.rerun()
             else:
-                st.error("Completa la descripción del repuesto.")
+                st.info("No tienes productos con stock disponible en tu almacén.")
 
 st.markdown("---")
 
@@ -181,15 +227,27 @@ if st.session_state.carrito_items:
                     empresa_id = dict_empresas[empresa_sel]
                     
                     with engine.begin() as conn:
-                        resultado_hoja = conn.execute(
-                            text('''
-                                INSERT INTO Hojas_Trabajo (usuario_id, placa, empresa_id, estado) 
-                                VALUES (:uid, :placa, :empresa_id, :estado)
-                                RETURNING id
-                            '''), 
-                            {"uid": user_id, "placa": placa, "empresa_id": empresa_id, "estado": estado}
-                        )
-                        hoja_id = resultado_hoja.scalar()
+                        is_sqlite = "sqlite" in str(engine.url)
+                        
+                        if is_sqlite:
+                            cursor = conn.execute(
+                                text('''
+                                    INSERT INTO Hojas_Trabajo (usuario_id, placa, empresa_id, estado) 
+                                    VALUES (:uid, :placa, :empresa_id, :estado)
+                                '''), 
+                                {"uid": user_id, "placa": placa, "empresa_id": empresa_id, "estado": estado}
+                            )
+                            hoja_id = cursor.lastrowid
+                        else:
+                            resultado_hoja = conn.execute(
+                                text('''
+                                    INSERT INTO Hojas_Trabajo (usuario_id, placa, empresa_id, estado) 
+                                    VALUES (:uid, :placa, :empresa_id, :estado)
+                                    RETURNING id
+                                '''), 
+                                {"uid": user_id, "placa": placa, "empresa_id": empresa_id, "estado": estado}
+                            )
+                            hoja_id = resultado_hoja.scalar()
                         
                         for item in st.session_state.carrito_items:
                             conn.execute(
@@ -206,6 +264,13 @@ if st.session_state.carrito_items:
                                     "pvp": float(item['PVP Cliente'])
                                 }
                             )
+                            
+                            # Descontar del inventario si proviene del almacén propio
+                            if item.get('Inventario_ID'):
+                                conn.execute(
+                                    text("UPDATE Inventario SET stock_actual = stock_actual - :cant WHERE id = :inv_id"),
+                                    {"cant": item['Cantidad_Descontar'], "inv_id": item['Inventario_ID']}
+                                )
                     
                     st.session_state.carrito_items = [] 
                     st.success(f"Orden #{hoja_id} guardada con éxito para el vehículo {placa}.")
