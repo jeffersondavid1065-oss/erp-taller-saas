@@ -49,7 +49,7 @@ engine = obtener_conexion()
 user_id = st.session_state.user_id
 
 def formato_cop(numero):
-    return f"${numero:,.0f}".replace(",", ".")
+    return f"${float(numero):,.0f}".replace(",", ".")
 
 # ==========================================
 # FUNCIONES DE CONSULTA OPTIMIZADAS CON CACHÉ
@@ -203,7 +203,7 @@ else:
 st.markdown("---")
 
 # ==========================================
-# 2. LIQUIDACIÓN DE NÓMINA (FILTROS Y CÁLCULO)
+# 2. LIQUIDACIÓN DE NÓMINA (FILTROS Y CÁLCULO CON RETENCIÓN)
 # ==========================================
 mecanicos = obtener_mecanicos_nomina(user_id)
 
@@ -233,10 +233,12 @@ else:
             fecha_fin_extendida = fecha_fin + timedelta(days=1) 
             mecanico_id = dict_mecanicos[mecanico_sel]
             
+            # Consultamos precio_venta (Cobro al cliente) y costo_compra (Retención fiscal registrada)
             query_nomina = text('''
                 SELECT h.id as orden_id, h.placa, e.razon_social as empresa, date(h.fecha_ingreso) as fecha, 
                        d.descripcion as descripcion_trabajo, 
-                       d.precio_venta as valor_mano_obra
+                       d.precio_venta as cobro_cliente,
+                       COALESCE(d.costo_compra, 0) as retencion_aplicada
                 FROM Detalles_Orden d
                 JOIN Hojas_Trabajo h ON d.hoja_id = h.id
                 JOIN Empresas_Clientes e ON h.empresa_id = e.id
@@ -262,23 +264,40 @@ else:
             st.markdown("---")
             
             if not df_nomina.empty:
-                df_nomina['comision_mecanico'] = (df_nomina['valor_mano_obra'] * (porcentaje_pago / 100)).round(2)
+                # Conversiones explícitas para compatibilidad con Postgres
+                df_nomina['cobro_cliente'] = df_nomina['cobro_cliente'].astype(float)
+                df_nomina['retencion_aplicada'] = df_nomina['retencion_aplicada'].astype(float)
                 
-                total_mo = df_nomina['valor_mano_obra'].sum()
+                # Base Real = Cobro al Cliente - Retención Fiscal
+                df_nomina['base_real_nomina'] = df_nomina['cobro_cliente'] - df_nomina['retencion_aplicada']
+                
+                # Comisión = Base Real * (% Pago / 100)
+                df_nomina['comision_mecanico'] = (df_nomina['base_real_nomina'] * (porcentaje_pago / 100)).round(2)
+                
+                total_cobrado_cliente = df_nomina['cobro_cliente'].sum()
+                total_base_real = df_nomina['base_real_nomina'].sum()
                 total_comision = df_nomina['comision_mecanico'].sum()
                 
                 st.subheader(f"Resumen de Liquidación: {mecanico_sel}")
-                met1, met2, met3 = st.columns(3)
+                met1, met2, met3, met4 = st.columns(4)
                 met1.metric("Trabajos Realizados", len(df_nomina))
-                met2.metric("Base (Mano de Obra Ajustada)", formato_cop(total_mo))
-                met3.metric(f"Total a Pagar ({porcentaje_pago}%)", formato_cop(total_comision))
+                met2.metric("Total Cobrado Cliente", formato_cop(total_cobrado_cliente))
+                met3.metric("Base Neta (Tras Retención)", formato_cop(total_base_real))
+                met4.metric(f"Total a Pagar ({porcentaje_pago}%)", formato_cop(total_comision))
                 
                 st.markdown("#### Detalle de Trabajos para el Recibo de Pago")
-                df_mostrar = df_nomina.copy()
-                df_mostrar.columns = ['N° Orden', 'Placa', 'Cliente / Empresa', 'Fecha de Ingreso', 'Descripción del Trabajo', 'Cobrado al Cliente ($)', 'Comisión del Técnico ($)']
+                df_mostrar = df_nomina[['orden_id', 'placa', 'empresa', 'fecha', 'descripcion_trabajo', 'cobro_cliente', 'retencion_aplicada', 'base_real_nomina', 'comision_mecanico']].copy()
+                
+                df_mostrar.columns = [
+                    'N° Orden', 'Placa', 'Cliente / Empresa', 'Fecha de Ingreso', 
+                    'Descripción del Trabajo', 'Cobrado al Cliente ($)', 'Retención ($)', 
+                    'Base para Nómina ($)', 'Comisión del Técnico ($)'
+                ]
                 
                 st.dataframe(df_mostrar.style.format({
                     'Cobrado al Cliente ($)': lambda x: formato_cop(x),
+                    'Retención ($)': lambda x: formato_cop(x),
+                    'Base para Nómina ($)': lambda x: formato_cop(x),
                     'Comisión del Técnico ($)': lambda x: formato_cop(x)
                 }), use_container_width=True, hide_index=True)
                 
