@@ -118,16 +118,18 @@ with tab1:
         st.markdown("")
         if st.button("Agregar Trabajo", use_container_width=True):
             if desc_mo and mecanico_sel != "-- Seleccionar Mecanico --":
-                # Guardamos la trazabilidad de la retencion en la descripcion
+                # La descripcion se mantiene limpia, la retencion es interna
                 if porcentaje_ret > 0:
-                    desc_final = f"{desc_mo} (Bruto: {formato_cop(venta_mo)} - Ret {porcentaje_ret}%: {formato_cop(valor_descontado)})"
+                    desc_final = f"{desc_mo} (Ret {porcentaje_ret}% aplicada a la nomina)"
                 else:
                     desc_final = desc_mo
                 
                 st.session_state.carrito_items.append({
                     'Tipo': 'Mano de Obra', 'Descripción': desc_final, 
                     'Mecánico': mecanico_sel, 'Mecánico_ID': dict_mecanicos[mecanico_sel],
-                    'Costo': 0, 'PVP Cliente': neto_mo,
+                    'Costo': valor_descontado, # Guardamos la retención en el costo para que la nómina sepa restarlo
+                    'PVP Cliente': float(venta_mo), # Facturamos el 100% al cliente
+                    'Base_Nomina': neto_mo,
                     'Inventario_ID': None, 'Cantidad_Descontar': 0
                 })
                 st.rerun()
@@ -160,6 +162,7 @@ with tab2:
                         'Tipo': 'Repuesto', 'Descripción': desc_rep, 
                         'Mecánico': '-', 'Mecánico_ID': None,
                         'Costo': costo_rep, 'PVP Cliente': venta_rep,
+                        'Base_Nomina': None,
                         'Inventario_ID': None, 'Cantidad_Descontar': 0
                     })
                     st.rerun()
@@ -193,6 +196,7 @@ with tab2:
                         'Mecánico': '-', 'Mecánico_ID': None,
                         'Costo': float(prod_data[3]) * cant_usar,
                         'PVP Cliente': pvp_unitario * cant_usar,
+                        'Base_Nomina': None,
                         'Inventario_ID': prod_data[0],
                         'Cantidad_Descontar': cant_usar
                     })
@@ -219,7 +223,11 @@ if st.session_state.carrito_items:
                 if item['PVP Cliente'] == 0:
                     st.markdown("**Por Cotizar ($0)**")
                 else:
-                    st.markdown(f"**Cobro Neto: {formato_cop(item['PVP Cliente'])}**")
+                    st.markdown(f"**Cobro al Cliente: {formato_cop(item['PVP Cliente'])}**")
+                    # Mostramos la base neta del mecánico si aplica
+                    if item.get('Base_Nomina') and item['Base_Nomina'] < item['PVP Cliente']:
+                        st.caption(f"Base Nomina: {formato_cop(item['Base_Nomina'])}")
+
             with col_res4:
                 if st.button("Quitar", key=f"borrar_{i}", use_container_width=True):
                     st.session_state.carrito_items.pop(i)
@@ -275,8 +283,8 @@ if st.session_state.carrito_items:
                                     "tipo": item['Tipo'], 
                                     "desc": item['Descripción'], 
                                     "mec_id": item['Mecánico_ID'], 
-                                    "costo": float(item['Costo']), 
-                                    "pvp": float(item['PVP Cliente'])
+                                    "costo": float(item['Costo']),  # Aqui se guarda la retención para que la nómina la descuente
+                                    "pvp": float(item['PVP Cliente']) # Facturacion al 100%
                                 }
                             )
                             
