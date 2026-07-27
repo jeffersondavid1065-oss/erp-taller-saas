@@ -10,11 +10,11 @@ from fpdf import FPDF
 st.set_page_config(page_title="Expediente", layout="wide")
 
 # ==========================================
-# ESTILOS CSS: MÁSCARA DERECHA, ANIMACIONES Y DISEÑO
+# ESTILOS CSS: MÁSCARA DERECHA ADAPTABLE, ANIMACIONES Y DISEÑO
 # ==========================================
 st.markdown("""
     <style>
-    /* Máscara sólida en la esquina superior derecha que bloquea botones y clics */
+    /* Máscara sólida adaptable en la esquina superior derecha que bloquea botones y clics */
     header::after {
         content: "";
         position: fixed !important;
@@ -22,7 +22,7 @@ st.markdown("""
         right: 0 !important;
         width: 350px !important;
         height: 60px !important;
-        background-color: #0e1117 !important;
+        background-color: var(--background-color) !important;
         z-index: 9999999 !important;
         pointer-events: all !important;
     }
