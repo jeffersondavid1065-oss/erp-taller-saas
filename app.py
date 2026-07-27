@@ -14,10 +14,10 @@ st.set_page_config(
 
 is_logged = st.session_state.get('user_logged', False)
 
-# 2. ESTILOS CSS CON MÁSCARA DERECHA
+# 2. ESTILOS CSS ADAPTABLES AL TEMA (CLARO/OSCURO)
 st.markdown("""
     <style>
-    /* Máscara sólida en la esquina superior derecha que bloquea botones y clics */
+    /* Máscara adaptable automáticamente al tema actual (Claro u Oscuro) */
     header::after {
         content: "";
         position: fixed !important;
@@ -25,9 +25,9 @@ st.markdown("""
         right: 0 !important;
         width: 350px !important;
         height: 60px !important;
-        background-color: #0e1117 !important; /* Mismo tono oscuro de Streamlit */
+        background-color: var(--background-color) !important; /* Variable nativa de Streamlit */
         z-index: 9999999 !important;
-        pointer-events: all !important; /* Bloquea cualquier clic hacia los iconos de abajo */
+        pointer-events: all !important; /* Bloquea cualquier clic hacia los iconos */
     }
 
     /* Ocultar la barra lateral SOLO cuando NO hay sesión iniciada */
