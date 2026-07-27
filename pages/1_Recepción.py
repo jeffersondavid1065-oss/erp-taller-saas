@@ -5,13 +5,13 @@ from db import obtener_conexion, init_db
 
 st.set_page_config(page_title="Recepcion de Vehiculos", layout="wide")
 
-# Inicializa la estructura de la base de datos si no existe
 init_db()
 
-# ESTILOS CSS ADAPTABLES CON MASCARA DERECHA Y ANIMACION DE ENTRADA
+# ==========================================
+# ESTILOS CSS ADAPTABLES
+# ==========================================
 st.markdown("""
     <style>
-    /* Mascara solida adaptable en la esquina superior derecha que bloquea botones y clics */
     header::after {
         content: "";
         position: fixed !important;
@@ -23,63 +23,67 @@ st.markdown("""
         z-index: 9999999 !important;
         pointer-events: all !important;
     }
-
-    /* Animacion de entrada */
     @keyframes fade-in-up {
         0% { opacity: 0; transform: translateY(20px); }
         100% { opacity: 1; transform: translateY(0); }
     }
-    
-    [data-testid="stAppViewBlockContainer"] {
-        animation: fade-in-up 0.6s ease-out;
-    }
-    
-    div[data-testid="stVerticalBlock"] > div {
-        animation: fade-in-up 0.5s ease-out;
-    }
+    [data-testid="stAppViewBlockContainer"] { animation: fade-in-up 0.4s ease-out; }
     </style>
 """, unsafe_allow_html=True)
 
-# Validacion de Seguridad
 if not st.session_state.get('user_logged', False):
     st.warning("Debes iniciar sesion en la pagina principal para acceder a este modulo.")
     st.stop()
 
-engine = obtener_conexion()
 user_id = st.session_state.user_id
 
 if 'carrito_items' not in st.session_state:
     st.session_state.carrito_items = []
 
-def obtener_datos(query, params={}):
-    with engine.connect() as conn:
-        data = conn.execute(text(query), params).fetchall()
-    return data
-
 def formato_cop(numero):
     return f"${float(numero):,.0f}".replace(",", ".")
+
+# ==========================================
+# OPTIMIZACIÓN: CONSULTAS CACHEADAS (SÚPER RÁPIDAS)
+# ==========================================
+@st.cache_data(ttl=300) # Guarda clientes y mecánicos en RAM por 5 minutos
+def obtener_catalogos(uid):
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        empresas_db = conn.execute(text("SELECT id, razon_social FROM Empresas_Clientes WHERE usuario_id = :uid"), {"uid": uid}).fetchall()
+        mecanicos_db = conn.execute(text("SELECT id, nombre FROM Mecanicos WHERE usuario_id = :uid"), {"uid": uid}).fetchall()
+    return [tuple(e) for e in empresas_db], [tuple(m) for m in mecanicos_db]
+
+@st.cache_data(ttl=60) # Guarda el inventario en RAM por 1 minuto
+def obtener_inventario_activo(uid):
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        prods = conn.execute(
+            text("SELECT id, nombre_producto, stock_actual, costo_compra, precio_venta FROM Inventario WHERE usuario_id = :uid AND stock_actual > 0 ORDER BY nombre_producto ASC"),
+            {"uid": uid}
+        ).fetchall()
+    return [tuple(p) for p in prods]
 
 st.title("Recepcion y Asignacion de Trabajos")
 st.markdown(f"Registrando ordenes para: **{st.session_state.nombre_taller}**")
 st.markdown("---")
 
-empresas = obtener_datos("SELECT id, razon_social FROM Empresas_Clientes WHERE usuario_id = :uid", {"uid": user_id})
-mecanicos = obtener_datos("SELECT id, nombre FROM Mecanicos WHERE usuario_id = :uid", {"uid": user_id})
+# Llamadas instantáneas desde la caché
+empresas, mecanicos = obtener_catalogos(user_id)
 
 if not empresas or not mecanicos:
     st.warning("Tu taller aun no tiene empresas o mecanicos registrados en la base de datos.")
     st.info("Debes registrar al menos 1 mecanico y 1 cliente para poder asignar trabajos.")
     st.stop()
 
-# Diccionarios para cruzar nombres con IDs
 dict_empresas = {f"{e[1]}": e[0] for e in empresas}
 dict_mecanicos = {f"{m[1]}": m[0] for m in mecanicos}
-
-# Listas con opcion vacia por defecto
 opciones_empresas = ["-- Seleccionar Empresa --"] + list(dict_empresas.keys())
 opciones_mecanicos = ["-- Seleccionar Mecanico --"] + list(dict_mecanicos.keys())
 
+# ==========================================
 # 1. DATOS DEL VEHICULO
+# ==========================================
 st.subheader("1. Datos del Vehiculo")
 with st.container(border=True):
     col1, col2, col3 = st.columns(3)
@@ -92,7 +96,9 @@ with st.container(border=True):
 
 st.markdown("---")
 
+# ==========================================
 # 2. AGREGAR TRABAJOS Y REPUESTOS
+# ==========================================
 st.subheader("2. Agregar Trabajos y Repuestos")
 tab1, tab2 = st.tabs(["Mano de Obra", "Repuestos"])
 
@@ -109,7 +115,6 @@ with tab1:
         with col_mo3:
             porcentaje_ret = st.number_input("Retencion Fiscal (%)", min_value=0.0, max_value=100.0, step=1.0, key="ret_mo", help="Porcentaje de descuento, ej. 4 o 11.")
         
-        # Calculo del porcentaje a dinero y el neto real
         valor_descontado = float(venta_mo) * (float(porcentaje_ret) / 100.0)
         neto_mo = max(0.0, float(venta_mo) - valor_descontado)
         
@@ -118,7 +123,6 @@ with tab1:
         st.markdown("")
         if st.button("Agregar Trabajo", use_container_width=True):
             if desc_mo and mecanico_sel != "-- Seleccionar Mecanico --":
-                # La descripcion se mantiene limpia, la retencion es interna
                 if porcentaje_ret > 0:
                     desc_final = f"{desc_mo} (Ret {porcentaje_ret}% aplicada a la nomina)"
                 else:
@@ -127,8 +131,8 @@ with tab1:
                 st.session_state.carrito_items.append({
                     'Tipo': 'Mano de Obra', 'Descripción': desc_final, 
                     'Mecánico': mecanico_sel, 'Mecánico_ID': dict_mecanicos[mecanico_sel],
-                    'Costo': valor_descontado, # Guardamos la retención en el costo para que la nómina sepa restarlo
-                    'PVP Cliente': float(venta_mo), # Facturamos el 100% al cliente
+                    'Costo': valor_descontado, 
+                    'PVP Cliente': float(venta_mo), 
                     'Base_Nomina': neto_mo,
                     'Inventario_ID': None, 'Cantidad_Descontar': 0
                 })
@@ -138,11 +142,7 @@ with tab1:
 
 with tab2:
     with st.container(border=True):
-        origen_rep = st.radio(
-            "Origen del Repuesto:",
-            ["Comprado afuera (Encargo)", "Tomado del Almacen Propio"],
-            horizontal=True
-        )
+        origen_rep = st.radio("Origen del Repuesto:", ["Comprado afuera (Encargo)", "Tomado del Almacen Propio"], horizontal=True)
 
         if origen_rep == "Comprado afuera (Encargo)":
             col_rep1, col_rep2, col_rep3 = st.columns([2, 1, 1])
@@ -170,11 +170,7 @@ with tab2:
                     st.error("Completa la descripcion del repuesto.")
 
         else:
-            with engine.connect() as conn_inv:
-                prods = conn_inv.execute(
-                    text("SELECT id, nombre_producto, stock_actual, costo_compra, precio_venta FROM Inventario WHERE usuario_id = :uid AND stock_actual > 0 ORDER BY nombre_producto ASC"),
-                    {"uid": user_id}
-                ).fetchall()
+            prods = obtener_inventario_activo(user_id)
 
             if prods:
                 dict_prods = {f"{p[1]} (Stock: {p[2]} un) - PVP: {formato_cop(p[4])}": p for p in prods}
@@ -206,7 +202,9 @@ with tab2:
 
 st.markdown("---")
 
+# ==========================================
 # 3. RESUMEN DE LA ORDEN (CARRITO)
+# ==========================================
 st.subheader("3. Resumen de la Orden")
 if st.session_state.carrito_items:
     for i, item in enumerate(st.session_state.carrito_items):
@@ -224,10 +222,8 @@ if st.session_state.carrito_items:
                     st.markdown("**Por Cotizar ($0)**")
                 else:
                     st.markdown(f"**Cobro al Cliente: {formato_cop(item['PVP Cliente'])}**")
-                    # Mostramos la base neta del mecánico si aplica
                     if item.get('Base_Nomina') and item['Base_Nomina'] < item['PVP Cliente']:
                         st.caption(f"Base Nomina: {formato_cop(item['Base_Nomina'])}")
-
             with col_res4:
                 if st.button("Quitar", key=f"borrar_{i}", use_container_width=True):
                     st.session_state.carrito_items.pop(i)
@@ -248,54 +244,39 @@ if st.session_state.carrito_items:
             else:
                 try:
                     empresa_id = dict_empresas[empresa_sel]
-                    
+                    engine = obtener_conexion()
                     with engine.begin() as conn:
                         is_sqlite = "sqlite" in str(engine.url)
                         
                         if is_sqlite:
                             cursor = conn.execute(
-                                text('''
-                                    INSERT INTO Hojas_Trabajo (usuario_id, placa, empresa_id, estado) 
-                                    VALUES (:uid, :placa, :empresa_id, :estado)
-                                '''), 
+                                text("INSERT INTO Hojas_Trabajo (usuario_id, placa, empresa_id, estado) VALUES (:uid, :placa, :empresa_id, :estado)"), 
                                 {"uid": user_id, "placa": placa, "empresa_id": empresa_id, "estado": estado}
                             )
                             hoja_id = cursor.lastrowid
                         else:
                             resultado_hoja = conn.execute(
-                                text('''
-                                    INSERT INTO Hojas_Trabajo (usuario_id, placa, empresa_id, estado) 
-                                    VALUES (:uid, :placa, :empresa_id, :estado)
-                                    RETURNING id
-                                '''), 
+                                text("INSERT INTO Hojas_Trabajo (usuario_id, placa, empresa_id, estado) VALUES (:uid, :placa, :empresa_id, :estado) RETURNING id"), 
                                 {"uid": user_id, "placa": placa, "empresa_id": empresa_id, "estado": estado}
                             )
                             hoja_id = resultado_hoja.scalar()
                         
                         for item in st.session_state.carrito_items:
                             conn.execute(
-                                text('''
-                                    INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, mecanico_id, costo_compra, precio_venta)
-                                    VALUES (:hoja_id, :tipo, :desc, :mec_id, :costo, :pvp)
-                                '''), 
+                                text("INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, mecanico_id, costo_compra, precio_venta) VALUES (:hoja_id, :tipo, :desc, :mec_id, :costo, :pvp)"), 
                                 {
-                                    "hoja_id": hoja_id, 
-                                    "tipo": item['Tipo'], 
-                                    "desc": item['Descripción'], 
-                                    "mec_id": item['Mecánico_ID'], 
-                                    "costo": float(item['Costo']),  # Aqui se guarda la retención para que la nómina la descuente
-                                    "pvp": float(item['PVP Cliente']) # Facturacion al 100%
+                                    "hoja_id": hoja_id, "tipo": item['Tipo'], "desc": item['Descripción'], 
+                                    "mec_id": item['Mecánico_ID'], "costo": float(item['Costo']), "pvp": float(item['PVP Cliente'])
                                 }
                             )
-                            
-                            # Descontar del inventario si proviene del almacen propio
                             if item.get('Inventario_ID'):
                                 conn.execute(
                                     text("UPDATE Inventario SET stock_actual = stock_actual - :cant WHERE id = :inv_id"),
                                     {"cant": item['Cantidad_Descontar'], "inv_id": item['Inventario_ID']}
                                 )
                     
-                    st.session_state.carrito_items = [] 
+                    st.session_state.carrito_items = []
+                    st.cache_data.clear() # Limpia la RAM para que el inventario se actualice en la próxima carga
                     st.success(f"Orden #{hoja_id} guardada con exito para el vehiculo {placa}.")
                     st.rerun()
                 except Exception as e:
