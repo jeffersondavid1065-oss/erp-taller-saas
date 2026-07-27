@@ -51,6 +51,27 @@ user_id = st.session_state.user_id
 def formato_cop(numero):
     return f"${numero:,.0f}".replace(",", ".")
 
+# ==========================================
+# FUNCIONES DE CONSULTA CON CACHÉ (ACELERAN LA NAVEGACIÓN)
+# ==========================================
+@st.cache_data(ttl=30)
+def obtener_empresas_directorio(uid):
+    with engine.connect() as conn:
+        return pd.read_sql_query(
+            text("SELECT id, razon_social, nit, telefono, email FROM Empresas_Clientes WHERE usuario_id = :uid ORDER BY razon_social ASC"), 
+            con=conn, 
+            params={"uid": uid}
+        )
+
+@st.cache_data(ttl=30)
+def obtener_mecanicos_directorio(uid):
+    with engine.connect() as conn:
+        return pd.read_sql_query(
+            text("SELECT id, nombre, documento, estado FROM Mecanicos WHERE usuario_id = :uid ORDER BY nombre ASC"), 
+            con=conn, 
+            params={"uid": uid}
+        )
+
 st.title("Directorio y Expediente de Clientes")
 st.markdown(f"Administración de clientes, flotas y personal para: **{st.session_state.nombre_taller}**")
 st.markdown("---")
@@ -91,6 +112,7 @@ with tab_empresas:
                                     "email": email
                                 }
                             )
+                        st.cache_data.clear()
                         st.success(f"La empresa {razon_social} fue registrada con éxito en el sistema.")
                         st.rerun()
                     except Exception as e:
@@ -108,12 +130,7 @@ with tab_empresas:
     # ==========================================
     st.subheader("Buscador y Gestión de Clientes / Empresas")
     
-    with engine.connect() as conn:
-        empresas_df = pd.read_sql_query(
-            text("SELECT id, razon_social, nit, telefono, email FROM Empresas_Clientes WHERE usuario_id = :uid ORDER BY razon_social ASC"), 
-            con=conn, 
-            params={"uid": user_id}
-        )
+    empresas_df = obtener_empresas_directorio(user_id)
 
     if not empresas_df.empty:
         dict_empresas = {f"{row['razon_social']} (NIT/CC: {row['nit']})": row['id'] for index, row in empresas_df.iterrows()}
@@ -171,6 +188,7 @@ with tab_empresas:
                                         text("DELETE FROM Empresas_Clientes WHERE id = :id AND usuario_id = :uid"),
                                         {"id": empresa_id_int, "uid": user_id}
                                     )
+                                st.cache_data.clear()
                                 st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = False
                                 st.success("Empresa eliminada con éxito.")
                                 st.rerun()
@@ -215,6 +233,7 @@ with tab_empresas:
                                             "uid": user_id
                                         }
                                     )
+                                st.cache_data.clear()
                                 st.session_state[f"edit_emp_mode_{empresa_info['id']}"] = False
                                 st.success("Empresa actualizada con éxito.")
                                 st.rerun()
@@ -335,6 +354,7 @@ with tab_mecanicos:
                                 '''),
                                 {"uid": user_id, "nombre": nombre_mec, "doc": doc_mec}
                             )
+                        st.cache_data.clear()
                         st.success(f"{nombre_mec} ha sido agregado al equipo con éxito.")
                         st.rerun()
                     except Exception as e:
@@ -348,12 +368,7 @@ with tab_mecanicos:
     with col_mec2:
         st.subheader("Personal Actual")
         
-        with engine.connect() as conn:
-            mecanicos_db = pd.read_sql_query(
-                text("SELECT id, nombre, documento, estado FROM Mecanicos WHERE usuario_id = :uid"), 
-                con=conn, 
-                params={"uid": user_id}
-            )
+        mecanicos_db = obtener_mecanicos_directorio(user_id)
         
         if not mecanicos_db.empty:
             for index, row in mecanicos_db.iterrows():
@@ -373,6 +388,7 @@ with tab_mecanicos:
                                         text("DELETE FROM Mecanicos WHERE id = :id AND usuario_id = :uid"),
                                         {"id": int(row['id']), "uid": user_id}
                                     )
+                                st.cache_data.clear()
                                 st.success("Mecánico eliminado.")
                                 st.rerun()
                             except Exception:
@@ -407,6 +423,7 @@ with tab_mecanicos:
                                                 "uid": user_id
                                             }
                                         )
+                                    st.cache_data.clear()
                                     st.session_state[f"edit_mode_{row['id']}"] = False
                                     st.success("Registro actualizado con éxito.")
                                     st.rerun()
