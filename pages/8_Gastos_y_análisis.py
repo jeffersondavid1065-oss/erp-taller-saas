@@ -505,4 +505,15 @@ with tab_analisis:
             df_gastos_mes,
             año_sel,
             mes_sel,
-            nombre
+            nombre_taller
+        )
+        st.download_button(
+            label="📊 Descargar Reporte Mensual Completo",
+            data=excel_reporte,
+            file_name=f"Reporte_Financiero_{mes_sel:02d}_{año_sel}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
+    
+    with col_desc2:
+        st.info("💡 **Tip para la DIAN:** Descarga estos reportes mensuales para mantener un registro organizado de tus ingresos y gastos. Facilita auditorías y declaraciones de impuestos.")
