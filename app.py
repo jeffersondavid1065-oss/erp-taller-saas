@@ -25,6 +25,7 @@ if "auth" not in st.session_state:
         "logged": False,
         "user_id": None,
         "nombre_taller": None,
+        "email": None,
     }
 
 is_logged = st.session_state.auth["logged"]
@@ -146,6 +147,7 @@ if not is_logged:
                                     "logged": True,
                                     "user_id": user[0],
                                     "nombre_taller": user[1],
+                                    "email": email_login,
                                 }
                                 st.rerun()
                         else:
@@ -235,5 +237,5 @@ else:
         # Solo se limpia el estado de sesión del usuario actual.
         # No se toca st.cache_data.clear() global: eso afectaría a
         # TODOS los usuarios conectados simultáneamente al servidor.
-        st.session_state.auth = {"logged": False, "user_id": None, "nombre_taller": None}
+        st.session_state.auth = {"logged": False, "user_id": None, "nombre_taller": None, "email": None}
         st.rerun()
