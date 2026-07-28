@@ -3,6 +3,13 @@ import pandas as pd
 from datetime import datetime, timedelta
 from sqlalchemy import text
 from db import obtener_conexion
+from queries import (
+    obtener_empresas_directorio,
+    obtener_mecanicos_directorio,
+    invalidar_cache_directorio,
+    invalidar_cache_ordenes,
+    obtener_metricas_dashboard,
+)
 
 st.set_page_config(page_title="Directorio y CRM", layout="wide")
 
@@ -11,7 +18,6 @@ st.set_page_config(page_title="Directorio y CRM", layout="wide")
 # ==========================================
 st.markdown("""
     <style>
-    /* Máscara sólida adaptable en la esquina superior derecha que bloquea botones y clics */
     header::after {
         content: "";
         position: fixed !important;
@@ -24,7 +30,6 @@ st.markdown("""
         pointer-events: all !important;
     }
 
-    /* Animación de entrada */
     @keyframes fade-in-up {
         0% { opacity: 0; transform: translateY(20px); }
         100% { opacity: 1; transform: translateY(0); }
@@ -40,40 +45,25 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Validación de Seguridad
-if not st.session_state.get('user_logged', False):
+# --------------------------------------------------------------------------------
+# AUTENTICACIÓN: mismo namespace st.session_state.auth definido en app.py
+# --------------------------------------------------------------------------------
+if "auth" not in st.session_state:
+    st.session_state.auth = {"logged": False, "user_id": None, "nombre_taller": None}
+
+if not st.session_state.auth["logged"]:
     st.warning("Debes iniciar sesión en la página principal para acceder a este módulo.")
     st.stop()
 
 engine = obtener_conexion()
-user_id = st.session_state.user_id
+user_id = st.session_state.auth["user_id"]
+nombre_taller = st.session_state.auth["nombre_taller"]
 
 def formato_cop(numero):
     return f"${numero:,.0f}".replace(",", ".")
 
-# ==========================================
-# FUNCIONES DE CONSULTA CON CACHÉ (ACELERAN LA NAVEGACIÓN)
-# ==========================================
-@st.cache_data(ttl=30)
-def obtener_empresas_directorio(uid):
-    with engine.connect() as conn:
-        return pd.read_sql_query(
-            text("SELECT id, razon_social, nit, telefono, email FROM Empresas_Clientes WHERE usuario_id = :uid ORDER BY razon_social ASC"), 
-            con=conn, 
-            params={"uid": uid}
-        )
-
-@st.cache_data(ttl=30)
-def obtener_mecanicos_directorio(uid):
-    with engine.connect() as conn:
-        return pd.read_sql_query(
-            text("SELECT id, nombre, documento, estado FROM Mecanicos WHERE usuario_id = :uid ORDER BY nombre ASC"), 
-            con=conn, 
-            params={"uid": uid}
-        )
-
 st.title("Directorio y Expediente de Clientes")
-st.markdown(f"Administración de clientes, flotas y personal para: **{st.session_state.nombre_taller}**")
+st.markdown(f"Administración de clientes, flotas y personal para: **{nombre_taller}**")
 st.markdown("---")
 
 tab_empresas, tab_mecanicos = st.tabs(["Empresas y Flotas", "Equipo de Mecánicos"])
@@ -112,7 +102,10 @@ with tab_empresas:
                                     "email": email
                                 }
                             )
-                        st.cache_data.clear()
+                        # Nueva empresa: refresca directorio/catálogos y el
+                        # contador "Empresas Registradas" del dashboard.
+                        invalidar_cache_directorio()
+                        obtener_metricas_dashboard.clear()
                         st.success(f"La empresa {razon_social} fue registrada con éxito en el sistema.")
                         st.rerun()
                     except Exception as e:
@@ -167,7 +160,6 @@ with tab_empresas:
                         st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = True
                         st.session_state[f"edit_emp_mode_{empresa_info['id']}"] = False
 
-                # Confirmación de eliminación con conversión a int nativo
                 if st.session_state.get(f"delete_emp_confirm_{empresa_info['id']}", False):
                     st.warning(f"¿Estás seguro de eliminar a **{empresa_info['razon_social']}**? Si tiene órdenes asociadas, estas y sus detalles se eliminarán permanentemente.")
                     col_conf1, col_conf2 = st.columns(2)
@@ -188,7 +180,12 @@ with tab_empresas:
                                         text("DELETE FROM Empresas_Clientes WHERE id = :id AND usuario_id = :uid"),
                                         {"id": empresa_id_int, "uid": user_id}
                                     )
-                                st.cache_data.clear()
+                                # Elimina la empresa Y sus órdenes: hay que
+                                # invalidar directorio/catálogos y todo lo
+                                # relacionado a órdenes (dashboard, tablero,
+                                # pendientes por cotizar) en un solo paso.
+                                invalidar_cache_directorio()
+                                invalidar_cache_ordenes()
                                 st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = False
                                 st.success("Empresa eliminada con éxito.")
                                 st.rerun()
@@ -199,7 +196,6 @@ with tab_empresas:
                             st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = False
                             st.rerun()
 
-                # Formulario de edición
                 if st.session_state.get(f"edit_emp_mode_{empresa_info['id']}", False):
                     st.markdown("---")
                     with st.form(key=f"form_update_emp_{empresa_info['id']}"):
@@ -233,7 +229,7 @@ with tab_empresas:
                                             "uid": user_id
                                         }
                                     )
-                                st.cache_data.clear()
+                                invalidar_cache_directorio()
                                 st.session_state[f"edit_emp_mode_{empresa_info['id']}"] = False
                                 st.success("Empresa actualizada con éxito.")
                                 st.rerun()
@@ -354,7 +350,7 @@ with tab_mecanicos:
                                 '''),
                                 {"uid": user_id, "nombre": nombre_mec, "doc": doc_mec}
                             )
-                        st.cache_data.clear()
+                        invalidar_cache_directorio()
                         st.success(f"{nombre_mec} ha sido agregado al equipo con éxito.")
                         st.rerun()
                     except Exception as e:
@@ -388,7 +384,7 @@ with tab_mecanicos:
                                         text("DELETE FROM Mecanicos WHERE id = :id AND usuario_id = :uid"),
                                         {"id": int(row['id']), "uid": user_id}
                                     )
-                                st.cache_data.clear()
+                                invalidar_cache_directorio()
                                 st.success("Mecánico eliminado.")
                                 st.rerun()
                             except Exception:
@@ -423,7 +419,7 @@ with tab_mecanicos:
                                                 "uid": user_id
                                             }
                                         )
-                                    st.cache_data.clear()
+                                    invalidar_cache_directorio()
                                     st.session_state[f"edit_mode_{row['id']}"] = False
                                     st.success("Registro actualizado con éxito.")
                                     st.rerun()
