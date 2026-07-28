@@ -138,6 +138,87 @@ def obtener_mecanicos_directorio(uid):
         )
 
 
+@st.cache_data(ttl=60)
+def obtener_categorias_gasto(uid):
+    """Categorías de gasto predefinidas para el usuario."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        query = text("SELECT id, nombre, tipo FROM Categorias_Gasto WHERE usuario_id = :uid ORDER BY nombre ASC")
+        return conn.execute(query, {"uid": uid}).fetchall()
+
+
+@st.cache_data(ttl=30)
+def obtener_gastos_filtrado(uid, fecha_inicio, fecha_fin, categoria_id=None):
+    """Gastos en un rango de fechas, opcionalmente filtrados por categoría."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        condicion = ""
+        params = {"uid": uid, "f_ini": fecha_inicio.strftime('%Y-%m-%d'), "f_fin": fecha_fin.strftime('%Y-%m-%d')}
+        if categoria_id:
+            condicion = "AND categoria_id = :cat_id"
+            params["cat_id"] = categoria_id
+        
+        query = text(f"""
+            SELECT g.id, g.categoria_id, c.nombre as categoria, g.descripcion, g.monto, g.fecha, g.tipo
+            FROM Gastos g
+            JOIN Categorias_Gasto c ON g.categoria_id = c.id
+            WHERE g.usuario_id = :uid AND g.fecha >= :f_ini AND g.fecha <= :f_fin {condicion}
+            ORDER BY g.fecha DESC
+        """)
+        return pd.read_sql_query(query, con=conn, params=params)
+
+
+@st.cache_data(ttl=60)
+def obtener_metricas_financieras(uid, año, mes):
+    """Ingresos (órdenes facturadas) y gastos totales en un mes específico."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        query = text("""
+            SELECT
+                COALESCE(SUM(CASE WHEN tipo='Ingresos' THEN monto ELSE 0 END), 0) as ingresos,
+                COALESCE(SUM(CASE WHEN tipo='Gastos' THEN monto ELSE 0 END), 0) as gastos
+            FROM (
+                SELECT SUM(d.precio_venta) as monto, 'Ingresos' as tipo, EXTRACT(YEAR FROM h.fecha_ingreso) as año, EXTRACT(MONTH FROM h.fecha_ingreso) as mes
+                FROM Hojas_Trabajo h
+                JOIN Detalles_Orden d ON d.hoja_id = h.id
+                WHERE h.usuario_id = :uid AND h.estado = 'Facturado'
+                GROUP BY año, mes
+                UNION ALL
+                SELECT SUM(monto) as monto, 'Gastos' as tipo, EXTRACT(YEAR FROM fecha) as año, EXTRACT(MONTH FROM fecha) as mes
+                FROM Gastos
+                WHERE usuario_id = :uid
+                GROUP BY año, mes
+            ) movimientos
+            WHERE año = :año AND mes = :mes
+        """)
+        row = conn.execute(query, {"uid": uid, "año": año, "mes": mes}).fetchone()
+    return row[0] if row else (0, 0)
+
+
+@st.cache_data(ttl=30)
+def obtener_gastos_por_categoria(uid, fecha_inicio, fecha_fin):
+    """Suma de gastos agrupada por categoría (para gráficos)."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        query = text("""
+            SELECT c.nombre, SUM(g.monto) as total
+            FROM Gastos g
+            JOIN Categorias_Gasto c ON g.categoria_id = c.id
+            WHERE g.usuario_id = :uid AND g.fecha >= :f_ini AND g.fecha <= :f_fin
+            GROUP BY c.id, c.nombre
+            ORDER BY total DESC
+        """)
+        return pd.read_sql_query(query, con=conn, params={"uid": uid, "f_ini": fecha_inicio.strftime('%Y-%m-%d'), "f_fin": fecha_fin.strftime('%Y-%m-%d')})
+
+
+def invalidar_cache_gastos():
+    """Llamar después de crear, editar o eliminar un gasto."""
+    obtener_categorias_gasto.clear()
+    obtener_gastos_filtrado.clear()
+    obtener_metricas_financieras.clear()
+    obtener_gastos_por_categoria.clear()
+
+
 def invalidar_cache_directorio():
     """
     Llamar tras crear, editar o eliminar una Empresa_Cliente o un Mecánico.
