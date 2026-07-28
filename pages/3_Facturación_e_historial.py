@@ -4,12 +4,12 @@ import math
 from datetime import datetime, timedelta
 from sqlalchemy import text
 from db import obtener_conexion, init_db
+from queries import obtener_catalogos, invalidar_cache_ordenes, invalidar_cache_inventario
 from io import BytesIO
 from fpdf import FPDF
 
 st.set_page_config(page_title="Expediente", layout="wide")
 
-# Inicializa tablas de la base de datos si no existen
 init_db()
 
 # ==========================================
@@ -17,7 +17,6 @@ init_db()
 # ==========================================
 st.markdown("""
     <style>
-    /* Máscara sólida adaptable en la esquina superior derecha que bloquea botones y clics */
     header::after {
         content: "";
         position: fixed !important;
@@ -30,7 +29,6 @@ st.markdown("""
         pointer-events: all !important;
     }
 
-    /* Animación de entrada */
     @keyframes fade-in-up {
         0% { opacity: 0; transform: translateY(20px); }
         100% { opacity: 1; transform: translateY(0); }
@@ -44,7 +42,6 @@ st.markdown("""
         animation: fade-in-up 0.5s ease-out;
     }
 
-    /* Estilos minimalistas para contenedores */
     .expediente-card {
         background-color: #f8fafc;
         padding: 16px;
@@ -55,13 +52,19 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Validación de Seguridad
-if not st.session_state.get('user_logged', False):
+# --------------------------------------------------------------------------------
+# AUTENTICACIÓN: mismo namespace st.session_state.auth definido en app.py
+# --------------------------------------------------------------------------------
+if "auth" not in st.session_state:
+    st.session_state.auth = {"logged": False, "user_id": None, "nombre_taller": None}
+
+if not st.session_state.auth["logged"]:
     st.warning("Debes iniciar sesión en la página principal para acceder a este módulo.")
     st.stop()
 
 engine = obtener_conexion()
-user_id = st.session_state.user_id
+user_id = st.session_state.auth["user_id"]
+nombre_taller = st.session_state.auth["nombre_taller"]
 
 def formato_cop(numero):
     return f"${numero:,.0f}".replace(",", ".")
@@ -74,7 +77,6 @@ def generar_pdf_orden(taller, hoja_id, fecha, cliente, nit, placa, estado, df_it
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     
-    # Encabezado
     pdf.set_font("Helvetica", "B", 18)
     pdf.cell(0, 10, taller, ln=True, align="C")
     
@@ -82,7 +84,6 @@ def generar_pdf_orden(taller, hoja_id, fecha, cliente, nit, placa, estado, df_it
     pdf.cell(0, 6, "Comprobante de Servicio Autorizado / Cotización", ln=True, align="C")
     pdf.ln(5)
     
-    # Datos de la Orden
     pdf.set_font("Helvetica", "B", 11)
     pdf.cell(100, 6, f"Orden N°: #{hoja_id}", ln=0)
     pdf.cell(90, 6, f"Fecha: {fecha}", ln=1, align="R")
@@ -98,7 +99,6 @@ def generar_pdf_orden(taller, hoja_id, fecha, cliente, nit, placa, estado, df_it
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(5)
     
-    # Tabla de Conceptos
     pdf.set_font("Helvetica", "B", 10)
     pdf.cell(140, 8, "Descripción del Concepto", 1)
     pdf.cell(50, 8, "Valor Total", 1, ln=1, align="R")
@@ -114,7 +114,6 @@ def generar_pdf_orden(taller, hoja_id, fecha, cliente, nit, placa, estado, df_it
         
     pdf.ln(5)
     
-    # Total General
     pdf.set_font("Helvetica", "B", 12)
     pdf.cell(140, 10, "TOTAL GENERAL A PAGAR:", 0, align="R")
     pdf.cell(50, 10, f"${total:,.0f}".replace(",", "."), 0, ln=1, align="R")
@@ -126,24 +125,14 @@ def generar_pdf_orden(taller, hoja_id, fecha, cliente, nit, placa, estado, df_it
     return bytes(pdf.output())
 
 st.title("Expediente de Orden y Facturación")
-st.markdown(f"Gestión de órdenes para: **{st.session_state.nombre_taller}**")
+st.markdown(f"Gestión de órdenes para: **{nombre_taller}**")
 st.markdown("---")
 
-def obtener_mecanicos():
-    with engine.connect() as conn:
-        query = text("SELECT id, nombre FROM Mecanicos WHERE usuario_id = :uid")
-        datos = conn.execute(query, {"uid": user_id}).fetchall()
-    return {f"{m[1]}": m[0] for m in datos}
-
-# Obtenemos la lista de empresas del taller para el buscador inteligente
-with engine.connect() as conn:
-    empresas_db = pd.read_sql_query(
-        text("SELECT id, razon_social FROM Empresas_Clientes WHERE usuario_id = :uid ORDER BY razon_social ASC"), 
-        con=conn, 
-        params={"uid": user_id}
-    )
-
-dict_empresas_filtro = {row['razon_social']: row['id'] for index, row in empresas_db.iterrows()} if not empresas_db.empty else {}
+# Catálogos cacheados y compartidos con el resto de la app (no se vuelven
+# a consultar en cada rerun, y quedan sincronizados con Recepción/Tablero).
+empresas, mecanicos = obtener_catalogos(user_id)
+dict_mecanicos = {f"{m[1]}": m[0] for m in mecanicos}
+dict_empresas_filtro = {e[1]: e[0] for e in empresas}
 opciones_empresas_filtro = ["-- Todas las empresas --"] + list(dict_empresas_filtro.keys())
 
 st.subheader("Historial y Filtros de Órdenes")
@@ -296,12 +285,9 @@ if orden_busqueda:
                     
                     st.markdown("---")
                     
-                    # ==========================================
-                    # BOTÓN DE DESCARGA DIRECTA EN PDF
-                    # ==========================================
                     st.markdown("#### Exportar Documento")
                     pdf_bytes = generar_pdf_orden(
-                        taller=st.session_state.nombre_taller,
+                        taller=nombre_taller,
                         hoja_id=hoja_id,
                         fecha=fecha,
                         cliente=cliente,
@@ -349,7 +335,7 @@ if orden_busqueda:
                                     text("UPDATE Hojas_Trabajo SET estado = :est WHERE id = :hid"),
                                     {"est": nuevo_estado, "hid": hoja_id}
                                 )
-                            st.cache_data.clear()
+                            invalidar_cache_ordenes()
                             st.success("Estado actualizado correctamente.")
                             st.rerun()
                         except Exception as e:
@@ -376,7 +362,7 @@ if orden_busqueda:
                                                 text("DELETE FROM Detalles_Orden WHERE id = :did"),
                                                 {"did": row['id']}
                                             )
-                                        st.cache_data.clear()
+                                        invalidar_cache_ordenes()
                                         st.success("Ítem eliminado.")
                                         st.rerun()
                                     except Exception as e:
@@ -397,7 +383,7 @@ if orden_busqueda:
                                                         text("UPDATE Detalles_Orden SET descripcion = :desc, precio_venta = :precio WHERE id = :did"),
                                                         {"desc": nueva_desc, "precio": float(nuevo_precio), "did": row['id']}
                                                     )
-                                                st.cache_data.clear()
+                                                invalidar_cache_ordenes()
                                                 st.session_state[f"modo_edit_{row['id']}"] = False
                                                 st.success("Ítem actualizado y sincronizado en todo el sistema.")
                                                 st.rerun()
@@ -412,7 +398,6 @@ if orden_busqueda:
 
                 st.markdown("---")
                 st.subheader("3. Adición de Nuevos Ítems")
-                dict_mecanicos = obtener_mecanicos()
                 
                 with st.expander("Desplegar formulario para agregar trabajo o repuesto"):
                     tab_mo, tab_rep = st.tabs(["Mano de Obra", "Repuesto"])
@@ -432,7 +417,7 @@ if orden_busqueda:
                                             '''),
                                             {"hid": hoja_id, "desc": desc_mo, "mid": dict_mecanicos[mec_sel], "pvp": float(venta_mo)}
                                         )
-                                    st.cache_data.clear()
+                                    invalidar_cache_ordenes()
                                     st.success("Trabajo agregado con éxito.")
                                     st.rerun()
                                 except Exception as e:
@@ -464,7 +449,7 @@ if orden_busqueda:
                                                 '''),
                                                 {"hid": hoja_id, "desc": desc_rep, "costo": float(costo_rep), "pvp": float(venta_rep)}
                                             )
-                                        st.cache_data.clear()
+                                        invalidar_cache_ordenes()
                                         st.success("Repuesto agregado con éxito.")
                                         st.rerun()
                                     except Exception as e:
@@ -493,7 +478,6 @@ if orden_busqueda:
                                 if st.button("Guardar Repuesto de Almacén", use_container_width=True):
                                     try:
                                         with engine.begin() as conn_rep_inv:
-                                            # 1. Insertar ítem en Detalles_Orden
                                             conn_rep_inv.execute(
                                                 text('''
                                                     INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, costo_compra, precio_venta)
@@ -506,12 +490,12 @@ if orden_busqueda:
                                                     "pvp": pvp_unitario_exp * cant_usar_exp
                                                 }
                                             )
-                                            # 2. Descontar del Inventario
                                             conn_rep_inv.execute(
                                                 text("UPDATE Inventario SET stock_actual = stock_actual - :cant WHERE id = :inv_id"),
                                                 {"cant": cant_usar_exp, "inv_id": prod_data[0]}
                                             )
-                                        st.cache_data.clear()
+                                        invalidar_cache_ordenes()
+                                        invalidar_cache_inventario()
                                         st.success("Repuesto asignado y descontado del almacén.")
                                         st.rerun()
                                     except Exception as e:
