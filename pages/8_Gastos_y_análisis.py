@@ -271,3 +271,4 @@ with tab_analisis:
         st.write("**Rentabilidad (Margen Neto):**")
         color = "🔴" if margen_neto < 0 else "🟢"
         st.write(f"{color} `{formato_cop(margen_neto)}`")
+    
