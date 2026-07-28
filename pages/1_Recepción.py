@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import text
 from db import obtener_conexion, init_db
+from queries import obtener_catalogos, obtener_inventario_activo, invalidar_cache_ordenes, invalidar_cache_inventario
 
 st.set_page_config(page_title="Recepcion de Vehiculos", layout="wide")
 
@@ -49,27 +50,6 @@ if 'carrito_items' not in st.session_state:
 
 def formato_cop(numero):
     return f"${float(numero):,.0f}".replace(",", ".")
-
-# ==========================================
-# OPTIMIZACIÓN: CONSULTAS CACHEADAS (SÚPER RÁPIDAS)
-# ==========================================
-@st.cache_data(ttl=300) # Guarda clientes y mecánicos en RAM por 5 minutos
-def obtener_catalogos(uid):
-    engine = obtener_conexion()
-    with engine.connect() as conn:
-        empresas_db = conn.execute(text("SELECT id, razon_social FROM Empresas_Clientes WHERE usuario_id = :uid"), {"uid": uid}).fetchall()
-        mecanicos_db = conn.execute(text("SELECT id, nombre FROM Mecanicos WHERE usuario_id = :uid"), {"uid": uid}).fetchall()
-    return [tuple(e) for e in empresas_db], [tuple(m) for m in mecanicos_db]
-
-@st.cache_data(ttl=60) # Guarda el inventario en RAM por 1 minuto
-def obtener_inventario_activo(uid):
-    engine = obtener_conexion()
-    with engine.connect() as conn:
-        prods = conn.execute(
-            text("SELECT id, nombre_producto, stock_actual, costo_compra, precio_venta FROM Inventario WHERE usuario_id = :uid AND stock_actual > 0 ORDER BY nombre_producto ASC"),
-            {"uid": uid}
-        ).fetchall()
-    return [tuple(p) for p in prods]
 
 st.title("Recepcion y Asignacion de Trabajos")
 st.markdown(f"Registrando ordenes para: **{nombre_taller}**")
@@ -282,12 +262,20 @@ if st.session_state.carrito_items:
                                     {"cant": item['Cantidad_Descontar'], "inv_id": item['Inventario_ID']}
                                 )
                     
+                    # Se revisa ANTES de vaciar el carrito si algún ítem vino
+                    # del almacén propio, para saber si hay que invalidar inventario.
+                    hay_items_de_almacen = any(
+                        item.get('Inventario_ID') for item in st.session_state.carrito_items
+                    )
                     st.session_state.carrito_items = []
-                    # Solo se invalida el inventario (lo único que cambió realmente
-                    # con esta orden). No se toca st.cache_data.clear() global,
-                    # que borraría también métricas y catálogos de OTROS usuarios
-                    # conectados al mismo servidor en este momento.
-                    obtener_inventario_activo.clear()
+
+                    # Invalida solo lo que esta orden realmente afecta: métricas,
+                    # tablero y pendientes (siempre, por la orden nueva), más
+                    # inventario únicamente si se descontó stock del almacén.
+                    invalidar_cache_ordenes()
+                    if hay_items_de_almacen:
+                        invalidar_cache_inventario()
+
                     st.success(f"Orden #{hoja_id} guardada con exito para el vehiculo {placa}.")
                     st.rerun()
                 except Exception as e:
