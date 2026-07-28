@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from sqlalchemy import text
 from db import obtener_conexion
+from queries import obtener_catalogos, invalidar_cache_ordenes
 
 st.set_page_config(page_title="Nómina y Comisiones", layout="wide")
 
@@ -11,7 +12,6 @@ st.set_page_config(page_title="Nómina y Comisiones", layout="wide")
 # ==========================================
 st.markdown("""
     <style>
-    /* Máscara sólida adaptable en la esquina superior derecha que bloquea botones y clics */
     header::after {
         content: "";
         position: fixed !important;
@@ -24,7 +24,6 @@ st.markdown("""
         pointer-events: all !important;
     }
 
-    /* Animación de entrada */
     @keyframes fade-in-up {
         0% { opacity: 0; transform: translateY(20px); }
         100% { opacity: 1; transform: translateY(0); }
@@ -40,13 +39,19 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Validación de Seguridad
-if not st.session_state.get('user_logged', False):
+# --------------------------------------------------------------------------------
+# AUTENTICACIÓN: mismo namespace st.session_state.auth definido en app.py
+# --------------------------------------------------------------------------------
+if "auth" not in st.session_state:
+    st.session_state.auth = {"logged": False, "user_id": None, "nombre_taller": None}
+
+if not st.session_state.auth["logged"]:
     st.warning("Debes iniciar sesión en la página principal para acceder a este módulo.")
     st.stop()
 
 engine = obtener_conexion()
-user_id = st.session_state.user_id
+user_id = st.session_state.auth["user_id"]
+nombre_taller = st.session_state.auth["nombre_taller"]
 
 def formato_cop(numero):
     return f"${float(numero):,.0f}".replace(",", ".")
@@ -55,18 +60,15 @@ def formato_cop(numero):
 # FUNCIONES DE CONSULTA OPTIMIZADAS CON CACHÉ
 # ==========================================
 @st.cache_data(ttl=30)
-def obtener_mecanicos_filtro(uid):
-    with engine.connect() as conn_m:
-        return conn_m.execute(text("SELECT nombre FROM Mecanicos WHERE usuario_id = :uid"), {"uid": uid}).fetchall()
-
-@st.cache_data(ttl=30)
 def obtener_mecanicos_nomina(uid):
+    """Solo mecánicos activos: consulta específica de esta página (distinta
+    de obtener_catalogos, que trae TODOS los mecánicos sin filtrar estado)."""
     with engine.connect() as conn:
         query = text("SELECT id, nombre FROM Mecanicos WHERE usuario_id = :uid AND estado = 'Activo'")
         return conn.execute(query, {"uid": uid}).fetchall()
 
 st.title("Liquidación de Nómina Dinámica")
-st.markdown(f"Auditoría de comisiones y ajustes para: **{st.session_state.nombre_taller}**")
+st.markdown(f"Auditoría de comisiones y ajustes para: **{nombre_taller}**")
 st.markdown("---")
 
 # ==========================================
@@ -75,7 +77,6 @@ st.markdown("---")
 st.subheader("Auditoría y Corrección de Trabajos")
 st.info("Por defecto se muestran los trabajos recientes. Puedes usar los filtros opcionales de abajo para buscar una orden específica por número, placa, fecha, mecánico o empresa.")
 
-# Contenedor de Filtros Opcionales para Auditoría
 with st.expander("Filtros de Búsqueda Avanzada (Opcional)", expanded=False):
     f_col1, f_col2, f_col3 = st.columns(3)
     with f_col1:
@@ -83,10 +84,11 @@ with st.expander("Filtros de Búsqueda Avanzada (Opcional)", expanded=False):
         filtro_placa = st.text_input("Placa del Vehículo (Opcional)").upper().strip()
     with f_col2:
         filtro_empresa = st.text_input("Nombre de Empresa / Cliente (Opcional)")
-        
-        # Obtenemos lista de mecánicos con caché
-        mecanicos_filtro = obtener_mecanicos_filtro(user_id)
-        lista_nombres_mec = ["-- Todos --"] + [m[0] for m in mecanicos_filtro]
+
+        # Reutiliza el catálogo compartido y cacheado (todos los mecánicos,
+        # activos o no) en vez de disparar una consulta nueva para el filtro.
+        _, mecanicos_todos = obtener_catalogos(user_id)
+        lista_nombres_mec = ["-- Todos --"] + [m[1] for m in mecanicos_todos]
         filtro_mecanico_sel = st.selectbox("Mecánico (Opcional)", options=lista_nombres_mec)
     with f_col3:
         activar_filtro_fechas = st.checkbox("Filtrar por Rango de Fechas")
@@ -97,7 +99,6 @@ with st.expander("Filtros de Búsqueda Avanzada (Opcional)", expanded=False):
         else:
             rango_auditoria = None
 
-# Construcción dinámica de la consulta de auditoría basada en filtros opcionales
 query_base_sql = [
     '''
     SELECT 
@@ -143,15 +144,26 @@ if activar_filtro_fechas and rango_auditoria and len(rango_auditoria) == 2:
     params_auditoria["f_ini"] = f_ini.strftime('%Y-%m-%d')
     params_auditoria["f_fin"] = f_fin_ext.strftime('%Y-%m-%d')
 
-if not filtro_nro_orden and not filtro_placa and not filtro_empresa and filtro_mecanico_sel == "-- Todos --" and not activar_filtro_fechas:
+hay_filtros_activos = bool(
+    filtro_nro_orden or filtro_placa or filtro_empresa
+    or filtro_mecanico_sel != "-- Todos --" or activar_filtro_fechas
+)
+
+if not hay_filtros_activos:
     query_final_str = " ".join(query_base_sql) + " ORDER BY h.fecha_ingreso DESC LIMIT 20"
 else:
-    query_final_str = " ".join(query_base_sql) + " ORDER BY h.fecha_ingreso DESC"
+    # Con filtros activos igual se limita a 200 filas: evita traer resultados
+    # sin control cuando un filtro (ej. solo placa) sigue devolviendo
+    # cientos de registros históricos en talleres con mucho volumen.
+    query_final_str = " ".join(query_base_sql) + " ORDER BY h.fecha_ingreso DESC LIMIT 200"
 
 with engine.connect() as conn:
     df_trabajos = pd.read_sql_query(text(query_final_str), con=conn, params=params_auditoria)
 
 if not df_trabajos.empty:
+    if hay_filtros_activos and len(df_trabajos) == 200:
+        st.caption("⚠️ Mostrando los 200 resultados más recientes que coinciden con el filtro. Afina la búsqueda para ver un rango más preciso.")
+
     df_para_editar = df_trabajos.drop(columns=['fecha_ingreso'])
     
     df_editado = st.data_editor(
@@ -190,7 +202,9 @@ if not df_trabajos.empty:
                                 {"desc": row['descripcion'], "precio": float(row['precio_venta']), "id": int(row['detalle_id'])}
                             )
                 
-                st.cache_data.clear()
+                # Estos cambios afectan precio_venta, que impacta métricas del
+                # dashboard, el tablero y la lista de pendientes por cotizar.
+                invalidar_cache_ordenes()
                 st.success("Cambios aplicados y sincronizados con éxito.")
                 st.rerun()
             except Exception as e:
@@ -233,7 +247,6 @@ else:
             fecha_fin_extendida = fecha_fin + timedelta(days=1) 
             mecanico_id = dict_mecanicos[mecanico_sel]
             
-            # Consultamos precio_venta (Cobro al cliente) y costo_compra (Retención fiscal registrada)
             query_nomina = text('''
                 SELECT h.id as orden_id, h.placa, e.razon_social as empresa, date(h.fecha_ingreso) as fecha, 
                        d.descripcion as descripcion_trabajo, 
@@ -264,14 +277,10 @@ else:
             st.markdown("---")
             
             if not df_nomina.empty:
-                # Conversiones explícitas para compatibilidad con Postgres
                 df_nomina['cobro_cliente'] = df_nomina['cobro_cliente'].astype(float)
                 df_nomina['retencion_aplicada'] = df_nomina['retencion_aplicada'].astype(float)
                 
-                # Base Real = Cobro al Cliente - Retención Fiscal
                 df_nomina['base_real_nomina'] = df_nomina['cobro_cliente'] - df_nomina['retencion_aplicada']
-                
-                # Comisión = Base Real * (% Pago / 100)
                 df_nomina['comision_mecanico'] = (df_nomina['base_real_nomina'] * (porcentaje_pago / 100)).round(2)
                 
                 total_cobrado_cliente = df_nomina['cobro_cliente'].sum()
