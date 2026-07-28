@@ -144,6 +144,31 @@ def init_db():
                     FOREIGN KEY (inventario_id) REFERENCES Inventario(id) ON DELETE CASCADE
                 )
             '''))
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS Categorias_Gasto (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    usuario_id INTEGER NOT NULL,
+                    nombre TEXT NOT NULL,
+                    descripcion TEXT,
+                    tipo TEXT CHECK(tipo IN ('Fijo', 'Variable')) DEFAULT 'Variable',
+                    FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE
+                )
+            '''))
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS Gastos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    usuario_id INTEGER NOT NULL,
+                    categoria_id INTEGER NOT NULL,
+                    descripcion TEXT NOT NULL,
+                    monto REAL NOT NULL,
+                    fecha DATE NOT NULL,
+                    tipo TEXT CHECK(tipo IN ('Fijo', 'Variable')) DEFAULT 'Variable',
+                    comprobante_url TEXT,
+                    fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE,
+                    FOREIGN KEY (categoria_id) REFERENCES Categorias_Gasto(id) ON DELETE RESTRICT
+                )
+            '''))
         else:
             conn.execute(text('''
                 CREATE TABLE IF NOT EXISTS Usuarios (
@@ -238,6 +263,31 @@ def init_db():
                     FOREIGN KEY (inventario_id) REFERENCES Inventario(id) ON DELETE CASCADE
                 )
             '''))
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS Categorias_Gasto (
+                    id SERIAL PRIMARY KEY,
+                    usuario_id INTEGER NOT NULL,
+                    nombre VARCHAR(100) NOT NULL,
+                    descripcion TEXT,
+                    tipo VARCHAR(20) CHECK(tipo IN ('Fijo', 'Variable')) DEFAULT 'Variable',
+                    FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE
+                )
+            '''))
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS Gastos (
+                    id SERIAL PRIMARY KEY,
+                    usuario_id INTEGER NOT NULL,
+                    categoria_id INTEGER NOT NULL,
+                    descripcion TEXT NOT NULL,
+                    monto NUMERIC(12, 2) NOT NULL,
+                    fecha DATE NOT NULL,
+                    tipo VARCHAR(20) CHECK(tipo IN ('Fijo', 'Variable')) DEFAULT 'Variable',
+                    comprobante_url TEXT,
+                    fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE,
+                    FOREIGN KEY (categoria_id) REFERENCES Categorias_Gasto(id) ON DELETE RESTRICT
+                )
+            '''))
 
         # ==========================================
         # ÍNDICES: mismas sentencias para SQLite y Postgres.
@@ -254,5 +304,8 @@ def init_db():
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_mecanicos_usuario ON Mecanicos(usuario_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_vehiculos_flota_usuario ON Vehiculos_Flota(usuario_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_recetas_vehiculo_vid ON Recetas_Vehiculo(vehiculo_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_gastos_usuario ON Gastos(usuario_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_gastos_usuario_fecha ON Gastos(usuario_id, fecha)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_categorias_gasto_usuario ON Categorias_Gasto(usuario_id)"))
 
     return True
