@@ -11,7 +11,6 @@ st.set_page_config(page_title="Administración - MyTaller", layout="wide")
 # ==========================================
 st.markdown("""
     <style>
-    /* Máscara sólida en la esquina superior derecha que bloquea botones y clics */
     header::after {
         content: "";
         position: fixed !important;
@@ -24,7 +23,6 @@ st.markdown("""
         pointer-events: all !important;
     }
 
-    /* Animación de entrada (fade-in-up) */
     @keyframes fade-in-up {
         0% { opacity: 0; transform: translateY(20px); }
         100% { opacity: 1; transform: translateY(0); }
@@ -40,24 +38,44 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Validación de seguridad
+# --------------------------------------------------------------------------------
+# AUTENTICACIÓN Y VERIFICACIÓN DE ADMINISTRADOR
+# --------------------------------------------------------------------------------
+# El correo de administrador debería idealmente vivir en st.secrets en vez de
+# quedar escrito en el código fuente (visible en el repo de GitHub). Se deja
+# aquí funcional por ahora; ver nota al final sobre cómo moverlo a secrets.
 CORREO_ADMIN = "jefferson.david1065@gmail.com"
 
-if not st.session_state.get('user_logged', False):
+if "auth" not in st.session_state:
+    st.session_state.auth = {"logged": False, "user_id": None, "nombre_taller": None, "email": None}
+
+if not st.session_state.auth["logged"]:
     st.warning("Debe iniciar sesión para acceder a este módulo.")
     st.stop()
 
 engine = obtener_conexion()
-user_id = st.session_state.user_id
+user_id = st.session_state.auth["user_id"]
 
-# Verificación de credenciales de administrador
-with engine.connect() as conn:
-    res = conn.execute(text("SELECT email FROM Usuarios WHERE id = :uid"), {"uid": user_id}).fetchone()
-    email_actual = res[0] if res else ""
+# El email ya quedó guardado en session_state al hacer login (ver app.py),
+# así que no hace falta una consulta a la base de datos solo para verificar
+# quién es administrador en cada carga de esta página.
+email_actual = st.session_state.auth.get("email")
 
 if email_actual != CORREO_ADMIN:
     st.error("Acceso denegado. Esta sección es de uso exclusivo para la administración del sistema.")
     st.stop()
+
+# ==========================================
+# CONSULTA CACHEADA: LISTA DE TALLERES
+# ==========================================
+@st.cache_data(ttl=30)
+def obtener_talleres():
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        return pd.read_sql_query(
+            text("SELECT id, nombre_taller, nombre_dueno, email, activo, fecha_pago_limite FROM Usuarios ORDER BY id DESC"),
+            con=conn
+        )
 
 # ==========================================
 # PANEL DE ADMINISTRACIÓN
@@ -66,17 +84,11 @@ st.title("Panel de Control de Suscripciones")
 st.markdown("Módulo para la administración de usuarios, activación de cuentas y gestión de fechas de corte.")
 st.markdown("---")
 
-# Consultar base de datos de usuarios
-with engine.connect() as conn:
-    df_talleres = pd.read_sql_query(
-        text("SELECT id, nombre_taller, nombre_dueno, email, activo, fecha_pago_limite FROM Usuarios ORDER BY id DESC"),
-        con=conn
-    )
+df_talleres = obtener_talleres()
 
 if not df_talleres.empty:
     st.subheader("Directorio de Talleres Registrados")
     
-    # Visualización de datos
     st.dataframe(df_talleres, use_container_width=True, hide_index=True)
     
     st.markdown("---")
@@ -109,6 +121,7 @@ if not df_talleres.empty:
                             text("UPDATE Usuarios SET fecha_pago_limite = :f_lim, activo = TRUE WHERE id = :id"),
                             {"f_lim": nueva_fecha, "id": taller_id_activo}
                         )
+                    obtener_talleres.clear()
                     st.success(f"Suscripción actualizada exitosamente. Nueva fecha de corte: {nueva_fecha}")
                     st.rerun()
                 except Exception as e:
@@ -122,6 +135,7 @@ if not df_talleres.empty:
                             text("UPDATE Usuarios SET fecha_pago_limite = :f_lim WHERE id = :id"),
                             {"f_lim": fecha_vencida, "id": taller_id_activo}
                         )
+                    obtener_talleres.clear()
                     st.warning(f"El acceso para el taller '{taller_row['nombre_taller']}' ha sido suspendido.")
                     st.rerun()
                 except Exception as e:
