@@ -1,25 +1,50 @@
 import streamlit as st
 from sqlalchemy import create_engine, text
-import pandas as pd
 import os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOCAL_DB_PATH = os.path.join(BASE_DIR, "erp_taller.db")
 
+
 @st.cache_resource
 def obtener_conexion():
+    """
+    Crea el engine de SQLAlchemy UNA sola vez por proceso de servidor
+    (cache_resource no serializa, mantiene el objeto vivo en memoria).
+    """
     try:
         db_url = st.secrets["postgres"]["url"]
-        engine = create_engine(db_url)
-    except Exception:
+        engine = create_engine(
+            db_url,
+            pool_size=5,
+            max_overflow=10,
+            pool_pre_ping=True,   # descarta conexiones muertas antes de usarlas
+            pool_recycle=300,     # recicla conexiones cada 5 min (evita timeouts de Supabase/PgBouncer)
+        )
+        # Verificación real de que la conexión sirve, no solo que se construyó el engine
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as e:
+        st.warning(
+            f"⚠️ No se pudo conectar a Postgres/Supabase, usando base local de respaldo. "
+            f"Detalle: {e}"
+        )
         engine = create_engine(f"sqlite:///{LOCAL_DB_PATH}")
-    
+
     return engine
 
+
+@st.cache_resource
 def init_db():
+    """
+    Crea las tablas si no existen. Cacheada con cache_resource para que
+    se ejecute UNA sola vez por proceso de servidor, no en cada rerun.
+    Si cambias el esquema, reinicia la app (o usa init_db.clear() manualmente
+    desde una página de administración) para forzar que corra de nuevo.
+    """
     engine = obtener_conexion()
     is_sqlite = "sqlite" in str(engine.url)
-    
+
     with engine.begin() as conn:
         if is_sqlite:
             conn.execute(text('''
@@ -89,9 +114,6 @@ def init_db():
                     precio_venta REAL NOT NULL DEFAULT 0
                 )
             '''))
-            # ==========================================
-            # NUEVAS TABLAS PARA EL MÓDULO DE ACEITES (SQLITE)
-            # ==========================================
             conn.execute(text('''
                 CREATE TABLE IF NOT EXISTS Vehiculos_Flota (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -184,9 +206,6 @@ def init_db():
                     FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE
                 )
             '''))
-            # ==========================================
-            # NUEVAS TABLAS PARA EL MÓDULO DE ACEITES (POSTGRESQL)
-            # ==========================================
             conn.execute(text('''
                 CREATE TABLE IF NOT EXISTS Vehiculos_Flota (
                     id SERIAL PRIMARY KEY,
@@ -212,3 +231,5 @@ def init_db():
                     FOREIGN KEY (inventario_id) REFERENCES Inventario(id) ON DELETE CASCADE
                 )
             '''))
+
+    return True
