@@ -31,11 +31,18 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-if not st.session_state.get('user_logged', False):
+# --------------------------------------------------------------------------------
+# AUTENTICACIÓN: usa el mismo namespace st.session_state.auth definido en app.py
+# --------------------------------------------------------------------------------
+if "auth" not in st.session_state:
+    st.session_state.auth = {"logged": False, "user_id": None, "nombre_taller": None}
+
+if not st.session_state.auth["logged"]:
     st.warning("Debes iniciar sesion en la pagina principal para acceder a este modulo.")
     st.stop()
 
-user_id = st.session_state.user_id
+user_id = st.session_state.auth["user_id"]
+nombre_taller = st.session_state.auth["nombre_taller"]
 
 if 'carrito_items' not in st.session_state:
     st.session_state.carrito_items = []
@@ -65,7 +72,7 @@ def obtener_inventario_activo(uid):
     return [tuple(p) for p in prods]
 
 st.title("Recepcion y Asignacion de Trabajos")
-st.markdown(f"Registrando ordenes para: **{st.session_state.nombre_taller}**")
+st.markdown(f"Registrando ordenes para: **{nombre_taller}**")
 st.markdown("---")
 
 # Llamadas instantáneas desde la caché
@@ -276,7 +283,11 @@ if st.session_state.carrito_items:
                                 )
                     
                     st.session_state.carrito_items = []
-                    st.cache_data.clear() # Limpia la RAM para que el inventario se actualice en la próxima carga
+                    # Solo se invalida el inventario (lo único que cambió realmente
+                    # con esta orden). No se toca st.cache_data.clear() global,
+                    # que borraría también métricas y catálogos de OTROS usuarios
+                    # conectados al mismo servidor en este momento.
+                    obtener_inventario_activo.clear()
                     st.success(f"Orden #{hoja_id} guardada con exito para el vehiculo {placa}.")
                     st.rerun()
                 except Exception as e:
