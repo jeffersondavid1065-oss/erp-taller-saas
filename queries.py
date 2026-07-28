@@ -17,6 +17,7 @@ la función exacta que necesita invalidar tras una escritura, por ejemplo:
     obtener_vehiculos.clear()
 """
 import streamlit as st
+import pandas as pd
 from sqlalchemy import text
 from db import obtener_conexion
 
@@ -99,6 +100,43 @@ def obtener_vehiculos(uid):
             GROUP BY h.id, h.placa, e.razon_social, h.estado
         ''')
         return conn.execute(query, {"uid": uid}).fetchall()
+
+
+@st.cache_data(ttl=60)
+def obtener_empresas_directorio(uid):
+    """Vista completa (con NIT, teléfono, email) para el Directorio/CRM.
+    Distinta de obtener_catalogos, que solo trae id+nombre para dropdowns."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        return pd.read_sql_query(
+            text("SELECT id, razon_social, nit, telefono, email FROM Empresas_Clientes "
+                 "WHERE usuario_id = :uid ORDER BY razon_social ASC"),
+            con=conn, params={"uid": uid}
+        )
+
+
+@st.cache_data(ttl=60)
+def obtener_mecanicos_directorio(uid):
+    """Vista completa (con documento y estado) para el Directorio/CRM."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        return pd.read_sql_query(
+            text("SELECT id, nombre, documento, estado FROM Mecanicos "
+                 "WHERE usuario_id = :uid ORDER BY nombre ASC"),
+            con=conn, params={"uid": uid}
+        )
+
+
+def invalidar_cache_directorio():
+    """
+    Llamar tras crear, editar o eliminar una Empresa_Cliente o un Mecánico.
+    Limpia tanto las tablas del propio Directorio como obtener_catalogos
+    (usada en los dropdowns de Recepción, Expediente y Nómina), para que
+    una empresa o mecánico nuevo aparezca de inmediato en toda la app.
+    """
+    obtener_catalogos.clear()
+    obtener_empresas_directorio.clear()
+    obtener_mecanicos_directorio.clear()
 
 
 def invalidar_cache_ordenes():
