@@ -4,6 +4,7 @@ import bcrypt
 import hashlib
 from sqlalchemy import text
 from db import obtener_conexion, init_db
+from queries import obtener_metricas_dashboard
 from datetime import date
 
 # 1. CONFIGURACIÓN DE PÁGINA
@@ -70,30 +71,6 @@ engine = obtener_conexion()
 
 def formato_cop(numero):
     return f"${numero:,.0f}".replace(",", ".")
-
-
-# --------------------------------------------------------------------------------
-# 4. CONSULTA DE MÉTRICAS: combinada en 1 solo round-trip a la BD
-# --------------------------------------------------------------------------------
-@st.cache_data(ttl=30, show_spinner=False)
-def obtener_metricas_dashboard(uid):
-    with engine.connect() as conn:
-        query = text('''
-            SELECT
-                (SELECT COALESCE(SUM(d.precio_venta), 0)
-                 FROM Detalles_Orden d
-                 JOIN Hojas_Trabajo h ON d.hoja_id = h.id
-                 WHERE h.usuario_id = :uid AND h.estado != 'Facturado') AS total_activos,
-                (SELECT COUNT(*) FROM Hojas_Trabajo
-                 WHERE usuario_id = :uid AND estado = 'Cotizar') AS total_cotizar,
-                (SELECT COUNT(*) FROM Hojas_Trabajo
-                 WHERE usuario_id = :uid AND estado != 'Facturado') AS total_ordenes_activas,
-                (SELECT COUNT(*) FROM Empresas_Clientes
-                 WHERE usuario_id = :uid) AS total_empresas
-        ''')
-        row = conn.execute(query, {"uid": uid}).fetchone()
-
-    return row.total_activos, row.total_cotizar, row.total_ordenes_activas, row.total_empresas
 
 
 # --------------------------------------------------------------------------------
