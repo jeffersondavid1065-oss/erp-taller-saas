@@ -9,7 +9,6 @@ st.set_page_config(page_title="Tablero de Control", layout="wide")
 # ==========================================
 st.markdown("""
     <style>
-    /* Máscara sólida adaptable en la esquina superior derecha que bloquea botones y clics */
     header::after {
         content: "";
         position: fixed !important;
@@ -22,7 +21,6 @@ st.markdown("""
         pointer-events: all !important;
     }
 
-    /* Animación de entrada */
     @keyframes fade-in-up {
         0% { opacity: 0; transform: translateY(20px); }
         100% { opacity: 1; transform: translateY(0); }
@@ -36,7 +34,6 @@ st.markdown("""
         animation: fade-in-up 0.5s ease-out;
     }
 
-    /* Estilos columnas Kanban */
     .kanban-column {
         padding: 16px;
         border-radius: 12px;
@@ -51,13 +48,19 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Validación de Seguridad
-if not st.session_state.get('user_logged', False):
+# --------------------------------------------------------------------------------
+# AUTENTICACIÓN: mismo namespace st.session_state.auth definido en app.py
+# --------------------------------------------------------------------------------
+if "auth" not in st.session_state:
+    st.session_state.auth = {"logged": False, "user_id": None, "nombre_taller": None}
+
+if not st.session_state.auth["logged"]:
     st.warning("Debes iniciar sesión en la página principal para acceder a este módulo.")
     st.stop()
 
 engine = obtener_conexion()
-user_id = st.session_state.user_id
+user_id = st.session_state.auth["user_id"]
+nombre_taller = st.session_state.auth["nombre_taller"]
 
 def formato_cop(numero):
     return f"${numero:,.0f}".replace(",", ".")
@@ -81,19 +84,22 @@ def obtener_ordenes_con_items_pendientes(uid):
 @st.cache_data(ttl=15)
 def obtener_vehiculos(uid):
     with engine.connect() as conn:
+        # Filtra en SQL las órdenes ya facturadas: el Kanban nunca las muestra,
+        # así que no tiene sentido traerlas de la base ni mantenerlas en memoria.
+        # Esto evita que la consulta crezca indefinidamente con el historial.
         query = text('''
             SELECT h.id, h.placa, e.razon_social, h.estado,
                    SUM(CASE WHEN d.precio_venta = 0 OR d.precio_venta IS NULL THEN 1 ELSE 0 END) as items_sin_precio
             FROM Hojas_Trabajo h
             JOIN Empresas_Clientes e ON h.empresa_id = e.id
             LEFT JOIN Detalles_Orden d ON d.hoja_id = h.id
-            WHERE h.usuario_id = :uid
+            WHERE h.usuario_id = :uid AND h.estado != 'Facturado'
             GROUP BY h.id, h.placa, e.razon_social, h.estado
         ''')
         return conn.execute(query, {"uid": uid}).fetchall()
 
 st.title("Tablero de Control Operativo")
-st.markdown(f"Patio de vehículos para: **{st.session_state.nombre_taller}**")
+st.markdown(f"Patio de vehículos para: **{nombre_taller}**")
 st.markdown("---")
 
 # ==========================================
@@ -165,7 +171,11 @@ if ordenes_sin_precio:
                                 '''),
                                 {"costo": c_compra, "pvp": p_venta, "id": item_id}
                             )
-                    st.cache_data.clear()
+                    # Solo se invalidan las dos consultas afectadas por este cambio
+                    # de precios, no todo el cache global (que impactaría a otros
+                    # usuarios conectados al mismo servidor).
+                    obtener_ordenes_con_items_pendientes.clear()
+                    obtener_vehiculos.clear()
                     st.success("Precios actualizados y sincronizados en el sistema.")
                     st.rerun()
                 except Exception as e:
@@ -217,5 +227,7 @@ dibujar_columna(col5, "Listo para Facturar", "Listo para facturar", "bg-facturar
 
 st.markdown("---")
 if st.button("Actualizar Tablero", use_container_width=True):
-    st.cache_data.clear()
+    # Igual aquí: solo se limpian las consultas de ESTA página.
+    obtener_ordenes_con_items_pendientes.clear()
+    obtener_vehiculos.clear()
     st.rerun()
