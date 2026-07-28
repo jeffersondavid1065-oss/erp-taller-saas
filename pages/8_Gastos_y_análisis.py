@@ -10,6 +10,10 @@ from queries import (
     obtener_metricas_financieras,
     invalidar_cache_gastos,
 )
+from io import BytesIO
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 st.set_page_config(page_title="Gastos y Análisis Financiero", layout="wide")
 
@@ -48,6 +52,204 @@ nombre_taller = st.session_state.auth["nombre_taller"]
 
 def formato_cop(numero):
     return f"${float(numero):,.0f}".replace(",", ".")
+
+
+def generar_excel_gastos(df_gastos, titulo_reporte, nombre_archivo):
+    """Genera un archivo Excel formateado profesionalmente para reportes de gastos."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Gastos"
+
+    # Estilos
+    header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=12)
+    total_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+    total_font = Font(bold=True, size=11)
+    border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+
+    # Título
+    ws.merge_cells("A1:G1")
+    ws["A1"] = titulo_reporte
+    ws["A1"].font = Font(bold=True, size=14, color="1F4E78")
+    ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 25
+
+    # Subtítulo con fecha
+    ws.merge_cells("A2:G2")
+    ws["A2"] = f"Generado: {datetime.today().strftime('%d de %B de %Y')}"
+    ws["A2"].font = Font(italic=True, size=10, color="666666")
+    ws["A2"].alignment = Alignment(horizontal="center")
+
+    ws.append([])  # Fila en blanco
+
+    # Headers
+    headers = ["Fecha", "Categoría", "Descripción", "Tipo", "Monto ($)"]
+    ws.append(headers)
+    
+    for col_num, header in enumerate(headers, 1):
+        cell = ws.cell(row=4, column=col_num)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = border
+
+    # Datos
+    for idx, row in df_gastos.iterrows():
+        ws.append([
+            row['fecha'],
+            row['categoria'],
+            row['descripcion'],
+            row['tipo'],
+            row['monto']
+        ])
+        
+        # Formato de datos
+        for col_num in range(1, 6):
+            cell = ws.cell(row=5 + idx, column=col_num)
+            cell.border = border
+            if col_num == 5:  # Columna de montos
+                cell.number_format = '#,##0.00'
+                cell.alignment = Alignment(horizontal="right")
+            else:
+                cell.alignment = Alignment(horizontal="left")
+
+    # Fila de totales
+    total_row = len(df_gastos) + 5
+    ws.merge_cells(f"A{total_row}:D{total_row}")
+    ws[f"A{total_row}"] = "TOTAL GASTOS"
+    ws[f"A{total_row}"].font = total_font
+    ws[f"A{total_row}"].fill = total_fill
+    ws[f"A{total_row}"].alignment = Alignment(horizontal="right")
+    ws[f"A{total_row}"].border = border
+
+    total_monto = df_gastos['monto'].sum()
+    total_cell = ws[f"E{total_row}"]
+    total_cell.value = total_monto
+    total_cell.font = total_font
+    total_cell.fill = total_fill
+    total_cell.number_format = '#,##0.00'
+    total_cell.alignment = Alignment(horizontal="right")
+    total_cell.border = border
+
+    # Ajustar ancho de columnas
+    ws.column_dimensions["A"].width = 15
+    ws.column_dimensions["B"].width = 20
+    ws.column_dimensions["C"].width = 35
+    ws.column_dimensions["D"].width = 12
+    ws.column_dimensions["E"].width = 15
+
+    # Guardar a BytesIO
+    excel_buffer = BytesIO()
+    wb.save(excel_buffer)
+    excel_buffer.seek(0)
+    
+    return excel_buffer
+
+
+def generar_excel_analisis_mensual(ingresos, gastos, margen, df_gastos_mes, año, mes, taller_nombre):
+    """Genera un reporte financiero mensual completo en Excel."""
+    wb = Workbook()
+    
+    # Hoja 1: Resumen
+    ws_resumen = wb.active
+    ws_resumen.title = "Resumen"
+    
+    header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=12)
+    title_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    title_font = Font(bold=True, color="FFFFFF", size=11)
+    
+    # Título
+    ws_resumen.merge_cells("A1:D1")
+    ws_resumen["A1"] = f"REPORTE FINANCIERO MENSUAL - {taller_nombre}"
+    ws_resumen["A1"].font = Font(bold=True, size=14, color="1F4E78")
+    ws_resumen["A1"].alignment = Alignment(horizontal="center")
+    
+    ws_resumen.merge_cells("A2:D2")
+    meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+    ws_resumen["A2"] = f"{meses[mes-1]} de {año}"
+    ws_resumen["A2"].font = Font(italic=True, size=11, color="666666")
+    ws_resumen["A2"].alignment = Alignment(horizontal="center")
+    
+    ws_resumen.append([])
+    ws_resumen.append([])
+    
+    # Métricas
+    ws_resumen.append(["CONCEPTO", "VALOR"])
+    ws_resumen["A5"].font = title_font
+    ws_resumen["A5"].fill = title_fill
+    ws_resumen["B5"].font = title_font
+    ws_resumen["B5"].fill = title_fill
+    
+    ws_resumen.append(["Ingresos Facturados", ingresos])
+    ws_resumen.append(["Gastos Totales", gastos])
+    ws_resumen.append(["Margen Neto", margen])
+    
+    # Formato
+    for row in range(6, 9):
+        ws_resumen.cell(row=row, column=1).font = Font(bold=True)
+        ws_resumen.cell(row=row, column=2).number_format = '#,##0.00'
+        ws_resumen.cell(row=row, column=2).alignment = Alignment(horizontal="right")
+    
+    if margen < 0:
+        ws_resumen.cell(row=8, column=2).font = Font(bold=True, color="FF0000")
+    else:
+        ws_resumen.cell(row=8, column=2).font = Font(bold=True, color="00B050")
+    
+    ws_resumen.column_dimensions["A"].width = 25
+    ws_resumen.column_dimensions["B"].width = 18
+    
+    # Hoja 2: Detalle de Gastos
+    ws_detalle = wb.create_sheet("Detalle Gastos")
+    
+    ws_detalle.append(["DETALLE DE GASTOS"])
+    ws_detalle.merge_cells("A1:E1")
+    ws_detalle["A1"].font = Font(bold=True, size=12, color="1F4E78")
+    ws_detalle.append([])
+    
+    headers = ["Fecha", "Categoría", "Descripción", "Tipo", "Monto ($)"]
+    ws_detalle.append(headers)
+    
+    header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=12)
+    
+    for col_num, header in enumerate(headers, 1):
+        cell = ws_detalle.cell(row=3, column=col_num)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center")
+    
+    for idx, row in df_gastos_mes.iterrows():
+        ws_detalle.append([
+            row['fecha'],
+            row['categoria'],
+            row['descripcion'],
+            row['tipo'],
+            row['monto']
+        ])
+        
+        for col_num in range(1, 6):
+            cell = ws_detalle.cell(row=4 + idx, column=col_num)
+            if col_num == 5:
+                cell.number_format = '#,##0.00'
+                cell.alignment = Alignment(horizontal="right")
+    
+    ws_detalle.column_dimensions["A"].width = 15
+    ws_detalle.column_dimensions["B"].width = 20
+    ws_detalle.column_dimensions["C"].width = 35
+    ws_detalle.column_dimensions["D"].width = 12
+    ws_detalle.column_dimensions["E"].width = 15
+    
+    excel_buffer = BytesIO()
+    wb.save(excel_buffer)
+    excel_buffer.seek(0)
+    
+    return excel_buffer
 
 st.title("Gastos y Análisis Financiero")
 st.markdown(f"Control de gastos operacionales para: **{nombre_taller}**")
@@ -170,19 +372,40 @@ with tab_historial:
             )
 
             st.markdown("---")
-            col_exp1, col_exp2 = st.columns(2)
-            with col_exp1:
-                # Gastos fijos vs variables
+            
+            col_descargar, col_resumen = st.columns([2, 2])
+            with col_descargar:
+                # Descargar en Excel
+                excel_buffer = generar_excel_gastos(
+                    df_gastos,
+                    f"Listado de Gastos - {fecha_ini.strftime('%d/%m/%Y')} a {fecha_fin.strftime('%d/%m/%Y')}",
+                    f"Gastos_{fecha_ini}_{fecha_fin}.xlsx"
+                )
+                st.download_button(
+                    label="📥 Descargar en Excel (para DIAN)",
+                    data=excel_buffer,
+                    file_name=f"Gastos_{fecha_ini}_{fecha_fin}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+            
+            with col_resumen:
+                st.markdown("**Resumen Rápido:**")
                 df_fijos_vars = df_gastos.groupby('tipo')['monto'].sum().reset_index()
-                st.markdown("**Gastos Fijos vs Variables:**")
                 for idx, row in df_fijos_vars.iterrows():
                     st.write(f"• {row['tipo']}: {formato_cop(row['monto'])}")
-            with col_exp2:
+
+            st.markdown("---")
+            
+            col_exp1, col_exp2 = st.columns(2)
+            with col_exp1:
                 # Top 3 categorías
                 df_top_cat = df_gastos.groupby('categoria')['monto'].sum().nlargest(3).reset_index()
-                st.markdown("**Top 3 Categorías:**")
+                st.markdown("**Top 3 Categorías por Gasto:**")
                 for idx, row in df_top_cat.iterrows():
                     st.write(f"• {row['categoria']}: {formato_cop(row['monto'])}")
+            with col_exp2:
+                st.write("")
         else:
             st.info("No hay gastos registrados en este período.")
 
@@ -198,8 +421,6 @@ with tab_analisis:
     with col_mes2:
         año_sel = st.number_input("Año", value=datetime.today().year, min_value=2020)
 
-    # Nota: obtener_metricas_financieras necesita una query simplificada
-    # Por ahora, calcular localmente desde los gastos
     fecha_inicio_mes = datetime(año_sel, mes_sel, 1).date()
     if mes_sel == 12:
         fecha_fin_mes = datetime(año_sel + 1, 1, 1).date() - timedelta(days=1)
@@ -271,4 +492,17 @@ with tab_analisis:
         st.write("**Rentabilidad (Margen Neto):**")
         color = "🔴" if margen_neto < 0 else "🟢"
         st.write(f"{color} `{formato_cop(margen_neto)}`")
+
+    st.markdown("---")
     
+    col_desc1, col_desc2 = st.columns(2)
+    with col_desc1:
+        # Descargar reporte mensual completo
+        excel_reporte = generar_excel_analisis_mensual(
+            ingresos_totales,
+            gastos_totales,
+            margen_neto,
+            df_gastos_mes,
+            año_sel,
+            mes_sel,
+            nombre
