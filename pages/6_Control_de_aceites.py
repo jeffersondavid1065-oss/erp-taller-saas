@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from sqlalchemy import text
 from db import obtener_conexion
+from queries import obtener_catalogos, obtener_mecanicos_activos, invalidar_cache_inventario
 
 st.set_page_config(page_title="Control de Aceites y Flotas", layout="wide")
 
@@ -23,18 +24,84 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-if not st.session_state.get('user_logged', False):
+# --------------------------------------------------------------------------------
+# AUTENTICACIÓN: mismo namespace st.session_state.auth definido en app.py
+# --------------------------------------------------------------------------------
+if "auth" not in st.session_state:
+    st.session_state.auth = {"logged": False, "user_id": None, "nombre_taller": None}
+
+if not st.session_state.auth["logged"]:
     st.warning("Debes iniciar sesión en la página principal para acceder a este módulo.")
     st.stop()
 
 engine = obtener_conexion()
-user_id = st.session_state.user_id
+user_id = st.session_state.auth["user_id"]
+nombre_taller = st.session_state.auth["nombre_taller"]
 
 def formato_cop(numero):
     return f"${float(numero):,.0f}".replace(",", ".")
 
+# ==========================================
+# CONSULTAS CACHEADAS ESPECÍFICAS DE ESTE MÓDULO
+# ==========================================
+@st.cache_data(ttl=60)
+def obtener_agenda_flota(uid):
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        return pd.read_sql_query(
+            text("""
+                SELECT v.id, v.placa, v.modelo_vehiculo, e.razon_social as empresa, 
+                       v.fecha_ultimo_servicio, v.fecha_proximo_servicio, v.kilometraje_actual
+                FROM Vehiculos_Flota v
+                JOIN Empresas_Clientes e ON v.empresa_id = e.id
+                WHERE v.usuario_id = :uid
+                ORDER BY v.fecha_proximo_servicio ASC
+            """),
+            con=conn, params={"uid": uid}
+        )
+
+@st.cache_data(ttl=60)
+def obtener_vehiculos_flota(uid):
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        return pd.read_sql_query(
+            text("SELECT v.id, v.placa, v.modelo_vehiculo, e.razon_social FROM Vehiculos_Flota v "
+                 "JOIN Empresas_Clientes e ON v.empresa_id = e.id WHERE v.usuario_id = :uid ORDER BY v.placa ASC"),
+            con=conn, params={"uid": uid}
+        )
+
+@st.cache_data(ttl=30)
+def obtener_vehiculo_por_id(vid):
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        return conn.execute(text("SELECT * FROM Vehiculos_Flota WHERE id = :vid"), {"vid": vid}).fetchone()
+
+@st.cache_data(ttl=30)
+def obtener_receta_vehiculo(vid):
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        return pd.read_sql_query(
+            text("""
+                SELECT r.id, i.nombre_producto, r.cantidad, i.precio_venta, i.id as inv_id
+                FROM Recetas_Vehiculo r
+                JOIN Inventario i ON r.inventario_id = i.id
+                WHERE r.vehiculo_id = :vid
+            """),
+            con=conn, params={"vid": vid}
+        )
+
+def invalidar_cache_flota():
+    """Llamar tras crear un vehículo o actualizar sus datos (fechas, km)."""
+    obtener_agenda_flota.clear()
+    obtener_vehiculos_flota.clear()
+    obtener_vehiculo_por_id.clear()
+
+def invalidar_cache_receta():
+    """Llamar tras agregar/eliminar un insumo de la receta de un vehículo."""
+    obtener_receta_vehiculo.clear()
+
 st.title("Control de Cambios de Aceite y Flotas")
-st.markdown(f"Mantenimiento preventivo e insumos para: **{st.session_state.nombre_taller}**")
+st.markdown(f"Mantenimiento preventivo e insumos para: **{nombre_taller}**")
 st.markdown("---")
 
 tab_agenda, tab_flota = st.tabs(["Agenda y Proximos Servicios", "Gestion de Vehiculos y Filtros"])
@@ -44,19 +111,8 @@ tab_agenda, tab_flota = st.tabs(["Agenda y Proximos Servicios", "Gestion de Vehi
 # ==========================================
 with tab_agenda:
     st.subheader("Vehiculos con Mantenimiento Proximo o Vencido")
-    
-    with engine.connect() as conn:
-        df_agenda = pd.read_sql_query(
-            text("""
-                SELECT v.id, v.placa, v.modelo_vehiculo, e.razon_social as empresa, 
-                       v.fecha_ultimo_servicio, v.fecha_proximo_servicio, v.kilometraje_actual
-                FROM Vehiculos_Flota v
-                JOIN Empresas_Clientes e ON v.empresa_id = e.id
-                WHERE v.usuario_id = :uid
-                ORDER BY v.fecha_proximo_servicio ASC
-            """),
-            con=conn, params={"uid": user_id}
-        )
+
+    df_agenda = obtener_agenda_flota(user_id)
 
     if not df_agenda.empty:
         hoy = datetime.today().date()
@@ -91,9 +147,8 @@ with tab_agenda:
 # ==========================================
 with tab_flota:
     with st.expander("Registrar Nuevo Vehiculo a una Empresa", expanded=False):
-        with engine.connect() as conn:
-            empresas = conn.execute(text("SELECT id, razon_social FROM Empresas_Clientes WHERE usuario_id = :uid"), {"uid": user_id}).fetchall()
-        
+        empresas, _ = obtener_catalogos(user_id)
+
         if empresas:
             dict_emp = {e[1]: e[0] for e in empresas}
             with st.form("form_nuevo_vehiculo", clear_on_submit=True):
@@ -119,6 +174,7 @@ with tab_flota:
                                     """),
                                     {"uid": user_id, "eid": dict_emp[empresa_sel_v], "placa": placa_v, "modelo": modelo_v, "f_ult": fecha_ult_v.strftime('%Y-%m-%d'), "f_prox": proxima_fecha.strftime('%Y-%m-%d'), "km": int(km_v), "inter": int(intervalo_v)}
                                 )
+                            invalidar_cache_flota()
                             st.success(f"Vehiculo {placa_v} registrado.")
                             st.rerun()
                         except Exception as e:
@@ -129,17 +185,15 @@ with tab_flota:
             st.info("Primero debes registrar empresas en el Directorio.")
 
     st.markdown("---")
-    
-    with engine.connect() as conn:
-        vehiculos_db = pd.read_sql_query(text("SELECT v.id, v.placa, v.modelo_vehiculo, e.razon_social FROM Vehiculos_Flota v JOIN Empresas_Clientes e ON v.empresa_id = e.id WHERE v.usuario_id = :uid ORDER BY v.placa ASC"), con=conn, params={"uid": user_id})
+
+    vehiculos_db = obtener_vehiculos_flota(user_id)
 
     if not vehiculos_db.empty:
         dict_veh = {f"{r['placa']} - {r['modelo_vehiculo']} ({r['razon_social']})": r['id'] for idx, r in vehiculos_db.iterrows()}
         veh_sel_str = st.selectbox("Selecciona un vehiculo para configurar o despachar:", options=list(dict_veh.keys()))
         veh_id_activo = int(dict_veh[veh_sel_str])
 
-        with engine.connect() as conn:
-            veh_info = conn.execute(text("SELECT * FROM Vehiculos_Flota WHERE id = :vid"), {"vid": veh_id_activo}).fetchone()
+        veh_info = obtener_vehiculo_por_id(veh_id_activo)
 
         st.info(f"Placa: {veh_info[3]} | Ultimo servicio: {veh_info[5] or 'Pendiente'} | Proximo: {veh_info[6]}")
 
@@ -150,17 +204,8 @@ with tab_flota:
         # ==========================================
         with tab_receta:
             st.write("Agrega los insumos uno por uno. Ejemplo: agrega 1 Filtro de Aceite, luego 2 Filtros de ACPM, luego 4 Cuartos de Aceite.")
-            
-            with engine.connect() as conn:
-                recetas_df = pd.read_sql_query(
-                    text("""
-                        SELECT r.id, i.nombre_producto, r.cantidad, i.precio_venta 
-                        FROM Recetas_Vehiculo r
-                        JOIN Inventario i ON r.inventario_id = i.id
-                        WHERE r.vehiculo_id = :vid
-                    """), 
-                    con=conn, params={"vid": veh_id_activo}
-                )
+
+            recetas_df = obtener_receta_vehiculo(veh_id_activo)
 
             if not recetas_df.empty:
                 st.markdown("**Insumos actuales del vehiculo:**")
@@ -174,6 +219,7 @@ with tab_flota:
                             try:
                                 with engine.begin() as conn_del:
                                     conn_del.execute(text("DELETE FROM Recetas_Vehiculo WHERE id = :rid"), {"rid": row['id']})
+                                invalidar_cache_receta()
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Error: {e}")
@@ -196,7 +242,6 @@ with tab_flota:
                         try:
                             with engine.begin() as conn_r:
                                 is_sqlite = "sqlite" in str(conn_r.engine.url)
-                                # 1. Insertar en Inventario
                                 if is_sqlite:
                                     cur = conn_r.execute(
                                         text("INSERT INTO Inventario (usuario_id, nombre_producto, costo_compra, precio_venta, stock_actual) VALUES (:uid, :nom, :costo, :pvp, 0)"),
@@ -209,12 +254,13 @@ with tab_flota:
                                         {"uid": user_id, "nom": item_desc, "costo": float(costo_compra), "pvp": float(precio_venta)}
                                     )
                                     nuevo_inv_id = res.scalar()
-                                
-                                # 2. Ligar a la Receta del Vehiculo
+
                                 conn_r.execute(
                                     text("INSERT INTO Recetas_Vehiculo (vehiculo_id, inventario_id, cantidad) VALUES (:vid, :iid, :cant)"),
                                     {"vid": veh_id_activo, "iid": nuevo_inv_id, "cant": int(cant_item)}
                                 )
+                            invalidar_cache_receta()
+                            invalidar_cache_inventario()
                             st.success("Insumo guardado.")
                             st.rerun()
                         except Exception as e:
@@ -226,29 +272,19 @@ with tab_flota:
         with tab_despacho:
             st.write("Genera la orden de trabajo. El sistema cobrara los insumos, descontara el stock y sumara la mano de obra a la nomina del tecnico.")
 
-            with engine.connect() as conn:
-                recetas_actuales = conn.execute(
-                    text("""
-                        SELECT i.id as inv_id, i.nombre_producto, r.cantidad, i.precio_venta 
-                        FROM Recetas_Vehiculo r
-                        JOIN Inventario i ON r.inventario_id = i.id
-                        WHERE r.vehiculo_id = :vid
-                    """), {"vid": veh_id_activo}
-                ).fetchall()
-                
-                mecanicos = conn.execute(text("SELECT id, nombre FROM Mecanicos WHERE usuario_id = :uid AND estado = 'Activo'"), {"uid": user_id}).fetchall()
+            recetas_actuales = obtener_receta_vehiculo(veh_id_activo)
+            mecanicos = obtener_mecanicos_activos(user_id)
 
-            if recetas_actuales:
+            if not recetas_actuales.empty:
                 dict_mec = {m[1]: m[0] for m in mecanicos} if mecanicos else {}
-                
-                # Conversión explícita a float/int para evitar bloqueos con Decimal de Postgres
-                total_insumos = sum([float(r[3]) * int(r[2]) for r in recetas_actuales])
-                
+
+                total_insumos = float((recetas_actuales['precio_venta'] * recetas_actuales['cantidad']).sum())
+
                 st.write("**Insumos a Despachar:**")
-                for r in recetas_actuales:
-                    subtotal_item = float(r[3]) * int(r[2])
-                    st.write(f"- {r[1]} (x{r[2]}) - {formato_cop(subtotal_item)}")
-                
+                for _, r in recetas_actuales.iterrows():
+                    subtotal_item = float(r['precio_venta']) * int(r['cantidad'])
+                    st.write(f"- {r['nombre_producto']} (x{r['cantidad']}) - {formato_cop(subtotal_item)}")
+
                 st.markdown("---")
                 col_d1, col_d2 = st.columns(2)
                 with col_d1:
@@ -257,7 +293,7 @@ with tab_flota:
                     valor_mo = st.number_input("Valor Mano de Obra ($)", min_value=0.0, value=30000.0, step=5000.0)
 
                 nuevo_km = st.number_input("Kilometraje de Ingreso", min_value=int(veh_info[7] or 0), value=int(veh_info[7] or 0) + 5000, step=500)
-                
+
                 gran_total = float(total_insumos) + float(valor_mo)
                 st.markdown(f"### Total Orden: {formato_cop(gran_total)}")
 
@@ -268,8 +304,7 @@ with tab_flota:
                         try:
                             with engine.begin() as conn_gen:
                                 is_sqlite = "sqlite" in str(conn_gen.engine.url)
-                                
-                                # 1. Crear Orden (Hoja de Trabajo)
+
                                 if is_sqlite:
                                     cur = conn_gen.execute(text("INSERT INTO Hojas_Trabajo (usuario_id, placa, empresa_id, estado) VALUES (:uid, :placa, :eid, 'Facturado')"), {"uid": user_id, "placa": veh_info[3], "eid": veh_info[2]})
                                     nueva_hoja_id = cur.lastrowid
@@ -277,22 +312,19 @@ with tab_flota:
                                     res = conn_gen.execute(text("INSERT INTO Hojas_Trabajo (usuario_id, placa, empresa_id, estado) VALUES (:uid, :placa, :eid, 'Facturado') RETURNING id"), {"uid": user_id, "placa": veh_info[3], "eid": veh_info[2]})
                                     nueva_hoja_id = res.scalar()
 
-                                # 2. Registrar Repuestos y Descontar Inventario
-                                for r in recetas_actuales:
-                                    pvp_item = float(r[3]) * int(r[2])
+                                for _, r in recetas_actuales.iterrows():
+                                    pvp_item = float(r['precio_venta']) * int(r['cantidad'])
                                     conn_gen.execute(
                                         text("INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, precio_venta) VALUES (:hid, 'Repuesto', :desc, :pvp)"),
-                                        {"hid": nueva_hoja_id, "desc": f"{r[1]} (x{r[2]})", "pvp": pvp_item}
+                                        {"hid": nueva_hoja_id, "desc": f"{r['nombre_producto']} (x{r['cantidad']})", "pvp": pvp_item}
                                     )
-                                    conn_gen.execute(text("UPDATE Inventario SET stock_actual = stock_actual - :cant WHERE id = :inv_id"), {"cant": int(r[2]), "inv_id": r[0]})
+                                    conn_gen.execute(text("UPDATE Inventario SET stock_actual = stock_actual - :cant WHERE id = :inv_id"), {"cant": int(r['cantidad']), "inv_id": int(r['inv_id'])})
 
-                                # 3. Registrar Mano de Obra (Sincroniza con Nomina)
                                 conn_gen.execute(
                                     text("INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, mecanico_id, precio_venta) VALUES (:hid, 'Mano de Obra', :desc, :mid, :pvp)"),
                                     {"hid": nueva_hoja_id, "desc": f"Servicio Cambio de Aceite", "mid": dict_mec[mec_sel], "pvp": float(valor_mo)}
                                 )
 
-                                # 4. Actualizar fechas
                                 hoy = datetime.today().date()
                                 proxima = hoy + timedelta(days=int((veh_info[8] or 3) * 30))
                                 conn_gen.execute(
@@ -300,9 +332,18 @@ with tab_flota:
                                     {"f_ult": hoy.strftime('%Y-%m-%d'), "f_prox": proxima.strftime('%Y-%m-%d'), "km": int(nuevo_km), "vid": veh_id_activo}
                                 )
 
+                            # La orden queda directamente en estado 'Facturado', así que
+                            # no aparece en Tablero/Dashboard/Nómina (todos filtran
+                            # estado != 'Facturado'). Solo hace falta refrescar el
+                            # inventario (se descontó stock) y los datos del vehículo
+                            # (fechas y kilometraje actualizados).
+                            invalidar_cache_inventario()
+                            invalidar_cache_flota()
                             st.success(f"Orden #{nueva_hoja_id} creada. Repuestos descontados y mano de obra sumada a {mec_sel}.")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error: {e}")
             else:
                 st.warning("Configura los insumos de este vehiculo en la pestaña anterior para poder despachar.")
+    else:
+        st.info("No hay vehiculos registrados. Usa el formulario superior para agregar el primero.")
