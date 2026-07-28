@@ -208,11 +208,50 @@ else:
 
     total_activos, total_cotizar, total_ordenes_activas, total_empresas = obtener_metricas_dashboard(user_id)
 
+    # Calcular margen neto del mes actual
+    hoy = datetime.today()
+    with engine.connect() as conn:
+        # Ingresos del mes
+        ingresos_mes = conn.execute(
+            text("""
+                SELECT COALESCE(SUM(d.precio_venta), 0) as total
+                FROM Detalles_Orden d
+                JOIN Hojas_Trabajo h ON d.hoja_id = h.id
+                WHERE h.usuario_id = :uid AND h.estado = 'Facturado'
+                AND EXTRACT(YEAR FROM h.fecha_ingreso) = :año
+                AND EXTRACT(MONTH FROM h.fecha_ingreso) = :mes
+            """),
+            {"uid": user_id, "año": hoy.year, "mes": hoy.month}
+        ).scalar()
+        ingresos_mes = float(ingresos_mes) if ingresos_mes else 0
+
+        # Gastos del mes
+        gastos_mes = conn.execute(
+            text("""
+                SELECT COALESCE(SUM(monto), 0) as total
+                FROM Gastos
+                WHERE usuario_id = :uid
+                AND EXTRACT(YEAR FROM fecha) = :año
+                AND EXTRACT(MONTH FROM fecha) = :mes
+            """),
+            {"uid": user_id, "año": hoy.year, "mes": hoy.month}
+        ).scalar()
+        gastos_mes = float(gastos_mes) if gastos_mes else 0
+
+    margen_neto = ingresos_mes - gastos_mes
+
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Valor Trabajos Activos", formato_cop(total_activos))
     m2.metric("Órdenes por Cotizar", total_cotizar)
     m3.metric("Órdenes Activas en Taller", total_ordenes_activas)
     m4.metric("Empresas Registradas", total_empresas)
+
+    st.markdown("---")
+
+    col_mes1, col_mes2, col_mes3 = st.columns(3)
+    col_mes1.metric("Ingresos Mes Actual", formato_cop(ingresos_mes))
+    col_mes2.metric("Gastos Mes Actual", formato_cop(gastos_mes), delta=f"-{formato_cop(gastos_mes)}")
+    col_mes3.metric("Margen Neto Mes", formato_cop(margen_neto), delta_color="inverse" if margen_neto < 0 else "normal")
 
     st.markdown("---")
 
