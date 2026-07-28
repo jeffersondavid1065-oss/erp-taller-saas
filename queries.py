@@ -102,6 +102,17 @@ def obtener_vehiculos(uid):
         return conn.execute(query, {"uid": uid}).fetchall()
 
 
+@st.cache_data(ttl=30)
+def obtener_mecanicos_activos(uid):
+    """Solo mecánicos con estado='Activo'. Compartida entre Nómina y
+    Control de Aceites/Flotas (ambas necesitan la misma lista para asignar
+    técnicos, filtrando a quienes siguen trabajando en el taller)."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        query = text("SELECT id, nombre FROM Mecanicos WHERE usuario_id = :uid AND estado = 'Activo' ORDER BY nombre ASC")
+        return conn.execute(query, {"uid": uid}).fetchall()
+
+
 @st.cache_data(ttl=60)
 def obtener_empresas_directorio(uid):
     """Vista completa (con NIT, teléfono, email) para el Directorio/CRM.
@@ -130,13 +141,15 @@ def obtener_mecanicos_directorio(uid):
 def invalidar_cache_directorio():
     """
     Llamar tras crear, editar o eliminar una Empresa_Cliente o un Mecánico.
-    Limpia tanto las tablas del propio Directorio como obtener_catalogos
-    (usada en los dropdowns de Recepción, Expediente y Nómina), para que
-    una empresa o mecánico nuevo aparezca de inmediato en toda la app.
+    Limpia las tablas del propio Directorio, obtener_catalogos (dropdowns en
+    Recepción, Expediente y Nómina) y obtener_mecanicos_activos (Nómina y
+    Aceites/Flotas), ya que editar el estado Activo/Inactivo de un mecánico
+    aquí afecta directamente a esa lista.
     """
     obtener_catalogos.clear()
     obtener_empresas_directorio.clear()
     obtener_mecanicos_directorio.clear()
+    obtener_mecanicos_activos.clear()
 
 
 def invalidar_cache_ordenes():
