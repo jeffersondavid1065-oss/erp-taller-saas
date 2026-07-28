@@ -1,26 +1,38 @@
 import streamlit as st
 import pandas as pd
+import bcrypt
+import hashlib
 from sqlalchemy import text
 from db import obtener_conexion, init_db
-import hashlib
 from datetime import date
 
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(
-    page_title="MyTaller", 
+    page_title="MyTaller",
     layout="wide",
-    initial_sidebar_state="expanded" if st.session_state.get('user_logged', False) else "collapsed"
+    initial_sidebar_state="expanded" if st.session_state.get("auth", {}).get("logged", False) else "collapsed"
 )
 
-# Inicializar Base de Datos (Se ejecuta una sola vez al arrancar por el caché de db.py)
+# Inicializar Base de Datos (cacheada como recurso en db.py -> se ejecuta 1 sola vez)
 init_db()
 
-is_logged = st.session_state.get('user_logged', False)
+# --------------------------------------------------------------------------------
+# 2. SESSION STATE NAMESPACED
+# --------------------------------------------------------------------------------
+if "auth" not in st.session_state:
+    st.session_state.auth = {
+        "logged": False,
+        "user_id": None,
+        "nombre_taller": None,
+    }
 
-# 2. ESTILOS CSS ADAPTABLES AL TEMA (CLARO/OSCURO)
+is_logged = st.session_state.auth["logged"]
+
+# --------------------------------------------------------------------------------
+# 3. ESTILOS CSS ADAPTABLES AL TEMA (CLARO/OSCURO)
+# --------------------------------------------------------------------------------
 st.markdown("""
     <style>
-    /* Máscara adaptable automáticamente al tema actual (Claro u Oscuro) */
     header::after {
         content: "";
         position: fixed !important;
@@ -28,25 +40,22 @@ st.markdown("""
         right: 0 !important;
         width: 350px !important;
         height: 60px !important;
-        background-color: var(--background-color) !important; /* Variable nativa de Streamlit */
+        background-color: var(--background-color) !important;
         z-index: 9999999 !important;
-        pointer-events: all !important; /* Bloquea cualquier clic hacia los iconos */
+        pointer-events: all !important;
     }
 
-    /* Ocultar la barra lateral SOLO cuando NO hay sesión iniciada */
     """ + ("" if is_logged else """
     [data-testid="stSidebar"] { display: none !important; }
     [data-testid="stSidebarCollapsedControl"] { display: none !important; }
     """) + """
 
-    /* Separar la opción de Admin en el menú lateral */
     [data-testid="stSidebarNav"] ul li:last-child {
         margin-top: 50px !important;
         border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
         padding-top: 10px !important;
     }
 
-    /* Animación suave de entrada */
     @keyframes fade-in-up {
         0% { opacity: 0; transform: translateY(20px); }
         100% { opacity: 1; transform: translateY(0); }
@@ -58,49 +67,42 @@ st.markdown("""
 
 engine = obtener_conexion()
 
-if 'user_logged' not in st.session_state:
-    st.session_state.user_logged = False
 
 def formato_cop(numero):
     return f"${numero:,.0f}".replace(",", ".")
 
-# FUNCIÓN CON CACHÉ PARA CONSULTAR MÉTRICAS DEL DASHBOARD
-@st.cache_data(ttl=15)
+
+# --------------------------------------------------------------------------------
+# 4. CONSULTA DE MÉTRICAS: combinada en 1 solo round-trip a la BD
+# --------------------------------------------------------------------------------
+@st.cache_data(ttl=30, show_spinner=False)
 def obtener_metricas_dashboard(uid):
     with engine.connect() as conn:
-        q_valor_activos = text('''
-            SELECT SUM(d.precio_venta) 
-            FROM Detalles_Orden d
-            JOIN Hojas_Trabajo h ON d.hoja_id = h.id
-            WHERE h.usuario_id = :uid AND h.estado != 'Facturado'
+        query = text('''
+            SELECT
+                (SELECT COALESCE(SUM(d.precio_venta), 0)
+                 FROM Detalles_Orden d
+                 JOIN Hojas_Trabajo h ON d.hoja_id = h.id
+                 WHERE h.usuario_id = :uid AND h.estado != 'Facturado') AS total_activos,
+                (SELECT COUNT(*) FROM Hojas_Trabajo
+                 WHERE usuario_id = :uid AND estado = 'Cotizar') AS total_cotizar,
+                (SELECT COUNT(*) FROM Hojas_Trabajo
+                 WHERE usuario_id = :uid AND estado != 'Facturado') AS total_ordenes_activas,
+                (SELECT COUNT(*) FROM Empresas_Clientes
+                 WHERE usuario_id = :uid) AS total_empresas
         ''')
-        total_activos = conn.execute(q_valor_activos, {"uid": uid}).scalar() or 0.0
+        row = conn.execute(query, {"uid": uid}).fetchone()
 
-        q_cotizar = text('''
-            SELECT COUNT(*) FROM Hojas_Trabajo 
-            WHERE usuario_id = :uid AND estado = 'Cotizar'
-        ''')
-        total_cotizar = conn.execute(q_cotizar, {"uid": uid}).scalar() or 0
+    return row.total_activos, row.total_cotizar, row.total_ordenes_activas, row.total_empresas
 
-        q_ordenes = text('''
-            SELECT COUNT(*) FROM Hojas_Trabajo 
-            WHERE usuario_id = :uid AND estado != 'Facturado'
-        ''')
-        total_ordenes_activas = conn.execute(q_ordenes, {"uid": uid}).scalar() or 0
 
-        q_empresas = text('''
-            SELECT COUNT(*) FROM Empresas_Clientes 
-            WHERE usuario_id = :uid
-        ''')
-        total_empresas = conn.execute(q_empresas, {"uid": uid}).scalar() or 0
-
-    return total_activos, total_cotizar, total_ordenes_activas, total_empresas
-
-# 3. PANTALLAS
-if not st.session_state.user_logged:
-    # Inicio de Sesión
+# --------------------------------------------------------------------------------
+# 5. PANTALLAS
+# --------------------------------------------------------------------------------
+if not is_logged:
+    # ---------------- Inicio de Sesión ----------------
     col1, col2, col3 = st.columns([1, 2, 1])
-    
+
     with col2:
         st.markdown("""
             <div style='text-align: center; margin-bottom: 25px;'>
@@ -112,31 +114,62 @@ if not st.session_state.user_logged:
                 </p>
             </div>
         """, unsafe_allow_html=True)
-        
+
         with st.container(border=True):
             st.subheader("Iniciar Sesión")
             email_login = st.text_input("Correo Electrónico", key="login_email")
             pass_login = st.text_input("Contraseña", type="password", key="login_pass")
-            
+
             st.markdown("")
             if st.button("Ingresar", use_container_width=True, type="primary"):
                 if email_login and pass_login:
-                    pass_hash = hashlib.sha256(pass_login.encode()).hexdigest()
                     try:
                         with engine.connect() as conn:
-                            query = text("SELECT id, nombre_taller, password, fecha_pago_limite FROM Usuarios WHERE email = :email")
+                            query = text(
+                                "SELECT id, nombre_taller, password, fecha_pago_limite "
+                                "FROM Usuarios WHERE email = :email"
+                            )
                             user = conn.execute(query, {"email": email_login}).fetchone()
-                        
-                        if user and user[2] == pass_hash:
+
+                        credenciales_ok = False
+                        if user is not None:
+                            hash_guardado = user[2]
+
+                            if hash_guardado.startswith(("$2a$", "$2b$", "$2y$")):
+                                # Ya migrado: hash bcrypt normal
+                                credenciales_ok = bcrypt.checkpw(
+                                    pass_login.encode(), hash_guardado.encode()
+                                )
+                            else:
+                                # Hash legado en SHA-256: se verifica como antes
+                                # y, si coincide, se migra a bcrypt en silencio.
+                                hash_sha256 = hashlib.sha256(pass_login.encode()).hexdigest()
+                                if hash_sha256 == hash_guardado:
+                                    credenciales_ok = True
+                                    nuevo_hash = bcrypt.hashpw(
+                                        pass_login.encode(), bcrypt.gensalt()
+                                    ).decode()
+                                    with engine.begin() as conn_migra:
+                                        conn_migra.execute(
+                                            text("UPDATE Usuarios SET password = :pw WHERE id = :uid"),
+                                            {"pw": nuevo_hash, "uid": user[0]},
+                                        )
+
+                        if credenciales_ok:
                             fecha_limite = user[3]
                             hoy = date.today()
-                            
+
                             if fecha_limite is None or fecha_limite < hoy:
-                                st.error("Tu suscripción se encuentra inactiva o ha expirado. Por favor, comunícate con el administrador para reactivar tu cuenta.")
+                                st.error(
+                                    "Tu suscripción se encuentra inactiva o ha expirado. "
+                                    "Por favor, comunícate con el administrador para reactivar tu cuenta."
+                                )
                             else:
-                                st.session_state.user_logged = True
-                                st.session_state.user_id = user[0]
-                                st.session_state.nombre_taller = user[1]
+                                st.session_state.auth = {
+                                    "logged": True,
+                                    "user_id": user[0],
+                                    "nombre_taller": user[1],
+                                }
                                 st.rerun()
                         else:
                             st.error("Credenciales incorrectas.")
@@ -144,21 +177,23 @@ if not st.session_state.user_logged:
                         st.error(f"Error de conexión con la base de datos: {e}")
                 else:
                     st.warning("Completa todos los campos.")
-        
+
         st.markdown("")
-        
+
         with st.expander("Registrar Nuevo Taller"):
             with st.form("form_registro"):
                 taller_reg = st.text_input("Nombre del Taller")
                 dueno_reg = st.text_input("Nombre del Dueño")
                 email_reg = st.text_input("Correo Electrónico Comercial")
                 pass_reg = st.text_input("Contraseña", type="password")
-                
+
                 st.markdown("")
                 btn_reg = st.form_submit_button("Crear Cuenta", use_container_width=True)
                 if btn_reg:
                     if taller_reg and dueno_reg and email_reg and pass_reg:
-                        pass_hash_reg = hashlib.sha256(pass_reg.encode()).hexdigest()
+                        pass_hash_reg = bcrypt.hashpw(
+                            pass_reg.encode(), bcrypt.gensalt()
+                        ).decode()
                         try:
                             with engine.begin() as conn_reg:
                                 conn_reg.execute(
@@ -170,21 +205,26 @@ if not st.session_state.user_logged:
                                         "taller": taller_reg,
                                         "dueno": dueno_reg,
                                         "email": email_reg,
-                                        "pass": pass_hash_reg
-                                    }
+                                        "pass": pass_hash_reg,
+                                    },
                                 )
-                            st.cache_data.clear()
-                            st.success("Cuenta creada con éxito. Contacta al administrador para activar tu suscripción.")
+                            # No se limpia cache global: el registro no afecta
+                            # métricas cacheadas de otros usuarios.
+                            st.success(
+                                "Cuenta creada con éxito. Contacta al administrador "
+                                "para activar tu suscripción."
+                            )
                         except Exception as e:
                             st.error(f"Error al registrar el taller: {e}")
                     else:
                         st.warning("Completa todos los campos.")
 
 else:
-    user_id = st.session_state.user_id
-    
+    # ---------------- Panel Principal ----------------
+    user_id = st.session_state.auth["user_id"]
+
     st.title("Panel Principal")
-    st.markdown(f"Resumen gerencial y contable para: **{st.session_state.get('nombre_taller', '')}**")
+    st.markdown(f"Resumen gerencial y contable para: **{st.session_state.auth['nombre_taller']}**")
     st.markdown("---")
 
     total_activos, total_cotizar, total_ordenes_activas, total_empresas = obtener_metricas_dashboard(user_id)
@@ -196,12 +236,16 @@ else:
     m4.metric("Empresas Registradas", total_empresas)
 
     st.markdown("---")
-    
+
     col_info1, col_info2 = st.columns(2)
     with col_info1:
         with st.container(border=True):
             st.subheader("Control Contable")
-            st.write("Desde este panel puedes supervisar de forma general el estado financiero de tus operaciones en curso. Utiliza los módulos laterales para gestionar la nómina, auditar precios o emitir facturas.")
+            st.write(
+                "Desde este panel puedes supervisar de forma general el estado "
+                "financiero de tus operaciones en curso. Utiliza los módulos "
+                "laterales para gestionar la nómina, auditar precios o emitir facturas."
+            )
     with col_info2:
         with st.container(border=True):
             st.subheader("Accesos Rápidos")
@@ -211,6 +255,8 @@ else:
 
     st.markdown("")
     if st.button("Cerrar Sesión"):
-        st.session_state.user_logged = False
-        st.cache_data.clear()
+        # Solo se limpia el estado de sesión del usuario actual.
+        # No se toca st.cache_data.clear() global: eso afectaría a
+        # TODOS los usuarios conectados simultáneamente al servidor.
+        st.session_state.auth = {"logged": False, "user_id": None, "nombre_taller": None}
         st.rerun()
