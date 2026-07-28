@@ -11,17 +11,24 @@ def obtener_conexion():
     """
     Crea el engine de SQLAlchemy UNA sola vez por proceso de servidor
     (cache_resource no serializa, mantiene el objeto vivo en memoria).
+
+    NOTA IMPORTANTE PARA MÚLTIPLES TALLERES CONCURRENTES:
+    Verifica que st.secrets["postgres"]["url"] apunte al *connection pooler*
+    de Supabase (Supavisor, puerto 6543, modo "Transaction"), NO a la
+    conexión directa (puerto 5432). La conexión directa tiene un límite de
+    conexiones simultáneas mucho más bajo y se agota rápido con varios
+    talleres usando la app al mismo tiempo. La URL del pooler se ve así:
+        postgresql://usuario:password@HOST.pooler.supabase.com:6543/postgres
     """
     try:
         db_url = st.secrets["postgres"]["url"]
         engine = create_engine(
             db_url,
-            pool_size=5,
-            max_overflow=10,
-            pool_pre_ping=True,   # descarta conexiones muertas antes de usarlas
-            pool_recycle=300,     # recicla conexiones cada 5 min (evita timeouts de Supabase/PgBouncer)
+            pool_size=10,          # antes 5: más margen para varios talleres a la vez
+            max_overflow=20,       # antes 10
+            pool_pre_ping=True,
+            pool_recycle=300,
         )
-        # Verificación real de que la conexión sirve, no solo que se construyó el engine
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
     except Exception as e:
@@ -231,5 +238,21 @@ def init_db():
                     FOREIGN KEY (inventario_id) REFERENCES Inventario(id) ON DELETE CASCADE
                 )
             '''))
+
+        # ==========================================
+        # ÍNDICES: mismas sentencias para SQLite y Postgres.
+        # Sin esto, cada consulta filtrada por usuario_id hace un recorrido
+        # completo de la tabla. Con varios talleres compartiendo las mismas
+        # tablas, esto se vuelve más lento para TODOS a medida que crece el
+        # historial combinado, aunque cada taller solo pida sus propios datos.
+        # ==========================================
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_hojas_trabajo_usuario ON Hojas_Trabajo(usuario_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_hojas_trabajo_usuario_estado ON Hojas_Trabajo(usuario_id, estado)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_detalles_orden_hoja ON Detalles_Orden(hoja_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_inventario_usuario ON Inventario(usuario_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_empresas_usuario ON Empresas_Clientes(usuario_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_mecanicos_usuario ON Mecanicos(usuario_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_vehiculos_flota_usuario ON Vehiculos_Flota(usuario_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_recetas_vehiculo_vid ON Recetas_Vehiculo(vehiculo_id)"))
 
     return True
