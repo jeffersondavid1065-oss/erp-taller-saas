@@ -5,7 +5,7 @@ import hashlib
 from sqlalchemy import text
 from db import obtener_conexion, init_db
 from queries import obtener_metricas_dashboard
-from datetime import date
+from datetime import datetime, date
 
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(
