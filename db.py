@@ -65,6 +65,7 @@ def init_db():
                     codigo_verificacion TEXT,
                     activo BOOLEAN DEFAULT 0,
                     fecha_pago_limite DATE,
+                    token_sesion TEXT,
                     fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             '''))
@@ -181,6 +182,7 @@ def init_db():
                     codigo_verificacion TEXT,
                     activo BOOLEAN DEFAULT FALSE,
                     fecha_pago_limite DATE,
+                    token_sesion VARCHAR(255),
                     fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             '''))
@@ -307,5 +309,6 @@ def init_db():
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_gastos_usuario ON Gastos(usuario_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_gastos_usuario_fecha ON Gastos(usuario_id, fecha)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_categorias_gasto_usuario ON Categorias_Gasto(usuario_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_usuarios_token ON Usuarios(token_sesion)"))
 
     return True
