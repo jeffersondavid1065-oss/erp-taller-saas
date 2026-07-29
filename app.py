@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import bcrypt
 import hashlib
+import uuid
 from sqlalchemy import text
 from db import obtener_conexion, init_db
 from queries import obtener_metricas_dashboard
@@ -26,8 +27,35 @@ if "auth" not in st.session_state:
         "user_id": None,
         "nombre_taller": None,
         "email": None,
+        "token": None,
     }
 
+is_logged = st.session_state.auth["logged"]
+
+# Verificar si existe un token válido en session_state (para auto-login sin pedir contraseña)
+if not st.session_state.auth["logged"] and st.session_state.auth.get("token"):
+    token_guardado = st.session_state.auth["token"]
+    engine_verify = obtener_conexion()
+    
+    try:
+        with engine_verify.connect() as conn_verify:
+            usuario_token = conn_verify.execute(
+                text("SELECT id, nombre_taller, email FROM Usuarios WHERE token_sesion = :token"),
+                {"token": token_guardado}
+            ).fetchone()
+        
+        if usuario_token:
+            # Token válido, auto-login
+            st.session_state.auth["logged"] = True
+            st.session_state.auth["user_id"] = usuario_token[0]
+            st.session_state.auth["nombre_taller"] = usuario_token[1]
+            st.session_state.auth["email"] = usuario_token[2]
+            st.rerun()
+    except Exception as e:
+        # Si hay error al verificar token, simplemente continúa con el login normal
+        pass
+
+# Actualizar is_logged después de verificar token
 is_logged = st.session_state.auth["logged"]
 
 # --------------------------------------------------------------------------------
@@ -143,12 +171,25 @@ if not is_logged:
                                     "Por favor, comunícate con el administrador para reactivar tu cuenta."
                                 )
                             else:
+                                # Generar token de sesión para persistencia
+                                token_nuevo = str(uuid.uuid4())
+                                
+                                # Guardar token en la BD
+                                with engine.begin() as conn_token:
+                                    conn_token.execute(
+                                        text("UPDATE Usuarios SET token_sesion = :token WHERE id = :uid"),
+                                        {"token": token_nuevo, "uid": user[0]}
+                                    )
+                                
+                                # Guardar en session_state
                                 st.session_state.auth = {
                                     "logged": True,
                                     "user_id": user[0],
                                     "nombre_taller": user[1],
                                     "email": email_login,
+                                    "token": token_nuevo,
                                 }
+                                st.success(f"¡Bienvenido, {user[1]}!")
                                 st.rerun()
                         else:
                             st.error("Credenciales incorrectas.")
@@ -273,8 +314,16 @@ else:
 
     st.markdown("")
     if st.button("Cerrar Sesión"):
-        # Solo se limpia el estado de sesión del usuario actual.
-        # No se toca st.cache_data.clear() global: eso afectaría a
-        # TODOS los usuarios conectados simultáneamente al servidor.
-        st.session_state.auth = {"logged": False, "user_id": None, "nombre_taller": None, "email": None}
+        # Limpiar token en la BD
+        try:
+            with engine.begin() as conn_logout:
+                conn_logout.execute(
+                    text("UPDATE Usuarios SET token_sesion = NULL WHERE id = :uid"),
+                    {"uid": st.session_state.auth["user_id"]}
+                )
+        except Exception as e:
+            st.warning(f"Error al limpiar sesión: {e}")
+        
+        # Limpiar session_state
+        st.session_state.auth = {"logged": False, "user_id": None, "nombre_taller": None, "email": None, "token": None}
         st.rerun()
