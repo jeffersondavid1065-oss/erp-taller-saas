@@ -39,6 +39,32 @@ def generar_pdf_orden_profesional(
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=12)
     
+    # Convertir todos los parámetros a string limpio para evitar errores de encoding
+    # La fecha puede llegar como objeto datetime de Postgres — hay que convertirla
+    def safe_str(valor, default=""):
+        if valor is None:
+            return default
+        try:
+            s = str(valor)
+            # Si es un datetime completo (ej: 2026-07-29 00:17:33.064202), queda solo la fecha
+            if "." in s and " " in s:
+                s = s.split(" ")[0]
+            return s
+        except Exception:
+            return default
+    
+    taller_nombre   = safe_str(taller_nombre, "MyTaller")
+    taller_nit      = safe_str(taller_nit)
+    taller_telefono = safe_str(taller_telefono)
+    taller_direccion= safe_str(taller_direccion)
+    taller_email    = safe_str(taller_email)
+    fecha           = safe_str(fecha, "dd/mm/aaaa")
+    cliente         = safe_str(cliente)
+    cliente_nit     = safe_str(cliente_nit)
+    placa           = safe_str(placa)
+    estado          = safe_str(estado)
+    hoja_id_str     = str(hoja_id) if hoja_id else "0"
+    
     # Colores
     color_gris_header = (80, 80, 80)
     color_gris_texto = (51, 51, 51)
@@ -71,7 +97,7 @@ def generar_pdf_orden_profesional(
     pdf.set_xy(140, 15)
     pdf.set_font("Helvetica", "B", 11)
     pdf.set_text_color(*color_gris_header)
-    pdf.cell(50, 5, f"Factura# {hoja_id:05d}" if hoja_id else "Factura#", ln=1)
+    pdf.cell(50, 5, f"Factura# {hoja_id_str.zfill(5)}", ln=1)
     
     pdf.set_font("Helvetica", "", 8)
     pdf.set_text_color(100, 100, 100)
@@ -81,7 +107,7 @@ def generar_pdf_orden_profesional(
     pdf.set_font("Helvetica", "B", 8)
     pdf.set_text_color(100, 100, 100)
     pdf.set_xy(140, 25)
-    pdf.cell(50, 4, fecha if fecha else "dd/mm/aaaa", ln=1)
+    pdf.cell(50, 4, fecha, ln=1)
     
     # Línea separadora
     pdf.set_draw_color(*color_gris_header)
