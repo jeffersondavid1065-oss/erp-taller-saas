@@ -6,7 +6,7 @@ from sqlalchemy import text
 from db import obtener_conexion, init_db
 from queries import obtener_catalogos, invalidar_cache_ordenes, invalidar_cache_inventario
 from io import BytesIO
-from fpdf import FPDF
+from pdf_utils import generar_pdf_orden_profesional
 
 st.set_page_config(page_title="Expediente", layout="wide")
 
@@ -68,61 +68,6 @@ nombre_taller = st.session_state.auth["nombre_taller"]
 
 def formato_cop(numero):
     return f"${numero:,.0f}".replace(",", ".")
-
-# ==========================================
-# FUNCIÓN PARA GENERAR EL PDF DE LA ORDEN
-# ==========================================
-def generar_pdf_orden(taller, hoja_id, fecha, cliente, nit, placa, estado, df_items, total):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    
-    pdf.set_font("Helvetica", "B", 18)
-    pdf.cell(0, 10, taller, ln=True, align="C")
-    
-    pdf.set_font("Helvetica", "", 10)
-    pdf.cell(0, 6, "Comprobante de Servicio Autorizado / Cotización", ln=True, align="C")
-    pdf.ln(5)
-    
-    pdf.set_font("Helvetica", "B", 11)
-    pdf.cell(100, 6, f"Orden N°: #{hoja_id}", ln=0)
-    pdf.cell(90, 6, f"Fecha: {fecha}", ln=1, align="R")
-    
-    pdf.set_font("Helvetica", "", 10)
-    pdf.cell(100, 6, f"Cliente / Empresa: {cliente}", ln=0)
-    pdf.cell(90, 6, f"Placa: {placa}", ln=1, align="R")
-    
-    pdf.cell(100, 6, f"NIT / CC: {nit}", ln=0)
-    pdf.cell(90, 6, f"Estado: {estado}", ln=1, align="R")
-    
-    pdf.ln(5)
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    pdf.ln(5)
-    
-    pdf.set_font("Helvetica", "B", 10)
-    pdf.cell(140, 8, "Descripción del Concepto", 1)
-    pdf.cell(50, 8, "Valor Total", 1, ln=1, align="R")
-    
-    pdf.set_font("Helvetica", "", 10)
-    for index, row in df_items.iterrows():
-        desc = f"[{row['tipo_item']}] {row['descripcion']}"
-        if row['tipo_item'] == 'Mano de Obra' and pd.notna(row['mecanico']) and row['mecanico'] != '':
-            desc += f" (Tec: {row['mecanico']})"
-            
-        pdf.cell(140, 8, desc[:75], 1)
-        pdf.cell(50, 8, f"${row['precio_venta']:,.0f}".replace(",", "."), 1, ln=1, align="R")
-        
-    pdf.ln(5)
-    
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(140, 10, "TOTAL GENERAL A PAGAR:", 0, align="R")
-    pdf.cell(50, 10, f"${total:,.0f}".replace(",", "."), 0, ln=1, align="R")
-    
-    pdf.ln(15)
-    pdf.set_font("Helvetica", "I", 9)
-    pdf.cell(0, 6, "Gracias por confiar en nuestros servicios. Conserve este documento para reclamar su vehículo.", ln=True, align="C")
-    
-    return bytes(pdf.output())
 
 st.title("Expediente de Orden y Facturación")
 st.markdown(f"Gestión de órdenes para: **{nombre_taller}**")
@@ -286,20 +231,25 @@ if orden_busqueda:
                     st.markdown("---")
                     
                     st.markdown("#### Exportar Documento")
-                    pdf_bytes = generar_pdf_orden(
-                        taller=nombre_taller,
+                    pdf_bytes = generar_pdf_orden_profesional(
+                        taller_nombre=nombre_taller,
+                        taller_nit="",  # Opcional: agregar el NIT del taller si tienes
+                        taller_telefono="",  # Opcional: agregar teléfono
+                        taller_direccion="",  # Opcional: agregar dirección
+                        taller_email="",  # Opcional: agregar email
                         hoja_id=hoja_id,
                         fecha=fecha,
                         cliente=cliente,
-                        nit=nit,
+                        cliente_nit=nit,
                         placa=placa,
                         estado=estado_actual,
                         df_items=df_trabajos,
-                        total=gran_total
+                        total=gran_total,
+                        incluir_iva=False  # Cambiar a True si necesitas desglose de IVA
                     )
                     
                     st.download_button(
-                        label="Descargar Factura / Cotización en PDF",
+                        label="📄 Descargar Factura / Cotización en PDF",
                         data=pdf_bytes,
                         file_name=f"Orden_{hoja_id}_Placa_{placa}.pdf",
                         mime="application/pdf",
