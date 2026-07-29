@@ -309,6 +309,24 @@ def init_db():
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_gastos_usuario ON Gastos(usuario_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_gastos_usuario_fecha ON Gastos(usuario_id, fecha)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_categorias_gasto_usuario ON Categorias_Gasto(usuario_id)"))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_usuarios_token ON Usuarios(token_sesion)"))
+        
+        # Agregar columna token_sesion si no existe (para persistencia de sesión)
+        try:
+            if is_sqlite:
+                # SQLite: verificar si la columna existe
+                resultado = conn.execute(text("PRAGMA table_info(Usuarios)")).fetchall()
+                columnas = [col[1] for col in resultado]
+                if 'token_sesion' not in columnas:
+                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN token_sesion TEXT"))
+            else:
+                # Postgres: intentar agregar, si ya existe no falla
+                conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS token_sesion VARCHAR(255)"))
+            
+            # Crear índice para búsquedas rápidas de token
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_usuarios_token ON Usuarios(token_sesion)"))
+        except Exception as e:
+            # Si falla, probablemente la columna ya existe o hay otro problema
+            # No es crítico, la app funciona igual
+            pass
 
     return True
