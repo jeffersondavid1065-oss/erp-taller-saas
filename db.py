@@ -324,9 +324,14 @@ def init_db():
             
             # Crear índice para búsquedas rápidas de token
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_usuarios_token ON Usuarios(token_sesion)"))
+            
+            # Columna para logo del taller
+            if is_sqlite:
+                if 'logo_path' not in columnas:
+                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN logo_path TEXT"))
+            else:
+                conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS logo_path TEXT"))
         except Exception as e:
-            # Si falla, probablemente la columna ya existe o hay otro problema
-            # No es crítico, la app funciona igual
             pass
 
     return True
