@@ -19,7 +19,7 @@ st.set_page_config(
 init_db()
 
 # --------------------------------------------------------------------------------
-# 2. SESSION STATE NAMESPACED
+# 2. SESSION STATE NAMESPACED CON PERSISTENCIA
 # --------------------------------------------------------------------------------
 if "auth" not in st.session_state:
     st.session_state.auth = {
@@ -32,28 +32,29 @@ if "auth" not in st.session_state:
 
 is_logged = st.session_state.auth["logged"]
 
-# Verificar si existe un token válido en session_state (para auto-login sin pedir contraseña)
-if not st.session_state.auth["logged"] and st.session_state.auth.get("token"):
-    token_guardado = st.session_state.auth["token"]
-    engine_verify = obtener_conexion()
-    
-    try:
-        with engine_verify.connect() as conn_verify:
-            usuario_token = conn_verify.execute(
-                text("SELECT id, nombre_taller, email FROM Usuarios WHERE token_sesion = :token"),
-                {"token": token_guardado}
-            ).fetchone()
-        
-        if usuario_token:
-            # Token válido, auto-login
-            st.session_state.auth["logged"] = True
-            st.session_state.auth["user_id"] = usuario_token[0]
-            st.session_state.auth["nombre_taller"] = usuario_token[1]
-            st.session_state.auth["email"] = usuario_token[2]
-            st.rerun()
-    except Exception as e:
-        # Si hay error al verificar token, simplemente continúa con el login normal
-        pass
+# Verificar si hay token en la URL (query params) al cargar la página
+if not st.session_state.auth["logged"]:
+    token_en_url = st.query_params.get("token")
+    if token_en_url:
+        engine_verify = obtener_conexion()
+        try:
+            with engine_verify.connect() as conn_verify:
+                usuario_token = conn_verify.execute(
+                    text("SELECT id, nombre_taller, email FROM Usuarios WHERE token_sesion = :token"),
+                    {"token": token_en_url}
+                ).fetchone()
+            
+            if usuario_token:
+                # Token válido, auto-login
+                st.session_state.auth["logged"] = True
+                st.session_state.auth["user_id"] = usuario_token[0]
+                st.session_state.auth["nombre_taller"] = usuario_token[1]
+                st.session_state.auth["email"] = usuario_token[2]
+                st.session_state.auth["token"] = token_en_url
+                st.rerun()
+        except Exception as e:
+            # Si hay error, simplemente continúa con login normal
+            pass
 
 # Actualizar is_logged después de verificar token
 is_logged = st.session_state.auth["logged"]
@@ -189,6 +190,10 @@ if not is_logged:
                                     "email": email_login,
                                     "token": token_nuevo,
                                 }
+                                
+                                # Pasar token en URL para que persista entre recargas
+                                st.query_params["token"] = token_nuevo
+                                
                                 st.success(f"¡Bienvenido, {user[1]}!")
                                 st.rerun()
                         else:
@@ -326,4 +331,9 @@ else:
         
         # Limpiar session_state
         st.session_state.auth = {"logged": False, "user_id": None, "nombre_taller": None, "email": None, "token": None}
+        
+        # Limpiar token de la URL
+        if "token" in st.query_params:
+            del st.query_params["token"]
+        
         st.rerun()
