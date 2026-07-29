@@ -56,32 +56,32 @@ def generar_pdf_orden_profesional(
     pdf.set_fill_color(150, 150, 150)
     pdf.rect(15, 15, 20, 20, "F")
     pdf.set_xy(35, 18)
-    pdf.cell(60, 5, taller_nombre, ln=True)
+    pdf.cell(60, 5, taller_nombre, ln=1)
     
     pdf.set_font("Helvetica", "", 8)
     pdf.set_text_color(100, 100, 100)
     pdf.set_x(35)
-    pdf.cell(60, 4, taller_direccion if taller_direccion else "Dirección", ln=True)
+    pdf.cell(60, 4, taller_direccion if taller_direccion else "Dirección", ln=1)
     
     if taller_nit:
         pdf.set_x(35)
-        pdf.cell(60, 4, f"NIT: {taller_nit}", ln=True)
+        pdf.cell(60, 4, f"NIT: {taller_nit}", ln=1)
     
     # Columna derecha: Factura # y Fecha
     pdf.set_xy(140, 15)
     pdf.set_font("Helvetica", "B", 11)
     pdf.set_text_color(*color_gris_header)
-    pdf.cell(50, 5, f"Factura# {hoja_id:05d}" if hoja_id else "Factura#", ln=True)
+    pdf.cell(50, 5, f"Factura# {hoja_id:05d}" if hoja_id else "Factura#", ln=1)
     
     pdf.set_font("Helvetica", "", 8)
     pdf.set_text_color(100, 100, 100)
     pdf.set_xy(140, 21)
-    pdf.cell(50, 4, "Fecha de emisión", ln=True)
+    pdf.cell(50, 4, "Fecha de emisión", ln=1)
     
     pdf.set_font("Helvetica", "B", 8)
     pdf.set_text_color(100, 100, 100)
     pdf.set_xy(140, 25)
-    pdf.cell(50, 4, fecha if fecha else "dd/mm/aaaa", ln=True)
+    pdf.cell(50, 4, fecha if fecha else "dd/mm/aaaa", ln=1)
     
     # Línea separadora
     pdf.set_draw_color(*color_gris_header)
@@ -95,11 +95,11 @@ def generar_pdf_orden_profesional(
     # ==========================================
     pdf.set_font("Helvetica", "B", 18)
     pdf.set_text_color(*color_gris_header)
-    pdf.cell(0, 8, taller_nombre, ln=True)
+    pdf.cell(0, 8, taller_nombre, ln=1)
     
     pdf.set_font("Helvetica", "", 10)
     pdf.set_text_color(120, 120, 120)
-    pdf.cell(0, 5, "Comprobante de servicio autorizado / Cotización", ln=True)
+    pdf.cell(0, 5, "Comprobante de servicio autorizado / Cotización", ln=1)
     
     pdf.ln(5)
     
@@ -114,9 +114,9 @@ def generar_pdf_orden_profesional(
     
     # Headers
     pdf.set_x(15)
-    pdf.cell(col_width, 5, "FACTURAR A", ln=False)
-    pdf.cell(col_width, 5, "DETALLES", ln=False)
-    pdf.cell(col_width, 5, "PAGO", ln=True)
+    pdf.cell(col_width, 5, "FACTURAR A", ln=0)
+    pdf.cell(col_width, 5, "DETALLES", ln=0)
+    pdf.cell(col_width, 5, "PAGO", ln=1)
     
     # Línea separadora
     pdf.set_draw_color(200, 200, 200)
@@ -156,10 +156,10 @@ def generar_pdf_orden_profesional(
     
     # Headers de tabla
     pdf.set_x(15)
-    pdf.cell(90, 6, "ARTÍCULOS", ln=False)
-    pdf.cell(25, 6, "CANT.", ln=False, align="C")
-    pdf.cell(30, 6, "PRECIOS", ln=False, align="R")
-    pdf.cell(30, 6, "MONTO", ln=True, align="R")
+    pdf.cell(90, 6, "ARTÍCULOS", ln=0)
+    pdf.cell(25, 6, "CANT.", ln=0, align="C")
+    pdf.cell(30, 6, "PRECIOS", ln=0, align="R")
+    pdf.cell(30, 6, "MONTO", ln=1, align="R")
     
     # Línea
     pdf.set_draw_color(200, 200, 200)
@@ -183,10 +183,10 @@ def generar_pdf_orden_profesional(
             
             # Fila de item
             pdf.set_x(15)
-            pdf.cell(90, 5, desc[:70], ln=False)
-            pdf.cell(25, 5, f"{cantidad}", ln=False, align="C")
-            pdf.cell(30, 5, f"${precio_unitario:,.0f}".replace(",", "."), ln=False, align="R")
-            pdf.cell(30, 5, f"${subtotal:,.0f}".replace(",", "."), ln=True, align="R")
+            pdf.cell(90, 5, desc[:70], ln=0)
+            pdf.cell(25, 5, f"{cantidad}", ln=0, align="C")
+            pdf.cell(30, 5, f"${precio_unitario:,.0f}".replace(",", "."), ln=0, align="R")
+            pdf.cell(30, 5, f"${subtotal:,.0f}".replace(",", "."), ln=1, align="R")
             
             # Línea separadora sutil
             pdf.set_draw_color(240, 240, 240)
@@ -207,12 +207,12 @@ def generar_pdf_orden_profesional(
         iva = total - subtotal_sin_iva
         
         pdf.set_x(120)
-        pdf.cell(45, 5, "Subtotal", ln=False)
-        pdf.cell(30, 5, f"${subtotal_sin_iva:,.2f}".replace(",", "."), ln=True, align="R")
+        pdf.cell(45, 5, "Subtotal", ln=0)
+        pdf.cell(30, 5, f"${subtotal_sin_iva:,.2f}".replace(",", "."), ln=1, align="R")
         
         pdf.set_x(120)
-        pdf.cell(45, 5, "Tax (IVA)", ln=False)
-        pdf.cell(30, 5, f"${iva:,.2f}".replace(",", "."), ln=True, align="R")
+        pdf.cell(45, 5, "Tax (IVA)", ln=0)
+        pdf.cell(30, 5, f"${iva:,.2f}".replace(",", "."), ln=1, align="R")
     
     # Línea
     pdf.set_draw_color(200, 200, 200)
@@ -222,8 +222,8 @@ def generar_pdf_orden_profesional(
     pdf.set_font("Helvetica", "B", 11)
     pdf.set_text_color(*color_gris_header)
     pdf.set_x(120)
-    pdf.cell(45, 8, "Total a pagar", ln=False)
-    pdf.cell(30, 8, f"${total:,.0f}".replace(",", "."), ln=True, align="R")
+    pdf.cell(45, 8, "Total a pagar", ln=0)
+    pdf.cell(30, 8, f"${total:,.0f}".replace(",", "."), ln=1, align="R")
     
     pdf.ln(10)
     
@@ -232,19 +232,19 @@ def generar_pdf_orden_profesional(
     # ==========================================
     pdf.set_font("Helvetica", "", 8)
     pdf.set_text_color(100, 100, 100)
-    pdf.cell(0, 4, "¿Deseas personalizar aún más la factura?", ln=True)
-    pdf.cell(0, 4, "Agrega impuestos, descuentos y cobros por servicio.", ln=True)
+    pdf.cell(0, 4, "¿Deseas personalizar aún más la factura?", ln=1)
+    pdf.cell(0, 4, "Agrega impuestos, descuentos y cobros por servicio.", ln=1)
     
     if estado and estado.lower() == "facturado":
         pdf.set_font("Helvetica", "B", 7)
         pdf.set_text_color(200, 53, 69)
         pdf.ln(2)
-        pdf.cell(0, 3, "Documento válido para propósitos fiscales - DIAN", ln=True)
+        pdf.cell(0, 3, "Documento válido para propósitos fiscales - DIAN", ln=1)
     
     pdf.set_font("Helvetica", "", 7)
     pdf.set_text_color(150, 150, 150)
     pdf.ln(10)
-    pdf.cell(0, 3, f"Página 1", ln=True, align="C")
+    pdf.cell(0, 3, f"Página 1", ln=1, align="C")
     
     return bytes(pdf.output())
 
