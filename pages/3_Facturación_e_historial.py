@@ -231,12 +231,27 @@ if orden_busqueda:
                     st.markdown("---")
                     
                     st.markdown("#### Exportar Documento")
+                    
+                    # Leer config del taller (logo, NIT, tel, dirección)
+                    cfg = st.session_state.get("taller_config", {})
+                    
+                    # Cargar logo_path desde BD si no está en session_state
+                    logo_path = cfg.get("logo_path")
+                    if not logo_path:
+                        with engine.connect() as conn_logo:
+                            logo_row = conn_logo.execute(
+                                text("SELECT logo_path FROM Usuarios WHERE id = :uid"),
+                                {"uid": user_id}
+                            ).fetchone()
+                            logo_path = logo_row[0] if logo_row and logo_row[0] else None
+                    
                     pdf_bytes = generar_pdf_orden_profesional(
                         taller_nombre=nombre_taller,
-                        taller_nit="",  # Opcional: agregar el NIT del taller si tienes
-                        taller_telefono="",  # Opcional: agregar teléfono
-                        taller_direccion="",  # Opcional: agregar dirección
-                        taller_email="",  # Opcional: agregar email
+                        taller_nit=cfg.get("nit", ""),
+                        taller_telefono=cfg.get("telefono", ""),
+                        taller_direccion=cfg.get("direccion", ""),
+                        taller_email=cfg.get("email", ""),
+                        taller_logo_path=logo_path,
                         hoja_id=hoja_id,
                         fecha=fecha,
                         cliente=cliente,
@@ -245,7 +260,7 @@ if orden_busqueda:
                         estado=estado_actual,
                         df_items=df_trabajos,
                         total=gran_total,
-                        incluir_iva=False  # Cambiar a True si necesitas desglose de IVA
+                        incluir_iva=False
                     )
                     
                     st.download_button(
@@ -256,6 +271,9 @@ if orden_busqueda:
                         type="primary",
                         use_container_width=True
                     )
+                    
+                    if not cfg:
+                        st.caption("💡 Configura el logo y datos en **Configuración del Taller** para que aparezcan en el PDF.")
 
                     st.markdown("---")
                     st.markdown("#### Copiado Rápido de Ítems")
