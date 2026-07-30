@@ -8,24 +8,12 @@ LOCAL_DB_PATH = os.path.join(BASE_DIR, "erp_taller.db")
 
 @st.cache_resource
 def obtener_conexion():
-    """
-    Crea el engine de SQLAlchemy UNA sola vez por proceso de servidor
-    (cache_resource no serializa, mantiene el objeto vivo en memoria).
-
-    NOTA IMPORTANTE PARA MÚLTIPLES TALLERES CONCURRENTES:
-    Verifica que st.secrets["postgres"]["url"] apunte al *connection pooler*
-    de Supabase (Supavisor, puerto 6543, modo "Transaction"), NO a la
-    conexión directa (puerto 5432). La conexión directa tiene un límite de
-    conexiones simultáneas mucho más bajo y se agota rápido con varios
-    talleres usando la app al mismo tiempo. La URL del pooler se ve así:
-        postgresql://usuario:password@HOST.pooler.supabase.com:6543/postgres
-    """
     try:
         db_url = st.secrets["postgres"]["url"]
         engine = create_engine(
             db_url,
-            pool_size=10,          # antes 5: más margen para varios talleres a la vez
-            max_overflow=20,       # antes 10
+            pool_size=10,
+            max_overflow=20,
             pool_pre_ping=True,
             pool_recycle=300,
         )
@@ -37,18 +25,11 @@ def obtener_conexion():
             f"Detalle: {e}"
         )
         engine = create_engine(f"sqlite:///{LOCAL_DB_PATH}")
-
     return engine
 
 
 @st.cache_resource
 def init_db():
-    """
-    Crea las tablas si no existen. Cacheada con cache_resource para que
-    se ejecute UNA sola vez por proceso de servidor, no en cada rerun.
-    Si cambias el esquema, reinicia la app (o usa init_db.clear() manualmente
-    desde una página de administración) para forzar que corra de nuevo.
-    """
     engine = obtener_conexion()
     is_sqlite = "sqlite" in str(engine.url)
 
@@ -66,6 +47,7 @@ def init_db():
                     activo BOOLEAN DEFAULT 0,
                     fecha_pago_limite DATE,
                     token_sesion TEXT,
+                    logo_path TEXT,
                     fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             '''))
@@ -116,10 +98,11 @@ def init_db():
                     usuario_id INTEGER NOT NULL,
                     nombre_producto TEXT NOT NULL,
                     codigo_ref TEXT,
-                    stock_actual INTEGER NOT NULL DEFAULT 0,
-                    stock_minimo INTEGER NOT NULL DEFAULT 2,
+                    stock_actual REAL NOT NULL DEFAULT 0,
+                    stock_minimo REAL NOT NULL DEFAULT 2,
                     costo_compra REAL DEFAULT 0,
-                    precio_venta REAL NOT NULL DEFAULT 0
+                    precio_venta REAL NOT NULL DEFAULT 0,
+                    unidad_medida TEXT DEFAULT 'Unidad'
                 )
             '''))
             conn.execute(text('''
@@ -183,6 +166,7 @@ def init_db():
                     activo BOOLEAN DEFAULT FALSE,
                     fecha_pago_limite DATE,
                     token_sesion VARCHAR(255),
+                    logo_path TEXT,
                     fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             '''))
@@ -233,10 +217,11 @@ def init_db():
                     usuario_id INTEGER NOT NULL,
                     nombre_producto VARCHAR(255) NOT NULL,
                     codigo_ref VARCHAR(100),
-                    stock_actual INTEGER NOT NULL DEFAULT 0,
-                    stock_minimo INTEGER NOT NULL DEFAULT 2,
-                    costo_compra NUMERIC(12, 2) NOT NULL DEFAULT 0,
-                    precio_venta NUMERIC(12, 2) NOT NULL DEFAULT 0,
+                    stock_actual NUMERIC(12,3) NOT NULL DEFAULT 0,
+                    stock_minimo NUMERIC(12,3) NOT NULL DEFAULT 2,
+                    costo_compra NUMERIC(12,2) NOT NULL DEFAULT 0,
+                    precio_venta NUMERIC(12,2) NOT NULL DEFAULT 0,
+                    unidad_medida VARCHAR(20) DEFAULT 'Unidad',
                     FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE
                 )
             '''))
@@ -281,7 +266,7 @@ def init_db():
                     usuario_id INTEGER NOT NULL,
                     categoria_id INTEGER NOT NULL,
                     descripcion TEXT NOT NULL,
-                    monto NUMERIC(12, 2) NOT NULL,
+                    monto NUMERIC(12,2) NOT NULL,
                     fecha DATE NOT NULL,
                     tipo VARCHAR(20) CHECK(tipo IN ('Fijo', 'Variable')) DEFAULT 'Variable',
                     comprobante_url TEXT,
@@ -292,11 +277,7 @@ def init_db():
             '''))
 
         # ==========================================
-        # ÍNDICES: mismas sentencias para SQLite y Postgres.
-        # Sin esto, cada consulta filtrada por usuario_id hace un recorrido
-        # completo de la tabla. Con varios talleres compartiendo las mismas
-        # tablas, esto se vuelve más lento para TODOS a medida que crece el
-        # historial combinado, aunque cada taller solo pida sus propios datos.
+        # ÍNDICES
         # ==========================================
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_hojas_trabajo_usuario ON Hojas_Trabajo(usuario_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_hojas_trabajo_usuario_estado ON Hojas_Trabajo(usuario_id, estado)"))
@@ -309,29 +290,33 @@ def init_db():
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_gastos_usuario ON Gastos(usuario_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_gastos_usuario_fecha ON Gastos(usuario_id, fecha)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_categorias_gasto_usuario ON Categorias_Gasto(usuario_id)"))
-        
-        # Agregar columna token_sesion si no existe (para persistencia de sesión)
+
+        # ==========================================
+        # MIGRACIONES SEGURAS
+        # ==========================================
         try:
             if is_sqlite:
-                # SQLite: verificar si la columna existe
-                resultado = conn.execute(text("PRAGMA table_info(Usuarios)")).fetchall()
-                columnas = [col[1] for col in resultado]
-                if 'token_sesion' not in columnas:
+                cols_u = [c[1] for c in conn.execute(text("PRAGMA table_info(Usuarios)")).fetchall()]
+                cols_i = [c[1] for c in conn.execute(text("PRAGMA table_info(Inventario)")).fetchall()]
+
+                if 'token_sesion' not in cols_u:
                     conn.execute(text("ALTER TABLE Usuarios ADD COLUMN token_sesion TEXT"))
-            else:
-                # Postgres: intentar agregar, si ya existe no falla
-                conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS token_sesion VARCHAR(255)"))
-            
-            # Crear índice para búsquedas rápidas de token
-            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_usuarios_token ON Usuarios(token_sesion)"))
-            
-            # Columna para logo del taller
-            if is_sqlite:
-                if 'logo_path' not in columnas:
+                if 'logo_path' not in cols_u:
                     conn.execute(text("ALTER TABLE Usuarios ADD COLUMN logo_path TEXT"))
+                if 'unidad_medida' not in cols_i:
+                    conn.execute(text("ALTER TABLE Inventario ADD COLUMN unidad_medida TEXT DEFAULT 'Unidad'"))
+                # stock_actual a REAL para soportar decimales (kg, metros, etc)
+                # SQLite no soporta ALTER COLUMN, pero REAL ya acepta decimales
             else:
+                conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS token_sesion VARCHAR(255)"))
                 conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS logo_path TEXT"))
-        except Exception as e:
+                conn.execute(text("ALTER TABLE Inventario ADD COLUMN IF NOT EXISTS unidad_medida VARCHAR(20) DEFAULT 'Unidad'"))
+                # Cambiar stock_actual a NUMERIC con decimales para kg, metros, etc
+                conn.execute(text("ALTER TABLE Inventario ALTER COLUMN stock_actual TYPE NUMERIC(12,3)"))
+                conn.execute(text("ALTER TABLE Inventario ALTER COLUMN stock_minimo TYPE NUMERIC(12,3)"))
+
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_usuarios_token ON Usuarios(token_sesion)"))
+        except Exception:
             pass
 
     return True
