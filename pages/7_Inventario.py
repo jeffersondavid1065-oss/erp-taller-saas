@@ -5,7 +5,6 @@ from db import obtener_conexion, init_db
 from queries import invalidar_cache_inventario
 
 st.set_page_config(page_title="Inventario y Almacén", layout="wide")
-
 init_db()
 
 st.markdown("""
@@ -33,12 +32,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --------------------------------------------------------------------------------
-# AUTENTICACIÓN
-# --------------------------------------------------------------------------------
 if "auth" not in st.session_state:
     st.session_state.auth = {"logged": False, "user_id": None, "nombre_taller": None}
-
 if not st.session_state.auth["logged"]:
     st.warning("Debes iniciar sesión en la página principal para acceder a este módulo.")
     st.stop()
@@ -47,8 +42,20 @@ engine = obtener_conexion()
 user_id = st.session_state.auth["user_id"]
 nombre_taller = st.session_state.auth["nombre_taller"]
 
+UNIDADES = ["Unidad", "kg", "g", "lb", "m", "cm", "vara", "pie",
+            "L", "mL", "galón", "Docena", "Caja", "Bulto", "Rollo",
+            "Paquete", "m²", "m³"]
+
 def formato_cop(numero):
-    return f"${numero:,.0f}".replace(",", ".")
+    return f"${float(numero):,.0f}".replace(",", ".")
+
+def formato_cant(numero, unidad="Unidad"):
+    """Formatea cantidades con decimales si la unidad lo requiere."""
+    unidades_decimales = ["kg", "g", "lb", "m", "cm", "vara", "pie",
+                          "L", "mL", "galón", "m²", "m³"]
+    if unidad in unidades_decimales:
+        return f"{float(numero):.3f} {unidad}".rstrip('0').rstrip('.')
+    return f"{int(numero)} {unidad}"
 
 LIMITE_FILAS = 100
 
@@ -56,38 +63,35 @@ LIMITE_FILAS = 100
 def obtener_metricas_inventario(uid):
     engine = obtener_conexion()
     with engine.connect() as conn:
-        query = text('''
+        row = conn.execute(text('''
             SELECT
                 COALESCE(SUM(stock_actual * costo_compra), 0) AS val_costo,
                 COALESCE(SUM(stock_actual * precio_venta), 0) AS val_venta,
                 COALESCE(SUM(CASE WHEN stock_actual > 0 AND stock_actual <= stock_minimo THEN 1 ELSE 0 END), 0) AS por_agotarse,
                 COALESCE(SUM(CASE WHEN stock_actual <= 0 THEN 1 ELSE 0 END), 0) AS agotados,
                 COUNT(*) AS total_productos
-            FROM Inventario
-            WHERE usuario_id = :uid
-        ''')
-        row = conn.execute(query, {"uid": uid}).fetchone()
+            FROM Inventario WHERE usuario_id = :uid
+        '''), {"uid": uid}).fetchone()
     return row.val_costo, row.val_venta, row.por_agotarse, row.agotados, row.total_productos
 
 
 def obtener_inventario_filtrado(uid, busqueda, limite):
     engine = obtener_conexion()
     params = {"uid": uid, "limit": limite}
-    condicion_busqueda = ""
+    cond = ""
     if busqueda:
-        condicion_busqueda = "AND (nombre_producto ILIKE :busq OR codigo_ref ILIKE :busq)" \
-            if "postgres" in str(engine.url) else \
-            "AND (nombre_producto LIKE :busq OR codigo_ref LIKE :busq)"
+        cond = "AND (nombre_producto ILIKE :busq OR codigo_ref ILIKE :busq)" \
+               if "postgres" in str(engine.url) else \
+               "AND (nombre_producto LIKE :busq OR codigo_ref LIKE :busq)"
         params["busq"] = f"%{busqueda}%"
     with engine.connect() as conn:
-        query = text(f'''
-            SELECT id, nombre_producto, codigo_ref, stock_actual, stock_minimo, costo_compra, precio_venta
+        return pd.read_sql_query(text(f'''
+            SELECT id, nombre_producto, codigo_ref, unidad_medida,
+                   stock_actual, stock_minimo, costo_compra, precio_venta
             FROM Inventario
-            WHERE usuario_id = :uid {condicion_busqueda}
-            ORDER BY nombre_producto ASC
-            LIMIT :limit
-        ''')
-        return pd.read_sql_query(query, con=conn, params=params)
+            WHERE usuario_id = :uid {cond}
+            ORDER BY nombre_producto ASC LIMIT :limit
+        '''), con=conn, params=params)
 
 
 st.title("Inventario de Almacén")
@@ -111,7 +115,6 @@ with tab_stock:
     col_m2.metric("Valor Comercial (Venta)", formato_cop(val_venta))
     col_m3.metric("Por Agotarse (Alerta)", por_agotarse)
     col_m4.metric("Agotados (Sin Stock)", agotados)
-
     st.markdown("---")
 
     if total_productos == 0:
@@ -120,8 +123,8 @@ with tab_stock:
         st.subheader("Gestión de Productos en Stock")
         busqueda = st.text_input(
             "Buscar por nombre o código de referencia",
-            placeholder="Ej: filtro de aceite, ref. 4521...",
-            help=f"Escribe para filtrar. Sin búsqueda se muestran los primeros {LIMITE_FILAS} productos."
+            placeholder="Ej: filtro de aceite, cable #12...",
+            help=f"Sin búsqueda se muestran los primeros {LIMITE_FILAS} productos."
         )
 
         df_inv = obtener_inventario_filtrado(user_id, busqueda.strip(), LIMITE_FILAS)
@@ -132,11 +135,11 @@ with tab_stock:
             if len(df_inv) == LIMITE_FILAS and total_productos > LIMITE_FILAS:
                 st.caption(f"⚠️ Mostrando los primeros {LIMITE_FILAS} de {total_productos} productos.")
 
-            st.caption("Puedes modificar los valores directamente en la tabla y hacer clic en guardar.")
+            st.caption("Edita directamente en la tabla y haz clic en guardar. Stock acepta decimales (kg, metros, etc.)")
 
-            # Reemplazar None por string vacío para que sea editable
             df_show = df_inv.copy()
             df_show['codigo_ref'] = df_show['codigo_ref'].fillna("").astype(str).replace("None", "")
+            df_show['unidad_medida'] = df_show['unidad_medida'].fillna("Unidad")
 
             df_editado = st.data_editor(
                 df_show,
@@ -148,10 +151,21 @@ with tab_stock:
                     "nombre_producto": "Producto / Repuesto",
                     "codigo_ref": st.column_config.TextColumn(
                         "Código / Ref / Barras",
-                        help="Puedes escanear el código de barras aquí directamente"
+                        help="Escanea el código de barras aquí"
                     ),
-                    "stock_actual": st.column_config.NumberColumn("Cantidad en Stock", min_value=0, step=1),
-                    "stock_minimo": st.column_config.NumberColumn("Stock Mínimo (Alerta)", min_value=1, step=1),
+                    "unidad_medida": st.column_config.SelectboxColumn(
+                        "Unidad",
+                        options=UNIDADES,
+                        help="Ej: kg para puntillas, m para cable, Unidad para filtros"
+                    ),
+                    "stock_actual": st.column_config.NumberColumn(
+                        "Stock Actual", min_value=0, step=0.001,
+                        format="%.3f"
+                    ),
+                    "stock_minimo": st.column_config.NumberColumn(
+                        "Stock Mínimo", min_value=0, step=0.001,
+                        format="%.3f"
+                    ),
                     "costo_compra": st.column_config.NumberColumn("Costo Compra ($)", format="$%d"),
                     "precio_venta": st.column_config.NumberColumn("Precio Venta ($)", format="$%d")
                 },
@@ -164,14 +178,17 @@ with tab_stock:
                         for idx, row in df_editado.iterrows():
                             conn_upd.execute(text("""
                                 UPDATE Inventario
-                                SET nombre_producto = :nom, codigo_ref = :ref, stock_actual = :st_act,
-                                    stock_minimo = :st_min, costo_compra = :costo, precio_venta = :pvp
+                                SET nombre_producto = :nom, codigo_ref = :ref,
+                                    unidad_medida = :um,
+                                    stock_actual = :st_act, stock_minimo = :st_min,
+                                    costo_compra = :costo, precio_venta = :pvp
                                 WHERE id = :id AND usuario_id = :uid
                             """), {
                                 "nom": row['nombre_producto'],
                                 "ref": row['codigo_ref'] or None,
-                                "st_act": int(row['stock_actual']),
-                                "st_min": int(row['stock_minimo']),
+                                "um": row['unidad_medida'],
+                                "st_act": float(row['stock_actual']),
+                                "st_min": float(row['stock_minimo']),
                                 "costo": float(row['costo_compra']),
                                 "pvp": float(row['precio_venta']),
                                 "id": int(row['id']),
@@ -189,7 +206,7 @@ with tab_stock:
 # ==========================================
 with tab_nuevo:
     st.subheader("Registrar Nuevo Producto o Insumo")
-    st.caption("💡 Puedes escanear el código de barras del repuesto en el campo 'Código o Referencia'.")
+    st.caption("💡 Puedes escanear el código de barras en el campo 'Código o Referencia'.")
 
     with st.form("form_nuevo_producto", clear_on_submit=True):
         col_p1, col_p2 = st.columns(2)
@@ -199,11 +216,43 @@ with tab_nuevo:
                 "Código / Referencia / Código de Barras",
                 placeholder="Escanea con el lector o escribe manualmente"
             )
-            stk_p = st.number_input("Cantidad Inicial en Stock", min_value=1, value=5, step=1)
+            unidad_p = st.selectbox("Unidad de Medida", options=UNIDADES,
+                                    help="Selecciona cómo se mide/vende este producto")
+            # Hint según unidad seleccionada
+            hints = {
+                "kg": "Ej: 2.5 kg de puntillas",
+                "m": "Ej: 3.5 m de cable eléctrico",
+                "L": "Ej: 1.5 L de pintura",
+                "vara": "Ej: 2 varas de varilla",
+                "Bulto": "Ej: 3 bultos de cemento",
+            }
+            if unidad_p in hints:
+                st.caption(f"💡 {hints[unidad_p]}")
+
         with col_p2:
-            stk_min_p = st.number_input("Stock Mínimo (Alerta de Reabastecimiento)", min_value=1, value=2, step=1)
-            costo_p = st.number_input("Costo de Compra ($)", min_value=0.0, step=1000.0)
-            venta_p = st.number_input("Precio de Venta al Cliente ($)", min_value=0.0, step=1000.0)
+            # Stock con decimales para unidades que lo requieren
+            unidades_dec = ["kg", "g", "lb", "m", "cm", "vara", "pie", "L", "mL", "galón", "m²", "m³"]
+            if unidad_p in unidades_dec:
+                stk_p = st.number_input(f"Cantidad Inicial en Stock ({unidad_p})",
+                                         min_value=0.0, value=1.0, step=0.5)
+                stk_min_p = st.number_input(f"Stock Mínimo (Alerta) ({unidad_p})",
+                                             min_value=0.0, value=0.5, step=0.5)
+            else:
+                stk_p = st.number_input(f"Cantidad Inicial en Stock ({unidad_p})",
+                                         min_value=0, value=5, step=1)
+                stk_min_p = st.number_input(f"Stock Mínimo (Alerta) ({unidad_p})",
+                                             min_value=0, value=2, step=1)
+
+            costo_p = st.number_input(f"Costo de Compra ($ por {unidad_p})",
+                                       min_value=0.0, step=1000.0)
+            venta_p = st.number_input(f"Precio de Venta ($ por {unidad_p})",
+                                       min_value=0.0, step=1000.0)
+
+            if costo_p > 0 and venta_p > 0:
+                ganancia = venta_p - costo_p
+                pct = (ganancia / costo_p) * 100
+                color = "🟢" if pct > 0 else "🔴"
+                st.caption(f"{color} Ganancia: {formato_cop(ganancia)} ({pct:.1f}%)")
 
         if st.form_submit_button("Guardar en Inventario", type="primary"):
             if nom_p and venta_p > 0:
@@ -211,17 +260,18 @@ with tab_nuevo:
                     with engine.begin() as conn_ins:
                         conn_ins.execute(text("""
                             INSERT INTO Inventario
-                            (usuario_id, nombre_producto, codigo_ref, stock_actual, stock_minimo, costo_compra, precio_venta)
-                            VALUES (:uid, :nom, :ref, :stk, :stk_min, :costo, :pvp)
+                            (usuario_id, nombre_producto, codigo_ref, unidad_medida,
+                             stock_actual, stock_minimo, costo_compra, precio_venta)
+                            VALUES (:uid, :nom, :ref, :um, :stk, :stk_min, :costo, :pvp)
                         """), {
                             "uid": user_id, "nom": nom_p,
-                            "ref": ref_p or None,
-                            "stk": int(stk_p), "stk_min": int(stk_min_p),
+                            "ref": ref_p or None, "um": unidad_p,
+                            "stk": float(stk_p), "stk_min": float(stk_min_p),
                             "costo": float(costo_p), "pvp": float(venta_p)
                         })
                     obtener_metricas_inventario.clear()
                     invalidar_cache_inventario()
-                    st.success(f"Producto '{nom_p}' registrado con éxito.")
+                    st.success(f"✅ '{nom_p}' registrado — {formato_cant(stk_p, unidad_p)} en stock a {formato_cop(venta_p)}/{unidad_p}.")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error al guardar producto: {e}")
@@ -235,15 +285,13 @@ with tab_entradas:
     st.subheader("Registrar Entrada de Mercancía")
     st.caption("Sube la factura para que la IA detecte los repuestos, o agrégalos manualmente.")
 
-    # Verificar Gemini
     gemini_ok = False
     try:
         api_key_gemini = st.secrets["gemini"]["api_key"]
         gemini_ok = True
     except Exception:
-        st.warning("⚠️ Gemini no configurado. Agrega `[gemini] api_key = 'tu-key'` en Streamlit Secrets para leer facturas con IA.")
+        st.warning("⚠️ Gemini no configurado. Agrega `[gemini] api_key = 'tu-key'` en Streamlit Secrets.")
 
-    # Cabecera
     col_cab1, col_cab2 = st.columns(2)
     with col_cab1:
         factura_img = st.file_uploader(
@@ -264,16 +312,13 @@ with tab_entradas:
                     try:
                         from gemini_utils import leer_factura_imagen, leer_factura_pdf
                         archivo_bytes = factura_img.read()
-                        if factura_img.type == "application/pdf":
-                            datos = leer_factura_pdf(archivo_bytes)
-                        else:
-                            datos = leer_factura_imagen(archivo_bytes)
-
+                        datos = leer_factura_pdf(archivo_bytes) if factura_img.type == "application/pdf" \
+                                else leer_factura_imagen(archivo_bytes)
                         if datos and "productos" in datos and datos["productos"]:
                             st.session_state.items_entrada_taller = [
                                 {
                                     "nombre": p.get("nombre", ""),
-                                    "cantidad": max(1, int(p.get("cantidad", 1))),
+                                    "cantidad": float(p.get("cantidad", 1)),
                                     "costo": float(p.get("costo_unitario", 0)),
                                     "subtotal": float(p.get("subtotal", 0)),
                                 }
@@ -289,17 +334,14 @@ with tab_entradas:
                         st.error(f"Error: {e}")
 
     with col_cab2:
-        num_factura = st.text_input(
-            "Número de Factura",
-            value=st.session_state.get("nf_taller", ""),
-            key="nf_entrada_taller"
-        )
+        num_factura = st.text_input("Número de Factura",
+                                     value=st.session_state.get("nf_taller", ""),
+                                     key="nf_entrada_taller")
         proveedor_txt = st.text_input("Proveedor (opcional)", key="prov_entrada_taller")
         notas_entrada = st.text_area("Notas", height=68, key="notas_entrada_taller")
 
     st.markdown("---")
 
-    # Inicializar ítems
     if "items_entrada_taller" not in st.session_state:
         st.session_state.items_entrada_taller = []
 
@@ -308,12 +350,11 @@ with tab_entradas:
         if st.button("➕ Agregar repuesto manualmente",
                      use_container_width=True, key="btn_add_taller"):
             st.session_state.items_entrada_taller.append(
-                {"nombre": "", "cantidad": 1, "costo": 0.0, "subtotal": 0.0}
+                {"nombre": "", "cantidad": 1.0, "costo": 0.0, "subtotal": 0.0}
             )
             st.rerun()
     with col_btn2:
-        if st.button("🗑️ Limpiar todo",
-                     use_container_width=True, key="btn_clear_taller"):
+        if st.button("🗑️ Limpiar todo", use_container_width=True, key="btn_clear_taller"):
             st.session_state.items_entrada_taller = []
             if "nf_taller" in st.session_state:
                 del st.session_state.nf_taller
@@ -322,9 +363,7 @@ with tab_entradas:
     if not st.session_state.items_entrada_taller:
         st.info("Sube una factura para que la IA detecte los repuestos, o agrega uno manualmente.")
     else:
-        # Cargar inventario para buscar matches
         df_inv_actual = obtener_inventario_filtrado(user_id, "", LIMITE_FILAS * 10)
-
         st.markdown(f"**{len(st.session_state.items_entrada_taller)} repuesto(s) en esta entrada:**")
 
         items_a_eliminar = []
@@ -334,7 +373,6 @@ with tab_entradas:
             with st.container(border=True):
                 nombre_item = item.get("nombre", "")
 
-                # Buscar match en inventario
                 producto_match = None
                 if nombre_item and not df_inv_actual.empty:
                     matches = df_inv_actual[
@@ -348,56 +386,70 @@ with tab_entradas:
                 col_h1, col_h2 = st.columns([4, 1])
                 with col_h1:
                     if producto_match is not None:
-                        st.success(f"✅ Encontrado: **{producto_match['nombre_producto']}** (Stock: {int(producto_match['stock_actual'])})")
+                        um = producto_match.get('unidad_medida', 'Unidad')
+                        st.success(f"✅ Encontrado: **{producto_match['nombre_producto']}** "
+                                   f"(Stock: {formato_cant(producto_match['stock_actual'], um)})")
                     else:
                         st.warning("⚠️ Repuesto nuevo — se creará en el inventario")
                 with col_h2:
                     if st.button("❌", key=f"del_t_{i}"):
                         items_a_eliminar.append(i)
 
-                col_f1, col_f2, col_f3 = st.columns([3, 1, 1])
+                col_f1, col_f2, col_f3, col_f4 = st.columns([3, 1, 1, 1])
                 with col_f1:
                     nom = st.text_input("Nombre del repuesto", value=nombre_item, key=f"nom_t_{i}")
                     st.session_state.items_entrada_taller[i]["nombre"] = nom
                 with col_f2:
-                    cant = st.number_input("Cantidad", min_value=1,
-                                           value=int(item.get("cantidad", 1)),
-                                           step=1, key=f"cant_t_{i}")
-                    st.session_state.items_entrada_taller[i]["cantidad"] = cant
+                    # Unidad del match o selección nueva
+                    um_actual = producto_match['unidad_medida'] if producto_match is not None \
+                                else item.get("unidad_medida", "Unidad")
+                    um_sel = st.selectbox("Unidad", UNIDADES,
+                                          index=UNIDADES.index(um_actual) if um_actual in UNIDADES else 0,
+                                          key=f"um_t_{i}")
+                    st.session_state.items_entrada_taller[i]["unidad_medida"] = um_sel
                 with col_f3:
-                    costo = st.number_input("Costo unit. ($)", min_value=0.0,
+                    es_decimal = um_sel in ["kg", "g", "lb", "m", "cm", "vara", "pie",
+                                            "L", "mL", "galón", "m²", "m³"]
+                    cant = st.number_input(
+                        f"Cant. ({um_sel})",
+                        min_value=0.0 if es_decimal else 1,
+                        value=float(item.get("cantidad", 1)),
+                        step=0.5 if es_decimal else 1,
+                        key=f"cant_t_{i}"
+                    )
+                    st.session_state.items_entrada_taller[i]["cantidad"] = cant
+                with col_f4:
+                    costo = st.number_input(f"Costo/$/{um_sel}", min_value=0.0,
                                             value=float(item.get("costo", 0)),
                                             step=1000.0, key=f"costo_t_{i}")
                     st.session_state.items_entrada_taller[i]["costo"] = costo
                     subtotal_i = cant * costo
                     st.session_state.items_entrada_taller[i]["subtotal"] = subtotal_i
-                    st.caption(f"Subtotal: {formato_cop(subtotal_i)}")
+                    st.caption(f"= {formato_cop(subtotal_i)}")
 
-                # Campos según si es nuevo o existente
                 if producto_match is not None:
                     col_e1, col_e2 = st.columns(2)
                     with col_e1:
-                        st.caption(f"Precio venta actual: {formato_cop(producto_match['precio_venta'])}")
+                        st.caption(f"PVP actual: {formato_cop(producto_match['precio_venta'])}/{producto_match.get('unidad_medida','Unidad')}")
                         upd = st.checkbox("Actualizar precio de venta", key=f"upd_t_{i}")
                     with col_e2:
-                        if upd:
-                            pvp = st.number_input("Nuevo precio venta ($)", min_value=0.0,
-                                                   value=float(producto_match['precio_venta']),
-                                                   step=1000.0, key=f"pvp_t_{i}")
-                        else:
-                            pvp = float(producto_match['precio_venta'])
+                        pvp = st.number_input("Nuevo PVP ($)", min_value=0.0,
+                                              value=float(producto_match['precio_venta']),
+                                              step=1000.0, key=f"pvp_t_{i}") if upd \
+                              else float(producto_match['precio_venta'])
                     st.session_state.items_entrada_taller[i]["precio_venta"] = pvp
                     st.session_state.items_entrada_taller[i]["producto_id"] = int(producto_match['id'])
                     st.session_state.items_entrada_taller[i]["es_nuevo"] = False
                 else:
                     col_n1, col_n2 = st.columns(2)
                     with col_n1:
-                        pvp_nuevo = st.number_input("Precio de venta ($) *", min_value=0.0,
+                        pvp_nuevo = st.number_input(f"Precio venta ($/{um_sel}) *",
+                                                     min_value=0.0,
                                                      value=float(costo * 1.3) if costo > 0 else 0.0,
                                                      step=1000.0, key=f"pvp_nuevo_t_{i}")
                         st.session_state.items_entrada_taller[i]["precio_venta"] = pvp_nuevo
                     with col_n2:
-                        cod_ref = st.text_input("Código / Ref / Barras (opcional)",
+                        cod_ref = st.text_input("Código / Ref / Barras",
                                                  placeholder="Escanea o escribe",
                                                  key=f"ref_t_{i}")
                         st.session_state.items_entrada_taller[i]["codigo_ref"] = cod_ref
@@ -419,55 +471,42 @@ with tab_entradas:
             "✅ Registrar Entrada", type="primary",
             use_container_width=True, key="btn_reg_taller"
         ):
-            items_validos = [
-                i for i in st.session_state.items_entrada_taller
-                if i.get("nombre") and i.get("cantidad", 0) > 0
-            ]
+            items_validos = [i for i in st.session_state.items_entrada_taller
+                             if i.get("nombre") and i.get("cantidad", 0) > 0]
             if not items_validos:
                 st.warning("Agrega al menos un repuesto válido.")
             else:
                 try:
                     with engine.begin() as conn:
-                        nuevos = 0
-                        actualizados = 0
-
+                        nuevos = actualizados = 0
                         for item in items_validos:
-                            producto_id = item.get("producto_id")
+                            pid = item.get("producto_id")
                             pvp = float(item.get("precio_venta", 0))
                             costo = float(item.get("costo", 0))
-                            cantidad = int(item.get("cantidad", 1))
+                            cantidad = float(item.get("cantidad", 1))
+                            um = item.get("unidad_medida", "Unidad")
                             cod_ref = item.get("codigo_ref") or None
 
-                            if item.get("es_nuevo") or not producto_id:
-                                is_sqlite = "sqlite" in str(engine.url)
-                                if is_sqlite:
-                                    conn.execute(text("""
-                                        INSERT INTO Inventario
-                                        (usuario_id, nombre_producto, codigo_ref,
-                                         stock_actual, stock_minimo, costo_compra, precio_venta)
-                                        VALUES (:uid, :nom, :ref, :stk, 2, :costo, :pvp)
-                                    """), {"uid": user_id, "nom": item["nombre"],
-                                           "ref": cod_ref, "stk": cantidad,
-                                           "costo": costo, "pvp": pvp})
-                                else:
-                                    conn.execute(text("""
-                                        INSERT INTO Inventario
-                                        (usuario_id, nombre_producto, codigo_ref,
-                                         stock_actual, stock_minimo, costo_compra, precio_venta)
-                                        VALUES (:uid, :nom, :ref, :stk, 2, :costo, :pvp)
-                                    """), {"uid": user_id, "nom": item["nombre"],
-                                           "ref": cod_ref, "stk": cantidad,
-                                           "costo": costo, "pvp": pvp})
+                            if item.get("es_nuevo") or not pid:
+                                conn.execute(text("""
+                                    INSERT INTO Inventario
+                                    (usuario_id, nombre_producto, codigo_ref, unidad_medida,
+                                     stock_actual, stock_minimo, costo_compra, precio_venta)
+                                    VALUES (:uid, :nom, :ref, :um, :stk, 1, :costo, :pvp)
+                                """), {"uid": user_id, "nom": item["nombre"],
+                                       "ref": cod_ref, "um": um,
+                                       "stk": cantidad, "costo": costo, "pvp": pvp})
                                 nuevos += 1
                             else:
                                 conn.execute(text("""
                                     UPDATE Inventario
                                     SET stock_actual = stock_actual + :cant,
-                                        costo_compra = :costo,
-                                        precio_venta = :pvp
+                                        costo_compra = :costo, precio_venta = :pvp,
+                                        unidad_medida = :um
                                     WHERE id = :pid AND usuario_id = :uid
                                 """), {"cant": cantidad, "costo": costo,
-                                       "pvp": pvp, "pid": producto_id, "uid": user_id})
+                                       "pvp": pvp, "um": um,
+                                       "pid": pid, "uid": user_id})
                                 actualizados += 1
 
                     obtener_metricas_inventario.clear()
@@ -475,12 +514,7 @@ with tab_entradas:
                     st.session_state.items_entrada_taller = []
                     if "nf_taller" in st.session_state:
                         del st.session_state.nf_taller
-
-                    st.success(f"""
-                        ✅ Entrada registrada:
-                        - **{nuevos}** repuesto(s) nuevo(s) creados
-                        - **{actualizados}** repuesto(s) existentes actualizados
-                    """)
+                    st.success(f"✅ Entrada registrada: **{nuevos}** nuevo(s), **{actualizados}** actualizado(s).")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error al registrar: {e}")
