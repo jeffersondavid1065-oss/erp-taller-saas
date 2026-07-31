@@ -3,6 +3,7 @@ import pandas as pd
 from sqlalchemy import text
 from db import obtener_conexion, init_db
 from queries import obtener_catalogos, obtener_inventario_activo, invalidar_cache_ordenes, invalidar_cache_inventario
+from pdf_utils import IVA_OPCIONES
 
 st.set_page_config(page_title="Recepcion de Vehiculos", layout="wide")
 
@@ -127,7 +128,7 @@ if es_patio:
     st.stop()
 
 # ================================================================================
-# VISTA COMPLETA PARA ADMIN (flujo original, sin cambios funcionales)
+# VISTA COMPLETA PARA ADMIN (flujo original, con selección de tipo de IVA)
 # ================================================================================
 if 'carrito_items' not in st.session_state:
     st.session_state.carrito_items = []
@@ -135,6 +136,15 @@ if 'carrito_items' not in st.session_state:
 # Limpiar buscador de código de barras
 if "limpiar_cod_rep" not in st.session_state:
     st.session_state.limpiar_cod_rep = False
+
+engine_iva = obtener_conexion()
+with engine_iva.connect() as conn_cfg:
+    fila_cfg = conn_cfg.execute(
+        text("SELECT iva_tipo_default_mano_obra, iva_tipo_default_repuestos FROM Usuarios WHERE id = :uid"),
+        {"uid": user_id}
+    ).fetchone()
+IVA_TIPO_DEFAULT_MO = fila_cfg[0] if fila_cfg and fila_cfg[0] in IVA_OPCIONES else "Excluido"
+IVA_TIPO_DEFAULT_REP = fila_cfg[1] if fila_cfg and fila_cfg[1] in IVA_OPCIONES else "Excluido"
 
 st.title("Recepcion y Asignacion de Trabajos")
 st.markdown(f"Registrando ordenes para: **{nombre_taller}**")
@@ -179,7 +189,7 @@ tab1, tab2 = st.tabs(["Mano de Obra", "Repuestos"])
 with tab1:
     with st.container(border=True):
         st.markdown("**Agregar Mano de Obra con Retencion Fiscal (%)**")
-        col_mo1, col_mo2, col_mo3 = st.columns([2, 1, 1])
+        col_mo1, col_mo2, col_mo3, col_mo4 = st.columns([2, 1, 1, 1])
         with col_mo1:
             desc_mo = st.text_input("Descripcion del trabajo realizado", key="desc_mo")
             mecanico_sel = st.selectbox("Mecanico responsable", options=opciones_mecanicos, key="mec_mo")
@@ -187,6 +197,9 @@ with tab1:
             venta_mo = st.number_input("Cobro Bruto al Cliente ($0 si pdte)", min_value=0.0, step=5000.0, key="venta_mo")
         with col_mo3:
             porcentaje_ret = st.number_input("Retencion Fiscal (%)", min_value=0.0, max_value=100.0, step=1.0, key="ret_mo")
+        with col_mo4:
+            iva_mo_sel = st.selectbox("Impuesto (IVA)", options=IVA_OPCIONES,
+                                       index=IVA_OPCIONES.index(IVA_TIPO_DEFAULT_MO), key="iva_mo")
 
         valor_descontado = float(venta_mo) * (float(porcentaje_ret) / 100.0)
         neto_mo = max(0.0, float(venta_mo) - valor_descontado)
@@ -200,6 +213,7 @@ with tab1:
                     'Tipo': 'Mano de Obra', 'Descripción': desc_final,
                     'Mecánico': mecanico_sel, 'Mecánico_ID': dict_mecanicos[mecanico_sel],
                     'Costo': valor_descontado, 'PVP Cliente': float(venta_mo),
+                    'IVA_Tipo': iva_mo_sel,
                     'Base_Nomina': neto_mo,
                     'Inventario_ID': None, 'Cantidad_Descontar': 0
                 })
@@ -216,7 +230,7 @@ with tab2:
         )
 
         if origen_rep == "Comprado afuera (Encargo)":
-            col_rep1, col_rep2, col_rep3 = st.columns([2, 1, 1])
+            col_rep1, col_rep2, col_rep3, col_rep4 = st.columns([2, 1, 1, 1])
             with col_rep1:
                 desc_rep = st.text_input("Nombre del Repuesto", key="desc_rep_ext")
             with col_rep2:
@@ -225,6 +239,9 @@ with tab2:
             with col_rep3:
                 venta_rep = st.number_input("Precio Venta ($0 si pdte)", min_value=0.0, step=1000.0, key="venta_rep_ext")
                 st.caption(f"Venta: {formato_cop(venta_rep)}")
+            with col_rep4:
+                iva_rep_sel = st.selectbox("Impuesto (IVA)", options=IVA_OPCIONES,
+                                            index=IVA_OPCIONES.index(IVA_TIPO_DEFAULT_REP), key="iva_rep_ext")
 
             st.markdown("")
             if st.button("Agregar Repuesto Externo", use_container_width=True):
@@ -233,6 +250,7 @@ with tab2:
                         'Tipo': 'Repuesto', 'Descripción': desc_rep,
                         'Mecánico': '-', 'Mecánico_ID': None,
                         'Costo': costo_rep, 'PVP Cliente': venta_rep,
+                        'IVA_Tipo': iva_rep_sel,
                         'Base_Nomina': None,
                         'Inventario_ID': None, 'Cantidad_Descontar': 0
                     })
@@ -295,6 +313,7 @@ with tab2:
                                     'Mecánico': '-', 'Mecánico_ID': None,
                                     'Costo': float(p[3]) * cant_usar,
                                     'PVP Cliente': float(p[4]) * cant_usar,
+                                    'IVA_Tipo': p[6] if p[6] else "Excluido",
                                     'Base_Nomina': None,
                                     'Inventario_ID': p[0],
                                     'Cantidad_Descontar': cant_usar
@@ -333,6 +352,7 @@ with tab2:
                                             'Mecánico': '-', 'Mecánico_ID': None,
                                             'Costo': float(p[3]) * cant,
                                             'PVP Cliente': float(p[4]) * cant,
+                                            'IVA_Tipo': p[6] if p[6] else "Excluido",
                                             'Base_Nomina': None,
                                             'Inventario_ID': p[0],
                                             'Cantidad_Descontar': cant
@@ -372,6 +392,7 @@ with tab2:
                         'Mecánico': '-', 'Mecánico_ID': None,
                         'Costo': float(prod_data[3]) * cant_usar,
                         'PVP Cliente': pvp_unitario * cant_usar,
+                        'IVA_Tipo': prod_data[6] if prod_data[6] else "Excluido",
                         'Base_Nomina': None,
                         'Inventario_ID': prod_data[0],
                         'Cantidad_Descontar': cant_usar
@@ -392,6 +413,7 @@ if st.session_state.carrito_items:
             col_res1, col_res2, col_res3, col_res4 = st.columns([3, 2, 2, 1])
             with col_res1:
                 st.markdown(f"**{item['Tipo']}**: {item['Descripción']}")
+                st.caption(f"🧾 {item.get('IVA_Tipo', 'Excluido')}")
             with col_res2:
                 if item['Tipo'] == 'Mano de Obra':
                     st.caption(f"Tecnico: {item['Mecánico']}")
@@ -443,11 +465,12 @@ if st.session_state.carrito_items:
 
                         for item in st.session_state.carrito_items:
                             conn.execute(
-                                text("INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, mecanico_id, costo_compra, precio_venta) VALUES (:hoja_id, :tipo, :desc, :mec_id, :costo, :pvp)"),
+                                text("INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, mecanico_id, costo_compra, precio_venta, iva_tipo) VALUES (:hoja_id, :tipo, :desc, :mec_id, :costo, :pvp, :iva_tipo)"),
                                 {
                                     "hoja_id": hoja_id, "tipo": item['Tipo'],
                                     "desc": item['Descripción'], "mec_id": item['Mecánico_ID'],
-                                    "costo": float(item['Costo']), "pvp": float(item['PVP Cliente'])
+                                    "costo": float(item['Costo']), "pvp": float(item['PVP Cliente']),
+                                    "iva_tipo": item.get('IVA_Tipo', 'Excluido')
                                 }
                             )
                             if item.get('Inventario_ID'):
