@@ -28,11 +28,18 @@ if "auth" not in st.session_state:
         "nombre_taller": None,
         "email": None,
         "token": None,
+        "rol": None,              # "admin" o "patio"
+        "operario_id": None,      # solo si rol == "patio"
+        "operario_nombre": None,  # solo si rol == "patio"
     }
 
 is_logged = st.session_state.auth["logged"]
 
-# Verificar si hay token en la URL (query params) al cargar la página
+# --------------------------------------------------------------------------------
+# Verificar si hay token en la URL (query params) al cargar la página.
+# Primero se busca entre los dueños de taller (Usuarios); si no hay coincidencia,
+# se busca entre los Operarios de Patio.
+# --------------------------------------------------------------------------------
 if not st.session_state.auth["logged"]:
     token_en_url = st.query_params.get("token")
     if token_en_url:
@@ -43,16 +50,40 @@ if not st.session_state.auth["logged"]:
                     text("SELECT id, nombre_taller, email FROM Usuarios WHERE token_sesion = :token"),
                     {"token": token_en_url}
                 ).fetchone()
-            
+
             if usuario_token:
-                # Token válido, auto-login
+                # Token válido de dueño de taller, auto-login como admin
                 st.session_state.auth["logged"] = True
                 st.session_state.auth["user_id"] = usuario_token[0]
                 st.session_state.auth["nombre_taller"] = usuario_token[1]
                 st.session_state.auth["email"] = usuario_token[2]
                 st.session_state.auth["token"] = token_en_url
+                st.session_state.auth["rol"] = "admin"
                 st.rerun()
-        except Exception as e:
+            else:
+                # No es un dueño de taller: buscar entre Operarios de Patio
+                with engine_verify.connect() as conn_verify2:
+                    operario_token = conn_verify2.execute(
+                        text('''
+                            SELECT o.id, o.nombre_operario, o.usuario_id, u.nombre_taller
+                            FROM Operarios_Patio o
+                            JOIN Usuarios u ON o.usuario_id = u.id
+                            WHERE o.token_sesion = :token AND o.activo = TRUE
+                        '''),
+                        {"token": token_en_url}
+                    ).fetchone()
+
+                if operario_token:
+                    st.session_state.auth["logged"] = True
+                    st.session_state.auth["user_id"] = operario_token[2]
+                    st.session_state.auth["nombre_taller"] = operario_token[3]
+                    st.session_state.auth["email"] = None
+                    st.session_state.auth["token"] = token_en_url
+                    st.session_state.auth["rol"] = "patio"
+                    st.session_state.auth["operario_id"] = operario_token[0]
+                    st.session_state.auth["operario_nombre"] = operario_token[1]
+                    st.rerun()
+        except Exception:
             # Si hay error, simplemente continúa con login normal
             pass
 
@@ -174,14 +205,14 @@ if not is_logged:
                             else:
                                 # Generar token de sesión para persistencia
                                 token_nuevo = str(uuid.uuid4())
-                                
+
                                 # Guardar token en la BD
                                 with engine.begin() as conn_token:
                                     conn_token.execute(
                                         text("UPDATE Usuarios SET token_sesion = :token WHERE id = :uid"),
                                         {"token": token_nuevo, "uid": user[0]}
                                     )
-                                
+
                                 # Guardar en session_state
                                 st.session_state.auth = {
                                     "logged": True,
@@ -189,11 +220,14 @@ if not is_logged:
                                     "nombre_taller": user[1],
                                     "email": email_login,
                                     "token": token_nuevo,
+                                    "rol": "admin",
+                                    "operario_id": None,
+                                    "operario_nombre": None,
                                 }
-                                
+
                                 # Pasar token en URL para que persista entre recargas
                                 st.query_params["token"] = token_nuevo
-                                
+
                                 st.success(f"¡Bienvenido, {user[1]}!")
                                 st.rerun()
                         else:
@@ -202,6 +236,64 @@ if not is_logged:
                         st.error(f"Error de conexión con la base de datos: {e}")
                 else:
                     st.warning("Completa todos los campos.")
+
+        st.markdown("")
+
+        # ---------------- Acceso de Patio (Operarios) ----------------
+        with st.expander("🔧 Acceso de Patio (Recepción de Vehículos)"):
+            st.caption("Acceso exclusivo para operarios de patio. Solo permite recepcionar vehículos.")
+            usuario_patio = st.text_input("Usuario", key="login_patio_user")
+            pass_patio = st.text_input("Contraseña", type="password", key="login_patio_pass")
+
+            if st.button("Ingresar como Patio", use_container_width=True, key="btn_login_patio"):
+                if usuario_patio and pass_patio:
+                    try:
+                        with engine.connect() as conn_p:
+                            operario = conn_p.execute(
+                                text('''
+                                    SELECT o.id, o.nombre_operario, o.password, o.usuario_id,
+                                           u.nombre_taller, o.activo
+                                    FROM Operarios_Patio o
+                                    JOIN Usuarios u ON o.usuario_id = u.id
+                                    WHERE o.usuario_login = :login
+                                '''),
+                                {"login": usuario_patio.strip()}
+                            ).fetchone()
+
+                        cred_patio_ok = False
+                        if operario and operario[5]:
+                            hash_guardado_p = operario[2]
+                            if hash_guardado_p.startswith(("$2a$", "$2b$", "$2y$")):
+                                cred_patio_ok = bcrypt.checkpw(pass_patio.encode(), hash_guardado_p.encode())
+
+                        if cred_patio_ok:
+                            token_patio = str(uuid.uuid4())
+                            with engine.begin() as conn_tp:
+                                conn_tp.execute(
+                                    text("UPDATE Operarios_Patio SET token_sesion = :token WHERE id = :oid"),
+                                    {"token": token_patio, "oid": operario[0]}
+                                )
+
+                            st.session_state.auth = {
+                                "logged": True,
+                                "user_id": operario[3],
+                                "nombre_taller": operario[4],
+                                "email": None,
+                                "token": token_patio,
+                                "rol": "patio",
+                                "operario_id": operario[0],
+                                "operario_nombre": operario[1],
+                            }
+                            st.query_params["token"] = token_patio
+                            st.rerun()
+                        elif operario and not operario[5]:
+                            st.error("Este usuario de patio está desactivado. Contacta al administrador del taller.")
+                        else:
+                            st.error("Usuario o contraseña incorrectos.")
+                    except Exception as e:
+                        st.error(f"Error de conexión con la base de datos: {e}")
+                else:
+                    st.warning("Completa usuario y contraseña.")
 
         st.markdown("")
 
@@ -244,8 +336,49 @@ if not is_logged:
                     else:
                         st.warning("Completa todos los campos.")
 
+elif st.session_state.auth.get("rol") == "patio":
+    # ---------------- Panel simplificado para Operario de Patio ----------------
+    st.markdown(f"""
+        <div style='text-align: center; margin-top: 40px; margin-bottom: 10px;'>
+            <h1 style='font-weight: 800; font-size: 2rem; letter-spacing: -1px;'>
+                My<span style='color: #FF4B4B;'>Taller</span> — Patio
+            </h1>
+        </div>
+    """, unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        with st.container(border=True):
+            st.subheader(f"👋 Hola, {st.session_state.auth['operario_nombre']}")
+            st.write(f"**Taller:** {st.session_state.auth['nombre_taller']}")
+            st.write("Tu usuario solo tiene acceso al módulo de **Recepción de Vehículos**.")
+            st.markdown("")
+            if st.button("➡️ Ir a Recepción de Vehículos", type="primary", use_container_width=True):
+                try:
+                    st.switch_page("pages/1_Recepcion_Vehiculos.py")
+                except Exception:
+                    st.info("Abre el módulo **'Recepción'** desde el menú lateral.")
+
+        st.markdown("")
+        if st.button("Cerrar Sesión", use_container_width=True):
+            try:
+                with engine.begin() as conn_out:
+                    conn_out.execute(
+                        text("UPDATE Operarios_Patio SET token_sesion = NULL WHERE id = :oid"),
+                        {"oid": st.session_state.auth["operario_id"]}
+                    )
+            except Exception:
+                pass
+            st.session_state.auth = {
+                "logged": False, "user_id": None, "nombre_taller": None, "email": None,
+                "token": None, "rol": None, "operario_id": None, "operario_nombre": None,
+            }
+            if "token" in st.query_params:
+                del st.query_params["token"]
+            st.rerun()
+
 else:
-    # ---------------- Panel Principal ----------------
+    # ---------------- Panel Principal (Admin) ----------------
     user_id = st.session_state.auth["user_id"]
 
     st.title("Panel Principal")
@@ -328,12 +461,15 @@ else:
                 )
         except Exception as e:
             st.warning(f"Error al limpiar sesión: {e}")
-        
+
         # Limpiar session_state
-        st.session_state.auth = {"logged": False, "user_id": None, "nombre_taller": None, "email": None, "token": None}
-        
+        st.session_state.auth = {
+            "logged": False, "user_id": None, "nombre_taller": None, "email": None,
+            "token": None, "rol": None, "operario_id": None, "operario_nombre": None,
+        }
+
         # Limpiar token de la URL
         if "token" in st.query_params:
             del st.query_params["token"]
-        
+
         st.rerun()
