@@ -44,16 +44,97 @@ if not st.session_state.auth["logged"]:
 
 user_id = st.session_state.auth["user_id"]
 nombre_taller = st.session_state.auth["nombre_taller"]
+es_patio = st.session_state.auth.get("rol") == "patio"
 
+def formato_cop(numero):
+    return f"${float(numero):,.0f}".replace(",", ".")
+
+# ================================================================================
+# VISTA SIMPLIFICADA PARA OPERARIOS DE PATIO
+# Solo pueden registrar el ingreso del vehiculo (placa + cliente). No ven costos,
+# comisiones, ni pueden asignar trabajos/repuestos: eso lo hace el taller despues
+# desde Expediente. La orden queda creada con estado "Cotizar".
+# ================================================================================
+if es_patio:
+    operario_nombre = st.session_state.auth.get("operario_nombre", "Operario")
+
+    st.title("Recepción de Vehículos")
+    st.markdown(f"Operario: **{operario_nombre}** | Taller: **{nombre_taller}**")
+    st.markdown("---")
+
+    engine = obtener_conexion()
+    empresas, _ = obtener_catalogos(user_id)
+
+    if not empresas:
+        st.warning("Tu taller aún no tiene empresas/clientes registrados en la base de datos.")
+        st.info("Pide al administrador que registre al menos 1 cliente en el Directorio antes de recepcionar vehículos.")
+        st.stop()
+
+    dict_empresas = {f"{e[1]}": e[0] for e in empresas}
+    opciones_empresas = ["-- Seleccionar Empresa --"] + list(dict_empresas.keys())
+
+    with st.container(border=True):
+        st.subheader("Datos del Vehículo")
+        col1, col2 = st.columns(2)
+        with col1:
+            placa_patio = st.text_input("Placa del Vehículo").upper().strip()
+        with col2:
+            empresa_sel_patio = st.selectbox("Empresa / Cliente", options=opciones_empresas)
+
+        st.caption(
+            "El vehículo ingresará con estado **'Cotizar'**. El taller se encargará de asignar "
+            "los trabajos, repuestos y precios más adelante."
+        )
+
+        st.markdown("")
+        if st.button("✅ Registrar Ingreso del Vehículo", type="primary", use_container_width=True):
+            if not placa_patio:
+                st.error("Ingresa la placa del vehículo.")
+            elif empresa_sel_patio == "-- Seleccionar Empresa --":
+                st.error("Selecciona una empresa/cliente válida.")
+            else:
+                try:
+                    empresa_id = dict_empresas[empresa_sel_patio]
+                    operario_id = st.session_state.auth.get("operario_id")
+                    with engine.begin() as conn:
+                        is_sqlite = "sqlite" in str(engine.url)
+
+                        if is_sqlite:
+                            cursor = conn.execute(
+                                text("""
+                                    INSERT INTO Hojas_Trabajo (usuario_id, placa, empresa_id, estado, creado_por_operario_id)
+                                    VALUES (:uid, :placa, :empresa_id, 'Cotizar', :oid)
+                                """),
+                                {"uid": user_id, "placa": placa_patio, "empresa_id": empresa_id, "oid": operario_id}
+                            )
+                            hoja_id = cursor.lastrowid
+                        else:
+                            resultado_hoja = conn.execute(
+                                text("""
+                                    INSERT INTO Hojas_Trabajo (usuario_id, placa, empresa_id, estado, creado_por_operario_id)
+                                    VALUES (:uid, :placa, :empresa_id, 'Cotizar', :oid) RETURNING id
+                                """),
+                                {"uid": user_id, "placa": placa_patio, "empresa_id": empresa_id, "oid": operario_id}
+                            )
+                            hoja_id = resultado_hoja.scalar()
+
+                    invalidar_cache_ordenes()
+                    st.success(f"✅ Vehículo **{placa_patio}** registrado con éxito. N° de Orden: **#{hoja_id}**")
+                    st.info("Informa este número de orden al cliente o anótalo para seguimiento.")
+                except Exception as e:
+                    st.error(f"Error al registrar el vehículo: {e}")
+
+    st.stop()
+
+# ================================================================================
+# VISTA COMPLETA PARA ADMIN (flujo original, sin cambios funcionales)
+# ================================================================================
 if 'carrito_items' not in st.session_state:
     st.session_state.carrito_items = []
 
 # Limpiar buscador de código de barras
 if "limpiar_cod_rep" not in st.session_state:
     st.session_state.limpiar_cod_rep = False
-
-def formato_cop(numero):
-    return f"${float(numero):,.0f}".replace(",", ".")
 
 st.title("Recepcion y Asignacion de Trabajos")
 st.markdown(f"Registrando ordenes para: **{nombre_taller}**")
