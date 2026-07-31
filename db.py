@@ -343,16 +343,31 @@ def init_db():
                     conn.execute(text("ALTER TABLE Usuarios ADD COLUMN iva_porcentaje REAL DEFAULT 19.0"))
                 if 'iva_incluido' not in cols_u:
                     conn.execute(text("ALTER TABLE Usuarios ADD COLUMN iva_incluido BOOLEAN DEFAULT 0"))
+                # --- NUEVO: default de tipo de IVA por categoría (catálogo, no booleano) ---
+                if 'iva_aplica_mano_obra' not in cols_u:
+                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN iva_aplica_mano_obra BOOLEAN DEFAULT 1"))
+                if 'iva_aplica_repuestos' not in cols_u:
+                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN iva_aplica_repuestos BOOLEAN DEFAULT 1"))
+                if 'iva_tipo_default_mano_obra' not in cols_u:
+                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN iva_tipo_default_mano_obra TEXT DEFAULT 'IVA 19%'"))
+                if 'iva_tipo_default_repuestos' not in cols_u:
+                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN iva_tipo_default_repuestos TEXT DEFAULT 'IVA 19%'"))
 
                 if 'unidad_medida' not in cols_i:
                     conn.execute(text("ALTER TABLE Inventario ADD COLUMN unidad_medida TEXT DEFAULT 'Unidad'"))
-                # --- NUEVO: excepción de IVA por producto (NULL = usa config global) ---
+                # --- NUEVO (legado): excepción booleana de IVA por producto ---
                 if 'aplica_iva' not in cols_i:
                     conn.execute(text("ALTER TABLE Inventario ADD COLUMN aplica_iva BOOLEAN"))
+                # --- NUEVO: tipo de IVA por producto (catálogo: Excluido, IVA 5%, IVA 19%, etc.) ---
+                if 'iva_tipo' not in cols_i:
+                    conn.execute(text("ALTER TABLE Inventario ADD COLUMN iva_tipo TEXT"))
 
-                # --- NUEVO: excepción de IVA por ítem de orden (NULL = usa config global) ---
+                # --- NUEVO (legado): excepción booleana de IVA por ítem de orden ---
                 if 'aplica_iva' not in cols_do:
                     conn.execute(text("ALTER TABLE Detalles_Orden ADD COLUMN aplica_iva BOOLEAN"))
+                # --- NUEVO: tipo de IVA por ítem de orden (catálogo) ---
+                if 'iva_tipo' not in cols_do:
+                    conn.execute(text("ALTER TABLE Detalles_Orden ADD COLUMN iva_tipo TEXT"))
 
                 # --- NUEVO: trazabilidad de quién recepcionó (operario de patio) ---
                 if 'creado_por_operario_id' not in cols_ht:
@@ -366,16 +381,26 @@ def init_db():
                 conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS iva_activo BOOLEAN DEFAULT FALSE"))
                 conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS iva_porcentaje NUMERIC(5,2) DEFAULT 19.00"))
                 conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS iva_incluido BOOLEAN DEFAULT FALSE"))
+                # --- NUEVO (legado): booleanos de categoría, ya no se usan en la UI pero se conservan ---
+                conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS iva_aplica_mano_obra BOOLEAN DEFAULT TRUE"))
+                conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS iva_aplica_repuestos BOOLEAN DEFAULT TRUE"))
+                # --- NUEVO: default de tipo de IVA por categoría (catálogo: Excluido, IVA 5%, IVA 19%, etc.) ---
+                conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS iva_tipo_default_mano_obra VARCHAR(30) DEFAULT 'IVA 19%'"))
+                conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS iva_tipo_default_repuestos VARCHAR(30) DEFAULT 'IVA 19%'"))
 
                 conn.execute(text("ALTER TABLE Inventario ADD COLUMN IF NOT EXISTS unidad_medida VARCHAR(20) DEFAULT 'Unidad'"))
-                # --- NUEVO: excepción de IVA por producto (NULL = usa config global) ---
+                # --- NUEVO (legado): excepción booleana de IVA por producto ---
                 conn.execute(text("ALTER TABLE Inventario ADD COLUMN IF NOT EXISTS aplica_iva BOOLEAN"))
+                # --- NUEVO: tipo de IVA por producto (catálogo) ---
+                conn.execute(text("ALTER TABLE Inventario ADD COLUMN IF NOT EXISTS iva_tipo VARCHAR(30)"))
                 # Cambiar stock_actual a NUMERIC con decimales para kg, metros, etc
                 conn.execute(text("ALTER TABLE Inventario ALTER COLUMN stock_actual TYPE NUMERIC(12,3)"))
                 conn.execute(text("ALTER TABLE Inventario ALTER COLUMN stock_minimo TYPE NUMERIC(12,3)"))
 
-                # --- NUEVO: excepción de IVA por ítem de orden (NULL = usa config global) ---
+                # --- NUEVO (legado): excepción booleana de IVA por ítem de orden ---
                 conn.execute(text("ALTER TABLE Detalles_Orden ADD COLUMN IF NOT EXISTS aplica_iva BOOLEAN"))
+                # --- NUEVO: tipo de IVA por ítem de orden (catálogo) ---
+                conn.execute(text("ALTER TABLE Detalles_Orden ADD COLUMN IF NOT EXISTS iva_tipo VARCHAR(30)"))
 
                 # --- NUEVO: trazabilidad de quién recepcionó (operario de patio) ---
                 conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS creado_por_operario_id INTEGER"))
