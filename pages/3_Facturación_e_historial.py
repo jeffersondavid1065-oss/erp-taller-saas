@@ -6,7 +6,7 @@ from sqlalchemy import text
 from db import obtener_conexion, init_db
 from queries import obtener_catalogos, invalidar_cache_ordenes, invalidar_cache_inventario
 from io import BytesIO
-from pdf_utils import generar_pdf_orden_profesional, calcular_totales_orden
+from pdf_utils import generar_pdf_orden_profesional, calcular_totales_orden, IVA_OPCIONES
 
 st.set_page_config(page_title="Expediente", layout="wide")
 
@@ -79,19 +79,29 @@ def formato_cop(numero):
 # --------------------------------------------------------------------------------
 with engine.connect() as conn_iva:
     fila_iva = conn_iva.execute(
-        text("SELECT iva_activo, iva_porcentaje, iva_incluido FROM Usuarios WHERE id = :uid"),
+        text("""
+            SELECT iva_activo, iva_incluido,
+                   iva_tipo_default_mano_obra, iva_tipo_default_repuestos
+            FROM Usuarios WHERE id = :uid
+        """),
         {"uid": user_id}
     ).fetchone()
 
 IVA_ACTIVO = bool(fila_iva[0]) if fila_iva and fila_iva[0] is not None else False
-IVA_PORCENTAJE = float(fila_iva[1]) if fila_iva and fila_iva[1] is not None else 19.0
-IVA_INCLUIDO = bool(fila_iva[2]) if fila_iva and fila_iva[2] is not None else False
+IVA_INCLUIDO = bool(fila_iva[1]) if fila_iva and fila_iva[1] is not None else False
+IVA_TIPO_DEFAULT_MO = fila_iva[2] if fila_iva and fila_iva[2] in IVA_OPCIONES else "Excluido"
+IVA_TIPO_DEFAULT_REP = fila_iva[3] if fila_iva and fila_iva[3] in IVA_OPCIONES else "Excluido"
 
 st.title("Expediente de Orden y Facturación")
 st.markdown(f"Gestión de órdenes para: **{nombre_taller}**")
 if IVA_ACTIVO:
     modo_iva_txt = "incluido en el precio" if IVA_INCLUIDO else "se suma aparte al precio"
-    st.caption(f"🧾 IVA activo: {IVA_PORCENTAJE:g}% ({modo_iva_txt}). Configurable en 'Configuración del Taller'.")
+    st.caption(
+        f"🧾 IVA activo ({modo_iva_txt}) | Default Mano de Obra: **{IVA_TIPO_DEFAULT_MO}** · "
+        f"Default Repuestos: **{IVA_TIPO_DEFAULT_REP}**. Configurable en 'Configuración del Taller'."
+    )
+else:
+    st.caption("🧾 Este taller no cobra IVA (todos los ítems se facturan como 'Excluido').")
 st.markdown("---")
 
 # Catálogos cacheados y compartidos con el resto de la app (no se vuelven
@@ -229,7 +239,7 @@ if orden_busqueda:
                 df_trabajos = pd.read_sql_query(
                     text('''
                         SELECT d.id, d.tipo_item, d.descripcion, m.nombre as mecanico, 
-                               d.costo_compra, d.precio_venta, d.aplica_iva
+                               d.costo_compra, d.precio_venta, d.iva_tipo
                         FROM Detalles_Orden d
                         LEFT JOIN Mecanicos m ON d.mecanico_id = m.id
                         WHERE d.hoja_id = :hid
@@ -238,24 +248,32 @@ if orden_busqueda:
                     params={"hid": hoja_id}
                 )
 
-            # Cálculo de totales respetando config global de IVA + excepciones por ítem
-            subtotal_orden, iva_valor_orden, gran_total = calcular_totales_orden(
-                df_trabajos, iva_activo=IVA_ACTIVO, iva_porcentaje=IVA_PORCENTAJE, iva_incluido=IVA_INCLUIDO
+            # Cálculo de totales usando el tipo de impuesto de cada ítem (o el
+            # default de su categoría si el ítem no tiene uno asignado).
+            subtotal_orden, iva_valor_orden, gran_total, desglose_iva_orden = calcular_totales_orden(
+                df_trabajos, iva_activo=IVA_ACTIVO, iva_incluido=IVA_INCLUIDO,
+                iva_tipo_default_mano_obra=IVA_TIPO_DEFAULT_MO, iva_tipo_default_repuestos=IVA_TIPO_DEFAULT_REP
             )
 
             tab_factura, tab_editar = st.tabs(["Detalles y Copia de Ítems", "Edición y Gestión"])
             
             with tab_factura:
                 if not df_trabajos.empty:
-                    df_mostrar = df_trabajos[['tipo_item', 'descripcion', 'mecanico', 'precio_venta']].copy()
-                    df_mostrar.columns = ['Tipo', 'Descripción', 'Técnico', 'Cobro al Cliente']
+                    df_mostrar = df_trabajos[['tipo_item', 'descripcion', 'mecanico', 'precio_venta', 'iva_tipo']].copy()
+                    df_mostrar['iva_tipo'] = df_mostrar['iva_tipo'].fillna('(default de categoría)')
+                    df_mostrar.columns = ['Tipo', 'Descripción', 'Técnico', 'Cobro al Cliente', 'Impuesto (IVA)']
                     st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
 
                     if IVA_ACTIVO:
-                        col_t1, col_t2, col_t3 = st.columns(3)
-                        col_t1.metric("Subtotal", formato_cop(subtotal_orden))
-                        col_t2.metric(f"IVA ({IVA_PORCENTAJE:g}%)", formato_cop(iva_valor_orden))
-                        col_t3.metric("Total a cobrar", formato_cop(gran_total))
+                        n_cols = 2 + max(len(desglose_iva_orden), 1)
+                        cols_tot = st.columns(n_cols)
+                        cols_tot[0].metric("Subtotal", formato_cop(subtotal_orden))
+                        if desglose_iva_orden:
+                            for idx_iva, (etiqueta, monto) in enumerate(desglose_iva_orden.items()):
+                                cols_tot[1 + idx_iva].metric(etiqueta, formato_cop(monto))
+                        else:
+                            cols_tot[1].metric("IVA", formato_cop(0))
+                        cols_tot[-1].metric("Total a cobrar", formato_cop(gran_total))
                     else:
                         st.success(f"Total a cobrar al cliente: {formato_cop(gran_total)}")
                     
@@ -292,8 +310,7 @@ if orden_busqueda:
                         df_items=df_trabajos,
                         total=gran_total,
                         subtotal=subtotal_orden if IVA_ACTIVO else None,
-                        iva_valor=iva_valor_orden if IVA_ACTIVO else None,
-                        iva_porcentaje=IVA_PORCENTAJE
+                        desglose_iva=desglose_iva_orden if IVA_ACTIVO else None
                     )
                     
                     st.download_button(
@@ -375,30 +392,25 @@ if orden_busqueda:
                                     nueva_desc = st.text_input("Nueva Descripción", value=row['descripcion'])
                                     nuevo_precio = st.number_input("Nuevo Precio ($)", min_value=0.0, step=5000.0, value=float(row['precio_venta']))
 
-                                    opciones_iva_edit = ["Usar configuración del taller", "Sí, aplica IVA", "No, exento de IVA"]
-                                    aplica_iva_actual = row.get('aplica_iva', None)
-                                    if aplica_iva_actual is True:
-                                        idx_iva_edit = 1
-                                    elif aplica_iva_actual is False:
-                                        idx_iva_edit = 2
-                                    else:
-                                        idx_iva_edit = 0
-                                    sel_iva_edit = st.selectbox("IVA para este ítem", opciones_iva_edit, index=idx_iva_edit)
+                                    opciones_iva_edit = ["Usar el default de su categoría"] + IVA_OPCIONES
+                                    iva_tipo_actual = row.get('iva_tipo', None)
+                                    idx_iva_edit = opciones_iva_edit.index(iva_tipo_actual) if iva_tipo_actual in IVA_OPCIONES else 0
+                                    sel_iva_edit = st.selectbox("Impuesto (IVA) para este ítem", opciones_iva_edit, index=idx_iva_edit)
                                     
                                     col_fe1, col_fe2 = st.columns(2)
                                     with col_fe1:
                                         if st.form_submit_button("Guardar Cambios", type="primary"):
-                                            nuevo_aplica_iva = {0: None, 1: True, 2: False}[opciones_iva_edit.index(sel_iva_edit)]
+                                            nuevo_iva_tipo = None if sel_iva_edit == "Usar el default de su categoría" else sel_iva_edit
                                             try:
                                                 with engine.begin() as conn_upd:
                                                     conn_upd.execute(
                                                         text("""
                                                             UPDATE Detalles_Orden
-                                                            SET descripcion = :desc, precio_venta = :precio, aplica_iva = :aiva
+                                                            SET descripcion = :desc, precio_venta = :precio, iva_tipo = :iva_tipo
                                                             WHERE id = :did
                                                         """),
                                                         {"desc": nueva_desc, "precio": float(nuevo_precio),
-                                                         "aiva": nuevo_aplica_iva, "did": row['id']}
+                                                         "iva_tipo": nuevo_iva_tipo, "did": row['id']}
                                                     )
                                                 invalidar_cache_ordenes()
                                                 st.session_state[f"modo_edit_{row['id']}"] = False
@@ -419,25 +431,26 @@ if orden_busqueda:
                 with st.expander("Desplegar formulario para agregar trabajo o repuesto"):
                     tab_mo, tab_rep = st.tabs(["Mano de Obra", "Repuesto"])
 
-                    opciones_iva_nuevo = ["Usar configuración del taller", "Sí, aplica IVA", "No, exento de IVA"]
+                    opciones_iva_nuevo = ["Usar el default de su categoría"] + IVA_OPCIONES
                     
                     with tab_mo:
                         desc_mo = st.text_input("Descripción", key="e_desc_mo")
                         mec_sel = st.selectbox("Mecánico", options=list(dict_mecanicos.keys()), key="e_mec_mo") if dict_mecanicos else None
                         venta_mo = st.number_input("Cobro Cliente ($)", min_value=0, step=5000, key="e_venta_mo")
-                        sel_iva_mo = st.selectbox("IVA para este ítem", opciones_iva_nuevo, key="e_iva_mo")
+                        sel_iva_mo = st.selectbox("Impuesto (IVA) para este ítem", opciones_iva_nuevo, index=0, key="e_iva_mo",
+                                                   help=f"El default configurado para Mano de Obra es: {IVA_TIPO_DEFAULT_MO}")
                         if st.button("Guardar Trabajo", use_container_width=True):
                             if desc_mo and venta_mo > 0 and mec_sel:
-                                aplica_iva_mo = {0: None, 1: True, 2: False}[opciones_iva_nuevo.index(sel_iva_mo)]
+                                iva_tipo_mo = None if sel_iva_mo == "Usar el default de su categoría" else sel_iva_mo
                                 try:
                                     with engine.begin() as conn_mo:
                                         conn_mo.execute(
                                             text('''
-                                                INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, mecanico_id, precio_venta, aplica_iva)
-                                                VALUES (:hid, 'Mano de Obra', :desc, :mid, :pvp, :aiva)
+                                                INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, mecanico_id, precio_venta, iva_tipo)
+                                                VALUES (:hid, 'Mano de Obra', :desc, :mid, :pvp, :iva_tipo)
                                             '''),
                                             {"hid": hoja_id, "desc": desc_mo, "mid": dict_mecanicos[mec_sel],
-                                             "pvp": float(venta_mo), "aiva": aplica_iva_mo}
+                                             "pvp": float(venta_mo), "iva_tipo": iva_tipo_mo}
                                         )
                                     invalidar_cache_ordenes()
                                     st.success("Trabajo agregado con éxito.")
@@ -459,20 +472,21 @@ if orden_busqueda:
                             desc_rep = st.text_input("Nombre Repuesto", key="e_desc_rep_ext")
                             costo_rep = st.number_input("Costo Compra ($)", min_value=0, step=1000, key="e_costo_rep_ext")
                             venta_rep = st.number_input("Precio Venta ($)", min_value=0, step=1000, key="e_venta_rep_ext")
-                            sel_iva_rep_ext = st.selectbox("IVA para este ítem", opciones_iva_nuevo, key="e_iva_rep_ext")
+                            sel_iva_rep_ext = st.selectbox("Impuesto (IVA) para este ítem", opciones_iva_nuevo, index=0, key="e_iva_rep_ext",
+                                                            help=f"El default configurado para Repuestos es: {IVA_TIPO_DEFAULT_REP}")
                             
                             if st.button("Guardar Repuesto Externo", use_container_width=True):
                                 if desc_rep and venta_rep > 0:
-                                    aplica_iva_rep_ext = {0: None, 1: True, 2: False}[opciones_iva_nuevo.index(sel_iva_rep_ext)]
+                                    iva_tipo_rep_ext = None if sel_iva_rep_ext == "Usar el default de su categoría" else sel_iva_rep_ext
                                     try:
                                         with engine.begin() as conn_rep:
                                             conn_rep.execute(
                                                 text('''
-                                                    INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, costo_compra, precio_venta, aplica_iva)
-                                                    VALUES (:hid, 'Repuesto', :desc, :costo, :pvp, :aiva)
+                                                    INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, costo_compra, precio_venta, iva_tipo)
+                                                    VALUES (:hid, 'Repuesto', :desc, :costo, :pvp, :iva_tipo)
                                                 '''),
                                                 {"hid": hoja_id, "desc": desc_rep, "costo": float(costo_rep),
-                                                 "pvp": float(venta_rep), "aiva": aplica_iva_rep_ext}
+                                                 "pvp": float(venta_rep), "iva_tipo": iva_tipo_rep_ext}
                                             )
                                         invalidar_cache_ordenes()
                                         st.success("Repuesto agregado con éxito.")
@@ -484,7 +498,7 @@ if orden_busqueda:
                         else:
                             with engine.connect() as conn_inv:
                                 prods = conn_inv.execute(
-                                    text("SELECT id, nombre_producto, stock_actual, costo_compra, precio_venta, aplica_iva FROM Inventario WHERE usuario_id = :uid AND stock_actual > 0 ORDER BY nombre_producto ASC"),
+                                    text("SELECT id, nombre_producto, stock_actual, costo_compra, precio_venta, iva_tipo FROM Inventario WHERE usuario_id = :uid AND stock_actual > 0 ORDER BY nombre_producto ASC"),
                                     {"uid": user_id}
                                 ).fetchall()
 
@@ -500,26 +514,23 @@ if orden_busqueda:
                                     pvp_unitario_exp = float(prod_data[4])
                                     st.markdown(f"**Total Cobro:** {formato_cop(pvp_unitario_exp * cant_usar_exp)}")
 
-                                aplica_iva_prod = prod_data[5]  # None = usa config global, o True/False si el producto tiene excepción
-                                if aplica_iva_prod is True:
-                                    st.caption("🧾 Este producto tiene IVA marcado explícitamente.")
-                                elif aplica_iva_prod is False:
-                                    st.caption("🧾 Este producto está marcado como exento de IVA.")
+                                iva_tipo_prod = prod_data[5] if prod_data[5] else "Excluido"
+                                st.caption(f"🧾 Impuesto de este producto (configurado en Inventario): **{iva_tipo_prod}**")
 
                                 if st.button("Guardar Repuesto de Almacén", use_container_width=True):
                                     try:
                                         with engine.begin() as conn_rep_inv:
                                             conn_rep_inv.execute(
                                                 text('''
-                                                    INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, costo_compra, precio_venta, aplica_iva)
-                                                    VALUES (:hid, 'Repuesto', :desc, :costo, :pvp, :aiva)
+                                                    INSERT INTO Detalles_Orden (hoja_id, tipo_item, descripcion, costo_compra, precio_venta, iva_tipo)
+                                                    VALUES (:hid, 'Repuesto', :desc, :costo, :pvp, :iva_tipo)
                                                 '''),
                                                 {
                                                     "hid": hoja_id, 
                                                     "desc": f"{prod_data[1]} (x{cant_usar_exp})", 
                                                     "costo": float(prod_data[3]) * cant_usar_exp, 
                                                     "pvp": pvp_unitario_exp * cant_usar_exp,
-                                                    "aiva": aplica_iva_prod
+                                                    "iva_tipo": prod_data[5]
                                                 }
                                             )
                                             conn_rep_inv.execute(
