@@ -408,16 +408,27 @@ with tab_entradas:
                                           key=f"um_t_{i}")
                     st.session_state.items_entrada_taller[i]["unidad_medida"] = um_sel
                 with col_f3:
+                    # --- FIX: separar en dos ramas para no mezclar int y float ---
                     es_decimal = um_sel in ["kg", "g", "lb", "m", "cm", "vara", "pie",
                                             "L", "mL", "galón", "m²", "m³"]
-                    cant = st.number_input(
-                        f"Cant. ({um_sel})",
-                        min_value=0.0 if es_decimal else 1,
-                        value=float(item.get("cantidad", 1)),
-                        step=0.5 if es_decimal else 1,
-                        key=f"cant_t_{i}"
-                    )
-                    st.session_state.items_entrada_taller[i]["cantidad"] = cant
+                    if es_decimal:
+                        cant = st.number_input(
+                            f"Cant. ({um_sel})",
+                            min_value=0.0,
+                            value=float(item.get("cantidad", 1)),
+                            step=0.5,
+                            key=f"cant_t_{i}"
+                        )
+                    else:
+                        cant = st.number_input(
+                            f"Cant. ({um_sel})",
+                            min_value=0,
+                            value=int(round(float(item.get("cantidad", 1)))),
+                            step=1,
+                            key=f"cant_t_{i}"
+                        )
+                    st.session_state.items_entrada_taller[i]["cantidad"] = float(cant)
+                    # --- FIN FIX ---
                 with col_f4:
                     costo = st.number_input(f"Costo/$/{um_sel}", min_value=0.0,
                                             value=float(item.get("costo", 0)),
