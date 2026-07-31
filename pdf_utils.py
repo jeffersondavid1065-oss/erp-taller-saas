@@ -1,6 +1,9 @@
 """
 Utilidades para generar PDFs profesionales estilo factura moderna para MyTaller.
 Diseño limpio, moderno, con layout profesional de factura estándar.
+Incluye cálculo de IVA (Colombia) por catálogo de tipos de impuesto, igual al
+que usan los sistemas de facturación electrónica colombianos (Excluido,
+IVA 0% Exento, IVA 5%, IVA 16%, IVA 19%, Impuesto al Consumo 0%, etc.)
 """
 
 from fpdf import FPDF
@@ -9,6 +12,105 @@ from datetime import datetime
 import os
 import requests
 from io import BytesIO
+
+
+# ==========================================================================
+# CATÁLOGO DE TIPOS DE IMPUESTO (Colombia)
+# Cada ítem (mano de obra, repuesto, producto de inventario) tiene asignado
+# uno de estos tipos. La etiqueta es la que se imprime tal cual en la factura.
+# ==========================================================================
+IVA_OPCIONES = [
+    "Excluido",
+    "IVA 0% (Exento)",
+    "IVA 5%",
+    "IVA 16%",
+    "IVA 19%",
+    "Imp Consumo 0%",
+]
+
+IVA_TASA = {
+    "Excluido": 0.0,
+    "IVA 0% (Exento)": 0.0,
+    "IVA 5%": 5.0,
+    "IVA 16%": 16.0,
+    "IVA 19%": 19.0,
+    "Imp Consumo 0%": 0.0,
+}
+
+
+def resolver_iva_tipo(valor):
+    """Normaliza un valor de iva_tipo venido de BD (puede ser None, NaN o
+    una etiqueta ya válida). Si no es reconocible, retorna None."""
+    if valor is None:
+        return None
+    if isinstance(valor, float) and pd.isna(valor):
+        return None
+    valor = str(valor).strip()
+    return valor if valor in IVA_TASA else None
+
+
+def calcular_totales_orden(df_items, iva_activo=False, iva_incluido=False,
+                            iva_tipo_default_mano_obra="Excluido",
+                            iva_tipo_default_repuestos="Excluido"):
+    """
+    Calcula subtotal, IVA total, total y el desglose por tipo de impuesto
+    de una orden, respetando este orden de prioridad para cada ítem:
+
+    1. Tipo de impuesto explícito en el ítem (columna 'iva_tipo'), que a su
+       vez puede venir marcado manualmente al agregarlo, o heredado
+       directamente del producto de Inventario si el repuesto se tomó del
+       almacén propio.
+    2. Si el ítem no tiene tipo asignado (NULL), se usa el default de su
+       categoría configurado en el taller (iva_tipo_default_mano_obra /
+       iva_tipo_default_repuestos según 'tipo_item').
+    3. Si el taller tiene iva_activo=False (interruptor maestro apagado),
+       se ignora todo lo anterior y ningún ítem paga impuesto.
+
+    Retorna: (subtotal, iva_total, total, desglose_iva)
+    donde desglose_iva es un dict {etiqueta: monto_iva} solo con las
+    etiquetas que efectivamente generaron un valor de IVA > 0 (para no
+    imprimir líneas de "IVA 0%" o "Excluido" vacías en la factura).
+    """
+    if df_items is None or df_items.empty:
+        return 0.0, 0.0, 0.0, {}
+
+    subtotal = 0.0
+    iva_total = 0.0
+    desglose = {}
+
+    for _, row in df_items.iterrows():
+        precio = float(row.get('precio_venta', 0) or 0)
+        tipo_item = row.get('tipo_item', '') if hasattr(row, 'get') else ''
+
+        etiqueta = resolver_iva_tipo(row.get('iva_tipo', None) if hasattr(row, 'get') else None)
+
+        if etiqueta is None:
+            if tipo_item == 'Mano de Obra':
+                etiqueta = resolver_iva_tipo(iva_tipo_default_mano_obra) or "Excluido"
+            else:
+                etiqueta = resolver_iva_tipo(iva_tipo_default_repuestos) or "Excluido"
+
+        if not iva_activo:
+            etiqueta = "Excluido"
+
+        tasa = IVA_TASA.get(etiqueta, 0.0) / 100.0
+
+        if iva_incluido and tasa > 0:
+            base = precio / (1 + tasa)
+            iva_item = precio - base
+        else:
+            base = precio
+            iva_item = precio * tasa
+
+        subtotal += base
+        iva_total += iva_item
+
+        if iva_item > 0:
+            desglose[etiqueta] = desglose.get(etiqueta, 0.0) + iva_item
+
+    total = subtotal + iva_total
+    desglose_redondeado = {k: round(v, 2) for k, v in desglose.items() if round(v, 2) > 0}
+    return round(subtotal, 2), round(iva_total, 2), round(total, 2), desglose_redondeado
 
 
 def generar_pdf_orden_profesional(
@@ -26,8 +128,21 @@ def generar_pdf_orden_profesional(
     estado="",
     df_items=None,
     total=0,
-    incluir_iva=False
+    subtotal=None,
+    desglose_iva=None
 ):
+    """
+    Genera el PDF de la orden/factura.
+
+    - Si `subtotal` se pasa (no None), se muestra el desglose: Subtotal,
+      una línea por cada tipo de impuesto presente en `desglose_iva`
+      (dict {etiqueta: monto}, ej. {"IVA 19%": 38000.0}), y Total.
+      Se recomienda obtener subtotal/desglose_iva/total con
+      calcular_totales_orden() para que sean siempre consistentes con lo
+      mostrado en pantalla.
+    - Si no se pasan, se muestra únicamente el total (comportamiento para
+      talleres sin IVA activo).
+    """
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -55,6 +170,9 @@ def generar_pdf_orden_profesional(
     placa            = safe_str(placa)
     estado           = safe_str(estado)
     hoja_id_str      = str(hoja_id).zfill(5) if hoja_id else "00000"
+
+    mostrar_desglose_iva = subtotal is not None
+    desglose_iva = desglose_iva or {}
 
     # Colores
     GRIS_OSCURO  = (80, 80, 80)
@@ -237,14 +355,14 @@ def generar_pdf_orden_profesional(
             linea2 = f"Tecnico: {mec}" if mec else ""
 
             cantidad = 1
-            subtotal = float(row.get('precio_venta', 0))
-            precio_u = subtotal
+            subtotal_item = float(row.get('precio_venta', 0))
+            precio_u = subtotal_item
 
             pdf.set_xy(12, y_item)
             pdf.cell(95, 5, linea1)
             pdf.cell(25, 5, str(cantidad), align="C")
             pdf.cell(33, 5, f"${precio_u:,.0f}".replace(",", "."), align="R")
-            pdf.cell(33, 5, f"${subtotal:,.0f}".replace(",", "."), align="R")
+            pdf.cell(33, 5, f"${subtotal_item:,.0f}".replace(",", "."), align="R")
             y_item += 5
 
             if linea2:
@@ -265,21 +383,19 @@ def generar_pdf_orden_profesional(
     y_totales = y_item + 4
     pdf.set_draw_color(*GRIS_CLARO)
 
-    if incluir_iva:
-        subtotal_sin_iva = total / 1.19
-        iva = total - subtotal_sin_iva
-
+    if mostrar_desglose_iva:
         pdf.set_xy(130, y_totales)
         pdf.set_font("Helvetica", "", 9)
         pdf.set_text_color(*GRIS_OSCURO)
         pdf.cell(35, 5, "Subtotal")
-        pdf.cell(33, 5, f"${subtotal_sin_iva:,.0f}".replace(",", "."), align="R")
+        pdf.cell(33, 5, f"${subtotal:,.0f}".replace(",", "."), align="R")
         y_totales += 5
 
-        pdf.set_xy(130, y_totales)
-        pdf.cell(35, 5, "Tax (IVA 19%)")
-        pdf.cell(33, 5, f"${iva:,.0f}".replace(",", "."), align="R")
-        y_totales += 5
+        for etiqueta, monto in desglose_iva.items():
+            pdf.set_xy(130, y_totales)
+            pdf.cell(35, 5, etiqueta)
+            pdf.cell(33, 5, f"${monto:,.0f}".replace(",", "."), align="R")
+            y_totales += 5
 
     pdf.line(130, y_totales, 198, y_totales)
     y_totales += 1
@@ -316,7 +432,7 @@ def generar_pdf_orden_profesional(
 
 
 def generar_pdf_orden(taller, hoja_id, fecha, cliente, nit, placa, estado, df_items, total):
-    """Función legacy para compatibilidad."""
+    """Función legacy para compatibilidad (sin desglose de IVA)."""
     return generar_pdf_orden_profesional(
         taller_nombre=taller,
         hoja_id=hoja_id,
