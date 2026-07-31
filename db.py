@@ -153,6 +153,20 @@ def init_db():
                     FOREIGN KEY (categoria_id) REFERENCES Categorias_Gasto(id) ON DELETE RESTRICT
                 )
             '''))
+            # --- NUEVO: Operarios de Patio (rol restringido a Recepción) ---
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS Operarios_Patio (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    usuario_id INTEGER NOT NULL,
+                    nombre_operario TEXT NOT NULL,
+                    usuario_login TEXT UNIQUE NOT NULL,
+                    password TEXT NOT NULL,
+                    token_sesion TEXT,
+                    activo BOOLEAN DEFAULT 1,
+                    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE
+                )
+            '''))
         else:
             conn.execute(text('''
                 CREATE TABLE IF NOT EXISTS Usuarios (
@@ -275,6 +289,20 @@ def init_db():
                     FOREIGN KEY (categoria_id) REFERENCES Categorias_Gasto(id) ON DELETE RESTRICT
                 )
             '''))
+            # --- NUEVO: Operarios de Patio (rol restringido a Recepción) ---
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS Operarios_Patio (
+                    id SERIAL PRIMARY KEY,
+                    usuario_id INTEGER NOT NULL,
+                    nombre_operario VARCHAR(255) NOT NULL,
+                    usuario_login VARCHAR(100) UNIQUE NOT NULL,
+                    password VARCHAR(255) NOT NULL,
+                    token_sesion VARCHAR(255),
+                    activo BOOLEAN DEFAULT TRUE,
+                    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE
+                )
+            '''))
 
         # ==========================================
         # ÍNDICES
@@ -290,6 +318,9 @@ def init_db():
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_gastos_usuario ON Gastos(usuario_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_gastos_usuario_fecha ON Gastos(usuario_id, fecha)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_categorias_gasto_usuario ON Categorias_Gasto(usuario_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_operarios_patio_usuario ON Operarios_Patio(usuario_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_operarios_patio_login ON Operarios_Patio(usuario_login)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_operarios_patio_token ON Operarios_Patio(token_sesion)"))
 
         # ==========================================
         # MIGRACIONES SEGURAS
@@ -298,22 +329,56 @@ def init_db():
             if is_sqlite:
                 cols_u = [c[1] for c in conn.execute(text("PRAGMA table_info(Usuarios)")).fetchall()]
                 cols_i = [c[1] for c in conn.execute(text("PRAGMA table_info(Inventario)")).fetchall()]
+                cols_do = [c[1] for c in conn.execute(text("PRAGMA table_info(Detalles_Orden)")).fetchall()]
+                cols_ht = [c[1] for c in conn.execute(text("PRAGMA table_info(Hojas_Trabajo)")).fetchall()]
 
                 if 'token_sesion' not in cols_u:
                     conn.execute(text("ALTER TABLE Usuarios ADD COLUMN token_sesion TEXT"))
                 if 'logo_path' not in cols_u:
                     conn.execute(text("ALTER TABLE Usuarios ADD COLUMN logo_path TEXT"))
+                # --- NUEVO: config de IVA del taller ---
+                if 'iva_activo' not in cols_u:
+                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN iva_activo BOOLEAN DEFAULT 0"))
+                if 'iva_porcentaje' not in cols_u:
+                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN iva_porcentaje REAL DEFAULT 19.0"))
+                if 'iva_incluido' not in cols_u:
+                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN iva_incluido BOOLEAN DEFAULT 0"))
+
                 if 'unidad_medida' not in cols_i:
                     conn.execute(text("ALTER TABLE Inventario ADD COLUMN unidad_medida TEXT DEFAULT 'Unidad'"))
+                # --- NUEVO: excepción de IVA por producto (NULL = usa config global) ---
+                if 'aplica_iva' not in cols_i:
+                    conn.execute(text("ALTER TABLE Inventario ADD COLUMN aplica_iva BOOLEAN"))
+
+                # --- NUEVO: excepción de IVA por ítem de orden (NULL = usa config global) ---
+                if 'aplica_iva' not in cols_do:
+                    conn.execute(text("ALTER TABLE Detalles_Orden ADD COLUMN aplica_iva BOOLEAN"))
+
+                # --- NUEVO: trazabilidad de quién recepcionó (operario de patio) ---
+                if 'creado_por_operario_id' not in cols_ht:
+                    conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN creado_por_operario_id INTEGER"))
                 # stock_actual a REAL para soportar decimales (kg, metros, etc)
                 # SQLite no soporta ALTER COLUMN, pero REAL ya acepta decimales
             else:
                 conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS token_sesion VARCHAR(255)"))
                 conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS logo_path TEXT"))
+                # --- NUEVO: config de IVA del taller ---
+                conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS iva_activo BOOLEAN DEFAULT FALSE"))
+                conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS iva_porcentaje NUMERIC(5,2) DEFAULT 19.00"))
+                conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS iva_incluido BOOLEAN DEFAULT FALSE"))
+
                 conn.execute(text("ALTER TABLE Inventario ADD COLUMN IF NOT EXISTS unidad_medida VARCHAR(20) DEFAULT 'Unidad'"))
+                # --- NUEVO: excepción de IVA por producto (NULL = usa config global) ---
+                conn.execute(text("ALTER TABLE Inventario ADD COLUMN IF NOT EXISTS aplica_iva BOOLEAN"))
                 # Cambiar stock_actual a NUMERIC con decimales para kg, metros, etc
                 conn.execute(text("ALTER TABLE Inventario ALTER COLUMN stock_actual TYPE NUMERIC(12,3)"))
                 conn.execute(text("ALTER TABLE Inventario ALTER COLUMN stock_minimo TYPE NUMERIC(12,3)"))
+
+                # --- NUEVO: excepción de IVA por ítem de orden (NULL = usa config global) ---
+                conn.execute(text("ALTER TABLE Detalles_Orden ADD COLUMN IF NOT EXISTS aplica_iva BOOLEAN"))
+
+                # --- NUEVO: trazabilidad de quién recepcionó (operario de patio) ---
+                conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS creado_por_operario_id INTEGER"))
 
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_usuarios_token ON Usuarios(token_sesion)"))
         except Exception:
