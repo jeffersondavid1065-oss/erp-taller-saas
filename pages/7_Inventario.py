@@ -3,6 +3,7 @@ import pandas as pd
 from sqlalchemy import text
 from db import obtener_conexion, init_db
 from queries import invalidar_cache_inventario
+from pdf_utils import IVA_OPCIONES
 
 st.set_page_config(page_title="Inventario y Almacén", layout="wide")
 init_db()
@@ -37,8 +38,8 @@ if "auth" not in st.session_state:
 if not st.session_state.auth["logged"]:
     st.warning("Debes iniciar sesión en la página principal para acceder a este módulo.")
     st.stop()
-    
-    # Bloqueo de rol: los operarios de Patio solo tienen acceso a Recepción.
+
+# Bloqueo de rol: los operarios de Patio solo tienen acceso a Recepción.
 if st.session_state.auth.get("rol") == "patio":
     st.warning("🔒 Tu usuario solo tiene acceso al módulo de Recepción de Vehículos.")
     st.stop()
@@ -50,6 +51,15 @@ nombre_taller = st.session_state.auth["nombre_taller"]
 UNIDADES = ["Unidad", "kg", "g", "lb", "m", "cm", "vara", "pie",
             "L", "mL", "galón", "Docena", "Caja", "Bulto", "Rollo",
             "Paquete", "m²", "m³"]
+
+# Default de IVA para productos nuevos: el configurado para "Repuestos" en
+# Configuración del Taller. Si el taller aún no lo ha configurado, "Excluido".
+with engine.connect() as conn_cfg:
+    fila_cfg = conn_cfg.execute(
+        text("SELECT iva_tipo_default_repuestos FROM Usuarios WHERE id = :uid"),
+        {"uid": user_id}
+    ).fetchone()
+IVA_TIPO_DEFAULT = fila_cfg[0] if fila_cfg and fila_cfg[0] in IVA_OPCIONES else "Excluido"
 
 def formato_cop(numero):
     return f"${float(numero):,.0f}".replace(",", ".")
@@ -92,7 +102,7 @@ def obtener_inventario_filtrado(uid, busqueda, limite):
     with engine.connect() as conn:
         return pd.read_sql_query(text(f'''
             SELECT id, nombre_producto, codigo_ref, unidad_medida,
-                   stock_actual, stock_minimo, costo_compra, precio_venta
+                   stock_actual, stock_minimo, costo_compra, precio_venta, iva_tipo
             FROM Inventario
             WHERE usuario_id = :uid {cond}
             ORDER BY nombre_producto ASC LIMIT :limit
@@ -140,11 +150,12 @@ with tab_stock:
             if len(df_inv) == LIMITE_FILAS and total_productos > LIMITE_FILAS:
                 st.caption(f"⚠️ Mostrando los primeros {LIMITE_FILAS} de {total_productos} productos.")
 
-            st.caption("Edita directamente en la tabla y haz clic en guardar. Stock acepta decimales (kg, metros, etc.)")
+            st.caption("Edita directamente en la tabla y haz clic en guardar. Stock acepta decimales (kg, metros, etc.) y puedes cambiar el tipo de IVA de cada producto.")
 
             df_show = df_inv.copy()
             df_show['codigo_ref'] = df_show['codigo_ref'].fillna("").astype(str).replace("None", "")
             df_show['unidad_medida'] = df_show['unidad_medida'].fillna("Unidad")
+            df_show['iva_tipo'] = df_show['iva_tipo'].apply(lambda v: v if v in IVA_OPCIONES else "Excluido")
 
             df_editado = st.data_editor(
                 df_show,
@@ -172,7 +183,12 @@ with tab_stock:
                         format="%.3f"
                     ),
                     "costo_compra": st.column_config.NumberColumn("Costo Compra ($)", format="$%d"),
-                    "precio_venta": st.column_config.NumberColumn("Precio Venta ($)", format="$%d")
+                    "precio_venta": st.column_config.NumberColumn("Precio Venta ($)", format="$%d"),
+                    "iva_tipo": st.column_config.SelectboxColumn(
+                        "Impuesto (IVA)",
+                        options=IVA_OPCIONES,
+                        help="Tipo de IVA de este producto. Ej: 'Excluido' para el aceite, 'IVA 19%' para un repuesto gravado."
+                    ),
                 },
                 key=f"editor_inv_{busqueda}"
             )
@@ -186,7 +202,8 @@ with tab_stock:
                                 SET nombre_producto = :nom, codigo_ref = :ref,
                                     unidad_medida = :um,
                                     stock_actual = :st_act, stock_minimo = :st_min,
-                                    costo_compra = :costo, precio_venta = :pvp
+                                    costo_compra = :costo, precio_venta = :pvp,
+                                    iva_tipo = :iva_tipo
                                 WHERE id = :id AND usuario_id = :uid
                             """), {
                                 "nom": row['nombre_producto'],
@@ -196,6 +213,7 @@ with tab_stock:
                                 "st_min": float(row['stock_minimo']),
                                 "costo": float(row['costo_compra']),
                                 "pvp": float(row['precio_venta']),
+                                "iva_tipo": row['iva_tipo'],
                                 "id": int(row['id']),
                                 "uid": user_id
                             })
@@ -223,6 +241,12 @@ with tab_nuevo:
             )
             unidad_p = st.selectbox("Unidad de Medida", options=UNIDADES,
                                     help="Selecciona cómo se mide/vende este producto")
+            iva_tipo_p = st.selectbox(
+                "Impuesto (IVA) de este producto",
+                options=IVA_OPCIONES,
+                index=IVA_OPCIONES.index(IVA_TIPO_DEFAULT),
+                help="Ej: 'Excluido' para aceite u otros exentos, 'IVA 19%' para un repuesto gravado."
+            )
             # Hint según unidad seleccionada
             hints = {
                 "kg": "Ej: 2.5 kg de puntillas",
@@ -266,17 +290,18 @@ with tab_nuevo:
                         conn_ins.execute(text("""
                             INSERT INTO Inventario
                             (usuario_id, nombre_producto, codigo_ref, unidad_medida,
-                             stock_actual, stock_minimo, costo_compra, precio_venta)
-                            VALUES (:uid, :nom, :ref, :um, :stk, :stk_min, :costo, :pvp)
+                             stock_actual, stock_minimo, costo_compra, precio_venta, iva_tipo)
+                            VALUES (:uid, :nom, :ref, :um, :stk, :stk_min, :costo, :pvp, :iva_tipo)
                         """), {
                             "uid": user_id, "nom": nom_p,
                             "ref": ref_p or None, "um": unidad_p,
                             "stk": float(stk_p), "stk_min": float(stk_min_p),
-                            "costo": float(costo_p), "pvp": float(venta_p)
+                            "costo": float(costo_p), "pvp": float(venta_p),
+                            "iva_tipo": iva_tipo_p
                         })
                     obtener_metricas_inventario.clear()
                     invalidar_cache_inventario()
-                    st.success(f"✅ '{nom_p}' registrado — {formato_cant(stk_p, unidad_p)} en stock a {formato_cop(venta_p)}/{unidad_p}.")
+                    st.success(f"✅ '{nom_p}' registrado — {formato_cant(stk_p, unidad_p)} en stock a {formato_cop(venta_p)}/{unidad_p} ({iva_tipo_p}).")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error al guardar producto: {e}")
@@ -413,7 +438,6 @@ with tab_entradas:
                                           key=f"um_t_{i}")
                     st.session_state.items_entrada_taller[i]["unidad_medida"] = um_sel
                 with col_f3:
-                    # --- FIX: separar en dos ramas para no mezclar int y float ---
                     es_decimal = um_sel in ["kg", "g", "lb", "m", "cm", "vara", "pie",
                                             "L", "mL", "galón", "m²", "m³"]
                     if es_decimal:
@@ -433,7 +457,6 @@ with tab_entradas:
                             key=f"cant_t_{i}"
                         )
                     st.session_state.items_entrada_taller[i]["cantidad"] = float(cant)
-                    # --- FIN FIX ---
                 with col_f4:
                     costo = st.number_input(f"Costo/$/{um_sel}", min_value=0.0,
                                             value=float(item.get("costo", 0)),
@@ -446,7 +469,7 @@ with tab_entradas:
                 if producto_match is not None:
                     col_e1, col_e2 = st.columns(2)
                     with col_e1:
-                        st.caption(f"PVP actual: {formato_cop(producto_match['precio_venta'])}/{producto_match.get('unidad_medida','Unidad')}")
+                        st.caption(f"PVP actual: {formato_cop(producto_match['precio_venta'])}/{producto_match.get('unidad_medida','Unidad')} · IVA actual: {producto_match.get('iva_tipo') or 'Excluido'}")
                         upd = st.checkbox("Actualizar precio de venta", key=f"upd_t_{i}")
                     with col_e2:
                         pvp = st.number_input("Nuevo PVP ($)", min_value=0.0,
@@ -457,7 +480,7 @@ with tab_entradas:
                     st.session_state.items_entrada_taller[i]["producto_id"] = int(producto_match['id'])
                     st.session_state.items_entrada_taller[i]["es_nuevo"] = False
                 else:
-                    col_n1, col_n2 = st.columns(2)
+                    col_n1, col_n2, col_n3 = st.columns(3)
                     with col_n1:
                         pvp_nuevo = st.number_input(f"Precio venta ($/{um_sel}) *",
                                                      min_value=0.0,
@@ -469,6 +492,13 @@ with tab_entradas:
                                                  placeholder="Escanea o escribe",
                                                  key=f"ref_t_{i}")
                         st.session_state.items_entrada_taller[i]["codigo_ref"] = cod_ref
+                    with col_n3:
+                        iva_nuevo_t = st.selectbox(
+                            "Impuesto (IVA)", options=IVA_OPCIONES,
+                            index=IVA_OPCIONES.index(IVA_TIPO_DEFAULT),
+                            key=f"iva_t_{i}"
+                        )
+                        st.session_state.items_entrada_taller[i]["iva_tipo"] = iva_nuevo_t
                     st.session_state.items_entrada_taller[i]["es_nuevo"] = True
                     st.session_state.items_entrada_taller[i]["producto_id"] = None
 
@@ -504,16 +534,19 @@ with tab_entradas:
                             cod_ref = item.get("codigo_ref") or None
 
                             if item.get("es_nuevo") or not pid:
+                                iva_tipo_nuevo = item.get("iva_tipo", IVA_TIPO_DEFAULT)
                                 conn.execute(text("""
                                     INSERT INTO Inventario
                                     (usuario_id, nombre_producto, codigo_ref, unidad_medida,
-                                     stock_actual, stock_minimo, costo_compra, precio_venta)
-                                    VALUES (:uid, :nom, :ref, :um, :stk, 1, :costo, :pvp)
+                                     stock_actual, stock_minimo, costo_compra, precio_venta, iva_tipo)
+                                    VALUES (:uid, :nom, :ref, :um, :stk, 1, :costo, :pvp, :iva_tipo)
                                 """), {"uid": user_id, "nom": item["nombre"],
                                        "ref": cod_ref, "um": um,
-                                       "stk": cantidad, "costo": costo, "pvp": pvp})
+                                       "stk": cantidad, "costo": costo, "pvp": pvp,
+                                       "iva_tipo": iva_tipo_nuevo})
                                 nuevos += 1
                             else:
+                                # No se sobreescribe el iva_tipo existente del producto al reabastecer.
                                 conn.execute(text("""
                                     UPDATE Inventario
                                     SET stock_actual = stock_actual + :cant,
