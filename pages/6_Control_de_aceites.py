@@ -32,6 +32,11 @@ if "auth" not in st.session_state:
 
 if not st.session_state.auth["logged"]:
     st.warning("Debes iniciar sesión en la página principal para acceder a este módulo.")
+    st.stop()}
+
+# Bloqueo de rol: los operarios de Patio solo tienen acceso a Recepción.
+if st.session_state.auth.get("rol") == "patio":
+    st.warning("🔒 Tu usuario solo tiene acceso al módulo de Recepción de Vehículos.")
     st.stop()
 
 engine = obtener_conexion()
