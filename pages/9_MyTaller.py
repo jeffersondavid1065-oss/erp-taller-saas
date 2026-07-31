@@ -4,6 +4,7 @@ import uuid
 import bcrypt
 from sqlalchemy import text
 from db import obtener_conexion
+from pdf_utils import IVA_OPCIONES
 
 st.set_page_config(page_title="Configuración del Taller", layout="wide")
 
@@ -53,7 +54,8 @@ with engine.connect() as conn:
     datos = conn.execute(
         text("""
             SELECT nombre_taller, nombre_dueno, email, logo_path,
-                   iva_activo, iva_porcentaje, iva_incluido
+                   iva_activo, iva_incluido,
+                   iva_tipo_default_mano_obra, iva_tipo_default_repuestos
             FROM Usuarios WHERE id = :uid
         """),
         {"uid": user_id}
@@ -64,8 +66,9 @@ dueno_actual     = datos[1] if datos else ""
 email_actual     = datos[2] if datos else ""
 logo_path_actual = datos[3] if datos else None
 iva_activo_actual      = bool(datos[4]) if datos and datos[4] is not None else False
-iva_porcentaje_actual  = float(datos[5]) if datos and datos[5] is not None else 19.0
-iva_incluido_actual    = bool(datos[6]) if datos and datos[6] is not None else False
+iva_incluido_actual    = bool(datos[5]) if datos and datos[5] is not None else False
+iva_tipo_mo_actual     = datos[6] if datos and datos[6] in IVA_OPCIONES else "Excluido"
+iva_tipo_rep_actual    = datos[7] if datos and datos[7] in IVA_OPCIONES else "Excluido"
 
 # Carpeta de logos
 LOGOS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logos")
@@ -188,30 +191,44 @@ with tab_iva:
         iva_activo_input = st.checkbox(
             "Este taller cobra IVA",
             value=iva_activo_actual,
-            help="Si lo activas, se calculará y mostrará el desglose de IVA en las facturas."
+            help="Si lo desactivas, ningún ítem paga IVA sin importar lo demás (todo se factura como 'Excluido')."
         )
 
-        col_iva1, col_iva2 = st.columns(2)
-        with col_iva1:
-            iva_porcentaje_input = st.number_input(
-                "Tarifa de IVA (%)",
-                min_value=0.0, max_value=100.0, step=0.5,
-                value=iva_porcentaje_actual,
-                help="En Colombia lo más común es 19% (tarifa general) o 5% (tarifa reducida)."
-            )
-        with col_iva2:
-            modo_iva_input = st.radio(
-                "¿Cómo manejas el IVA en tus precios?",
-                ["El IVA se suma aparte (encima del precio)", "El precio ya incluye el IVA"],
-                index=1 if iva_incluido_actual else 0,
-                help="Si tus precios ya están calculados con IVA metido, elige la segunda opción."
-            )
+        modo_iva_input = st.radio(
+            "¿Cómo manejas el IVA en tus precios?",
+            ["El IVA se suma aparte (encima del precio)", "El precio ya incluye el IVA"],
+            index=1 if iva_incluido_actual else 0,
+            help="Si tus precios ya están calculados con IVA metido, elige la segunda opción."
+        )
         iva_incluido_input = (modo_iva_input == "El precio ya incluye el IVA")
+
+        st.markdown("---")
+        st.markdown("**Tipo de IVA por defecto para cada categoría**")
+        st.caption(
+            "Se aplica automáticamente a los ítems que NO tengan un tipo de impuesto elegido "
+            "manualmente al agregarlos. En Recepción y Expediente siempre puedes elegir un tipo "
+            "distinto para un ítem puntual (ej. una mano de obra exenta puntual), y eso tiene "
+            "prioridad sobre este default."
+        )
+        col_cat1, col_cat2 = st.columns(2)
+        with col_cat1:
+            iva_tipo_mo_input = st.selectbox(
+                "Mano de Obra",
+                options=IVA_OPCIONES,
+                index=IVA_OPCIONES.index(iva_tipo_mo_actual)
+            )
+        with col_cat2:
+            iva_tipo_rep_input = st.selectbox(
+                "Repuestos / Suministros",
+                options=IVA_OPCIONES,
+                index=IVA_OPCIONES.index(iva_tipo_rep_actual)
+            )
 
         st.markdown("")
         st.caption(
-            "💡 También puedes marcar excepciones de IVA para productos o ítems específicos "
-            "(ej. servicios exentos) desde Inventario o al agregar ítems en el Expediente de una orden."
+            "💡 Cada producto de Inventario también tiene su propio tipo de IVA editable "
+            "(por ejemplo, aceite exento vs. un repuesto con IVA 19%). Ese tipo se hereda "
+            "automáticamente cuando tomas el producto del almacén en una orden."
         )
 
         if st.form_submit_button("Guardar Configuración de IVA", type="primary"):
@@ -220,13 +237,16 @@ with tab_iva:
                     conn_iva.execute(
                         text("""
                             UPDATE Usuarios
-                            SET iva_activo = :activo, iva_porcentaje = :pct, iva_incluido = :incl
+                            SET iva_activo = :activo, iva_incluido = :incl,
+                                iva_tipo_default_mano_obra = :tipo_mo,
+                                iva_tipo_default_repuestos = :tipo_rep
                             WHERE id = :uid
                         """),
                         {
                             "activo": iva_activo_input,
-                            "pct": float(iva_porcentaje_input),
                             "incl": iva_incluido_input,
+                            "tipo_mo": iva_tipo_mo_input,
+                            "tipo_rep": iva_tipo_rep_input,
                             "uid": user_id,
                         }
                     )
@@ -237,9 +257,12 @@ with tab_iva:
 
     if iva_activo_actual:
         modo_txt = "incluido en el precio" if iva_incluido_actual else "se suma aparte al precio"
-        st.info(f"**Estado actual:** IVA activo al **{iva_porcentaje_actual:g}%**, {modo_txt}.")
+        st.info(f"**Estado actual:** IVA activo, {modo_txt}.")
+        col_est1, col_est2 = st.columns(2)
+        col_est1.metric("Mano de Obra (default)", iva_tipo_mo_actual)
+        col_est2.metric("Repuestos / Suministros (default)", iva_tipo_rep_actual)
     else:
-        st.info("**Estado actual:** este taller NO cobra IVA.")
+        st.info("**Estado actual:** este taller NO cobra IVA (todos los ítems se facturan como 'Excluido').")
 
 # ==========================================
 # TAB 4: OPERARIOS DE PATIO
