@@ -63,12 +63,13 @@ def obtener_catalogos(uid):
 def obtener_inventario_activo(uid):
     engine = obtener_conexion()
     with engine.connect() as conn:
-        # IMPORTANTE: se incluye codigo_ref como sexta columna (índice 5),
-        # porque 1_Recepcion_Vehiculos.py lo usa (p[5]) para la búsqueda por
-        # código de barras. Si esta columna se quita, esa búsqueda vuelve a
-        # romper con IndexError.
+        # IMPORTANTE: se incluye codigo_ref (índice 5) porque
+        # 1_Recepcion_Vehiculos.py lo usa (p[5]) para la búsqueda por código
+        # de barras, e iva_tipo (índice 6) porque los repuestos tomados del
+        # almacén heredan directamente el tipo de IVA configurado en el
+        # producto. Si se quita alguna, esas partes vuelven a romper.
         prods = conn.execute(
-            text("SELECT id, nombre_producto, stock_actual, costo_compra, precio_venta, codigo_ref "
+            text("SELECT id, nombre_producto, stock_actual, costo_compra, precio_venta, codigo_ref, iva_tipo "
                  "FROM Inventario WHERE usuario_id = :uid AND stock_actual > 0 ORDER BY nombre_producto ASC"),
             {"uid": uid}
         ).fetchall()
