@@ -137,7 +137,11 @@ with tab1:
 
         valor_descontado = float(venta_mo) * (float(porcentaje_ret) / 100.0)
         neto_mo = max(0.0, float(venta_mo) - valor_descontado)
-        st.caption(f"Descuento estimado: {formato_cop(valor_descontado)} | Valor Neto para Nomina: **{formato_cop(neto_mo)}**")
+        # Streamlit interpreta un par de "$" en markdown/caption como delimitadores
+        # de LaTeX; se escapan para que "$" se muestre literal en vez de romper el render.
+        monto_descontado = formato_cop(valor_descontado).replace("$", "\\$")
+        monto_neto = formato_cop(neto_mo).replace("$", "\\$")
+        st.caption(f"Descuento estimado: {monto_descontado} | Valor Neto para Nomina: **{monto_neto}**")
 
         st.markdown("")
         if st.button("Agregar Trabajo", use_container_width=True):
