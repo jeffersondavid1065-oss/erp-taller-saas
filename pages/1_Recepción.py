@@ -51,84 +51,11 @@ def formato_cop(numero):
     return f"${float(numero):,.0f}".replace(",", ".")
 
 # ================================================================================
-# VISTA SIMPLIFICADA PARA OPERARIOS DE PATIO
-# Solo pueden registrar el ingreso del vehiculo (placa + cliente). No ven costos,
-# comisiones, ni pueden asignar trabajos/repuestos: eso lo hace el taller despues
-# desde Expediente. La orden queda creada con estado "Cotizar".
-# ================================================================================
-if es_patio:
-    operario_nombre = st.session_state.auth.get("operario_nombre", "Operario")
-
-    st.title("Recepción de Vehículos")
-    st.markdown(f"Operario: **{operario_nombre}** | Taller: **{nombre_taller}**")
-    st.markdown("---")
-
-    engine = obtener_conexion()
-    empresas, _ = obtener_catalogos(user_id)
-
-    if not empresas:
-        st.warning("Tu taller aún no tiene empresas/clientes registrados en la base de datos.")
-        st.info("Pide al administrador que registre al menos 1 cliente en el Directorio antes de recepcionar vehículos.")
-        st.stop()
-
-    dict_empresas = {f"{e[1]}": e[0] for e in empresas}
-    opciones_empresas = ["-- Seleccionar Empresa --"] + list(dict_empresas.keys())
-
-    with st.container(border=True):
-        st.subheader("Datos del Vehículo")
-        col1, col2 = st.columns(2)
-        with col1:
-            placa_patio = st.text_input("Placa del Vehículo").upper().strip()
-        with col2:
-            empresa_sel_patio = st.selectbox("Empresa / Cliente", options=opciones_empresas)
-
-        st.caption(
-            "El vehículo ingresará con estado **'Cotizar'**. El taller se encargará de asignar "
-            "los trabajos, repuestos y precios más adelante."
-        )
-
-        st.markdown("")
-        if st.button("✅ Registrar Ingreso del Vehículo", type="primary", use_container_width=True):
-            if not placa_patio:
-                st.error("Ingresa la placa del vehículo.")
-            elif empresa_sel_patio == "-- Seleccionar Empresa --":
-                st.error("Selecciona una empresa/cliente válida.")
-            else:
-                try:
-                    empresa_id = dict_empresas[empresa_sel_patio]
-                    operario_id = st.session_state.auth.get("operario_id")
-                    with engine.begin() as conn:
-                        is_sqlite = "sqlite" in str(engine.url)
-
-                        if is_sqlite:
-                            cursor = conn.execute(
-                                text("""
-                                    INSERT INTO Hojas_Trabajo (usuario_id, placa, empresa_id, estado, creado_por_operario_id)
-                                    VALUES (:uid, :placa, :empresa_id, 'Cotizar', :oid)
-                                """),
-                                {"uid": user_id, "placa": placa_patio, "empresa_id": empresa_id, "oid": operario_id}
-                            )
-                            hoja_id = cursor.lastrowid
-                        else:
-                            resultado_hoja = conn.execute(
-                                text("""
-                                    INSERT INTO Hojas_Trabajo (usuario_id, placa, empresa_id, estado, creado_por_operario_id)
-                                    VALUES (:uid, :placa, :empresa_id, 'Cotizar', :oid) RETURNING id
-                                """),
-                                {"uid": user_id, "placa": placa_patio, "empresa_id": empresa_id, "oid": operario_id}
-                            )
-                            hoja_id = resultado_hoja.scalar()
-
-                    invalidar_cache_ordenes()
-                    st.success(f"✅ Vehículo **{placa_patio}** registrado con éxito. N° de Orden: **#{hoja_id}**")
-                    st.info("Informa este número de orden al cliente o anótalo para seguimiento.")
-                except Exception as e:
-                    st.error(f"Error al registrar el vehículo: {e}")
-
-    st.stop()
-
-# ================================================================================
-# VISTA COMPLETA PARA ADMIN (flujo original, con selección de tipo de IVA)
+# Los operarios de Patio comparten el mismo flujo de Recepcion que el
+# administrador (agregar trabajos, mecanico, repuestos y precios, dejando
+# el precio en $0 si aun no se conoce para que el administrador lo complete
+# despues desde el Tablero de Pendientes). Su acceso al resto de modulos ya
+# esta bloqueado en cada pagina segun el rol "patio".
 # ================================================================================
 if 'carrito_items' not in st.session_state:
     st.session_state.carrito_items = []
@@ -147,15 +74,22 @@ IVA_TIPO_DEFAULT_MO = fila_cfg[0] if fila_cfg and fila_cfg[0] in IVA_OPCIONES el
 IVA_TIPO_DEFAULT_REP = fila_cfg[1] if fila_cfg and fila_cfg[1] in IVA_OPCIONES else "Excluido"
 
 st.title("Recepcion y Asignacion de Trabajos")
-st.markdown(f"Registrando ordenes para: **{nombre_taller}**")
+if es_patio:
+    operario_nombre = st.session_state.auth.get("operario_nombre", "Operario")
+    st.markdown(f"Operario: **{operario_nombre}** | Taller: **{nombre_taller}**")
+else:
+    st.markdown(f"Registrando ordenes para: **{nombre_taller}**")
 st.markdown("---")
 
 empresas, mecanicos = obtener_catalogos(user_id)
 
-if not empresas or not mecanicos:
-    st.warning("Tu taller aun no tiene empresas o mecanicos registrados en la base de datos.")
-    st.info("Debes registrar al menos 1 mecanico y 1 cliente para poder asignar trabajos.")
+if not empresas:
+    st.warning("Tu taller aun no tiene empresas o clientes registrados en la base de datos.")
+    st.info("Debes registrar al menos 1 cliente en el Directorio para poder recepcionar vehiculos.")
     st.stop()
+
+if not mecanicos:
+    st.info("💡 Aun no tienes mecanicos registrados: podras recepcionar el vehiculo y agregar repuestos, pero no podras asignar mano de obra hasta registrar al menos un mecanico.")
 
 dict_empresas = {f"{e[1]}": e[0] for e in empresas}
 dict_mecanicos = {f"{m[1]}": m[0] for m in mecanicos}
@@ -446,20 +380,21 @@ if st.session_state.carrito_items:
             else:
                 try:
                     empresa_id = dict_empresas[empresa_sel]
+                    operario_id = st.session_state.auth.get("operario_id") if es_patio else None
                     engine = obtener_conexion()
                     with engine.begin() as conn:
                         is_sqlite = "sqlite" in str(engine.url)
 
                         if is_sqlite:
                             cursor = conn.execute(
-                                text("INSERT INTO Hojas_Trabajo (usuario_id, placa, empresa_id, estado) VALUES (:uid, :placa, :empresa_id, :estado)"),
-                                {"uid": user_id, "placa": placa, "empresa_id": empresa_id, "estado": estado}
+                                text("INSERT INTO Hojas_Trabajo (usuario_id, placa, empresa_id, estado, creado_por_operario_id) VALUES (:uid, :placa, :empresa_id, :estado, :oid)"),
+                                {"uid": user_id, "placa": placa, "empresa_id": empresa_id, "estado": estado, "oid": operario_id}
                             )
                             hoja_id = cursor.lastrowid
                         else:
                             resultado_hoja = conn.execute(
-                                text("INSERT INTO Hojas_Trabajo (usuario_id, placa, empresa_id, estado) VALUES (:uid, :placa, :empresa_id, :estado) RETURNING id"),
-                                {"uid": user_id, "placa": placa, "empresa_id": empresa_id, "estado": estado}
+                                text("INSERT INTO Hojas_Trabajo (usuario_id, placa, empresa_id, estado, creado_por_operario_id) VALUES (:uid, :placa, :empresa_id, :estado, :oid) RETURNING id"),
+                                {"uid": user_id, "placa": placa, "empresa_id": empresa_id, "estado": estado, "oid": operario_id}
                             )
                             hoja_id = resultado_hoja.scalar()
 

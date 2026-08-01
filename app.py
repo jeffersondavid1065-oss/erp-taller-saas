@@ -195,6 +195,8 @@ if not is_logged:
 
                         if credenciales_ok:
                             fecha_limite = user[3]
+                            if isinstance(fecha_limite, str):
+                                fecha_limite = datetime.strptime(fecha_limite, "%Y-%m-%d").date()
                             hoy = date.today()
 
                             if fecha_limite is None or fecha_limite < hoy:
@@ -355,7 +357,7 @@ elif st.session_state.auth.get("rol") == "patio":
             st.markdown("")
             if st.button("➡️ Ir a Recepción de Vehículos", type="primary", use_container_width=True):
                 try:
-                    st.switch_page("pages/1_Recepcion_Vehiculos.py")
+                    st.switch_page("pages/1_Recepción.py")
                 except Exception:
                     st.info("Abre el módulo **'Recepción'** desde el menú lateral.")
 
