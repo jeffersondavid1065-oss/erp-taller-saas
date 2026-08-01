@@ -39,7 +39,6 @@ if not st.session_state.auth["logged"]:
     st.warning("Debes iniciar sesión en la página principal para acceder a este módulo.")
     st.stop()
 
-# Bloqueo de rol: los operarios de Patio solo tienen acceso a Recepción.
 if st.session_state.auth.get("rol") == "patio":
     st.warning("🔒 Tu usuario solo tiene acceso al módulo de Recepción de Vehículos.")
     st.stop()
@@ -52,8 +51,6 @@ UNIDADES = ["Unidad", "kg", "g", "lb", "m", "cm", "vara", "pie",
             "L", "mL", "galón", "Docena", "Caja", "Bulto", "Rollo",
             "Paquete", "m²", "m³"]
 
-# Default de IVA para productos nuevos: el configurado para "Repuestos" en
-# Configuración del Taller. Si el taller aún no lo ha configurado, "Excluido".
 with engine.connect() as conn_cfg:
     fila_cfg = conn_cfg.execute(
         text("SELECT iva_tipo_default_repuestos FROM Usuarios WHERE id = :uid"),
@@ -65,12 +62,19 @@ def formato_cop(numero):
     return f"${float(numero):,.0f}".replace(",", ".")
 
 def formato_cant(numero, unidad="Unidad"):
-    """Formatea cantidades con decimales si la unidad lo requiere."""
     unidades_decimales = ["kg", "g", "lb", "m", "cm", "vara", "pie",
                           "L", "mL", "galón", "m²", "m³"]
     if unidad in unidades_decimales:
         return f"{float(numero):.3f} {unidad}".rstrip('0').rstrip('.')
     return f"{int(numero)} {unidad}"
+
+def calcular_precio_con_iva(precio, iva_tipo):
+    precio = float(precio)
+    if iva_tipo == "IVA 19%":
+        return round(precio * 1.19, 0)
+    elif iva_tipo == "IVA 5%":
+        return round(precio * 1.05, 0)
+    return precio  # Excluido o Exento
 
 LIMITE_FILAS = 100
 
@@ -150,18 +154,28 @@ with tab_stock:
             if len(df_inv) == LIMITE_FILAS and total_productos > LIMITE_FILAS:
                 st.caption(f"⚠️ Mostrando los primeros {LIMITE_FILAS} de {total_productos} productos.")
 
-            st.caption("Edita directamente en la tabla y haz clic en guardar. Stock acepta decimales (kg, metros, etc.) y puedes cambiar el tipo de IVA de cada producto.")
+            st.caption("Edita directamente en la tabla y haz clic en guardar.")
 
             df_show = df_inv.copy()
             df_show['codigo_ref'] = df_show['codigo_ref'].fillna("").astype(str).replace("None", "")
             df_show['unidad_medida'] = df_show['unidad_medida'].fillna("Unidad")
             df_show['iva_tipo'] = df_show['iva_tipo'].apply(lambda v: v if v in IVA_OPCIONES else "Excluido")
 
+            # Columnas calculadas (solo lectura)
+            df_show['precio_con_iva'] = df_show.apply(
+                lambda r: calcular_precio_con_iva(r['precio_venta'], r['iva_tipo']), axis=1
+            )
+            df_show['ganancia'] = (df_show['precio_venta'] - df_show['costo_compra']).round(0)
+            df_show['pct_ganancia'] = df_show.apply(
+                lambda r: round((r['ganancia'] / r['costo_compra']) * 100, 1)
+                if r['costo_compra'] > 0 else 0.0, axis=1
+            )
+
             df_editado = st.data_editor(
                 df_show,
                 hide_index=True,
                 use_container_width=True,
-                disabled=["id"],
+                disabled=["id", "precio_con_iva", "ganancia", "pct_ganancia"],
                 column_config={
                     "id": None,
                     "nombre_producto": "Producto / Repuesto",
@@ -170,24 +184,23 @@ with tab_stock:
                         help="Escanea el código de barras aquí"
                     ),
                     "unidad_medida": st.column_config.SelectboxColumn(
-                        "Unidad",
-                        options=UNIDADES,
+                        "Unidad", options=UNIDADES,
                         help="Ej: kg para puntillas, m para cable, Unidad para filtros"
                     ),
                     "stock_actual": st.column_config.NumberColumn(
-                        "Stock Actual", min_value=0, step=0.001,
-                        format="%.3f"
+                        "Stock Actual", min_value=0, step=0.001, format="%.3f"
                     ),
                     "stock_minimo": st.column_config.NumberColumn(
-                        "Stock Mínimo", min_value=0, step=0.001,
-                        format="%.3f"
+                        "Stock Mínimo", min_value=0, step=0.001, format="%.3f"
                     ),
-                    "costo_compra": st.column_config.NumberColumn("Costo Compra ($)", format="$%d"),
-                    "precio_venta": st.column_config.NumberColumn("Precio Venta ($)", format="$%d"),
+                    "costo_compra": st.column_config.NumberColumn("Costo ($)", format="$%d"),
+                    "precio_venta": st.column_config.NumberColumn("Precio sin IVA ($)", format="$%d"),
+                    "precio_con_iva": st.column_config.NumberColumn("Precio con IVA ($)", format="$%d"),
+                    "ganancia": st.column_config.NumberColumn("Ganancia ($)", format="$%d"),
+                    "pct_ganancia": st.column_config.NumberColumn("% Ganancia", format="%.1f%%"),
                     "iva_tipo": st.column_config.SelectboxColumn(
-                        "Impuesto (IVA)",
-                        options=IVA_OPCIONES,
-                        help="Tipo de IVA de este producto. Ej: 'Excluido' para el aceite, 'IVA 19%' para un repuesto gravado."
+                        "Impuesto (IVA)", options=IVA_OPCIONES,
+                        help="Tipo de IVA de este producto."
                     ),
                 },
                 key=f"editor_inv_{busqueda}"
@@ -247,7 +260,6 @@ with tab_nuevo:
                 index=IVA_OPCIONES.index(IVA_TIPO_DEFAULT),
                 help="Ej: 'Excluido' para aceite u otros exentos, 'IVA 19%' para un repuesto gravado."
             )
-            # Hint según unidad seleccionada
             hints = {
                 "kg": "Ej: 2.5 kg de puntillas",
                 "m": "Ej: 3.5 m de cable eléctrico",
@@ -259,7 +271,6 @@ with tab_nuevo:
                 st.caption(f"💡 {hints[unidad_p]}")
 
         with col_p2:
-            # Stock con decimales para unidades que lo requieren
             unidades_dec = ["kg", "g", "lb", "m", "cm", "vara", "pie", "L", "mL", "galón", "m²", "m³"]
             if unidad_p in unidades_dec:
                 stk_p = st.number_input(f"Cantidad Inicial en Stock ({unidad_p})",
@@ -281,7 +292,10 @@ with tab_nuevo:
                 ganancia = venta_p - costo_p
                 pct = (ganancia / costo_p) * 100
                 color = "🟢" if pct > 0 else "🔴"
+                precio_iva = calcular_precio_con_iva(venta_p, iva_tipo_p)
                 st.caption(f"{color} Ganancia: {formato_cop(ganancia)} ({pct:.1f}%)")
+                if precio_iva != venta_p:
+                    st.caption(f"Precio con {iva_tipo_p}: {formato_cop(precio_iva)}")
 
         if st.form_submit_button("Guardar en Inventario", type="primary"):
             if nom_p and venta_p > 0:
@@ -430,7 +444,6 @@ with tab_entradas:
                     nom = st.text_input("Nombre del repuesto", value=nombre_item, key=f"nom_t_{i}")
                     st.session_state.items_entrada_taller[i]["nombre"] = nom
                 with col_f2:
-                    # Unidad del match o selección nueva
                     um_actual = producto_match['unidad_medida'] if producto_match is not None \
                                 else item.get("unidad_medida", "Unidad")
                     um_sel = st.selectbox("Unidad", UNIDADES,
@@ -441,21 +454,13 @@ with tab_entradas:
                     es_decimal = um_sel in ["kg", "g", "lb", "m", "cm", "vara", "pie",
                                             "L", "mL", "galón", "m²", "m³"]
                     if es_decimal:
-                        cant = st.number_input(
-                            f"Cant. ({um_sel})",
-                            min_value=0.0,
-                            value=float(item.get("cantidad", 1)),
-                            step=0.5,
-                            key=f"cant_t_{i}"
-                        )
+                        cant = st.number_input(f"Cant. ({um_sel})", min_value=0.0,
+                                               value=float(item.get("cantidad", 1)),
+                                               step=0.5, key=f"cant_t_{i}")
                     else:
-                        cant = st.number_input(
-                            f"Cant. ({um_sel})",
-                            min_value=0,
-                            value=int(round(float(item.get("cantidad", 1)))),
-                            step=1,
-                            key=f"cant_t_{i}"
-                        )
+                        cant = st.number_input(f"Cant. ({um_sel})", min_value=0,
+                                               value=int(round(float(item.get("cantidad", 1)))),
+                                               step=1, key=f"cant_t_{i}")
                     st.session_state.items_entrada_taller[i]["cantidad"] = float(cant)
                 with col_f4:
                     costo = st.number_input(f"Costo/$/{um_sel}", min_value=0.0,
@@ -546,7 +551,6 @@ with tab_entradas:
                                        "iva_tipo": iva_tipo_nuevo})
                                 nuevos += 1
                             else:
-                                # No se sobreescribe el iva_tipo existente del producto al reabastecer.
                                 conn.execute(text("""
                                     UPDATE Inventario
                                     SET stock_actual = stock_actual + :cant,
