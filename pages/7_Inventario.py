@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import text
 from db import obtener_conexion, init_db
-from queries import invalidar_cache_inventario
+from queries import invalidar_cache_inventario, obtener_config_taller
 from pdf_utils import IVA_OPCIONES
 
 st.set_page_config(page_title="Inventario y Almacén", layout="wide")
@@ -51,12 +51,10 @@ UNIDADES = ["Unidad", "kg", "g", "lb", "m", "cm", "vara", "pie",
             "L", "mL", "galón", "Docena", "Caja", "Bulto", "Rollo",
             "Paquete", "m²", "m³"]
 
-with engine.connect() as conn_cfg:
-    fila_cfg = conn_cfg.execute(
-        text("SELECT iva_tipo_default_repuestos FROM Usuarios WHERE id = :uid"),
-        {"uid": user_id}
-    ).fetchone()
-IVA_TIPO_DEFAULT = fila_cfg[0] if fila_cfg and fila_cfg[0] in IVA_OPCIONES else "Excluido"
+# Config del taller cacheada (antes era una consulta cruda sin caché
+# repetida en cada rerun de esta página)
+_config_taller = obtener_config_taller(user_id)
+IVA_TIPO_DEFAULT = _config_taller[7] if _config_taller and _config_taller[7] in IVA_OPCIONES else "Excluido"
 
 def formato_cop(numero):
     return f"${float(numero):,.0f}".replace(",", ".")

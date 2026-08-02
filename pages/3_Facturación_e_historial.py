@@ -4,7 +4,7 @@ import math
 from datetime import datetime, timedelta
 from sqlalchemy import text
 from db import obtener_conexion, init_db
-from queries import obtener_catalogos, invalidar_cache_ordenes, invalidar_cache_inventario
+from queries import obtener_catalogos, obtener_config_taller, invalidar_cache_ordenes, invalidar_cache_inventario
 from io import BytesIO
 from pdf_utils import generar_pdf_orden_profesional, calcular_totales_orden, IVA_OPCIONES
 
@@ -77,20 +77,14 @@ def formato_cop(numero):
 # --------------------------------------------------------------------------------
 # CONFIGURACIÓN DE IVA DEL TALLER (config global, definida en Configuración)
 # --------------------------------------------------------------------------------
-with engine.connect() as conn_iva:
-    fila_iva = conn_iva.execute(
-        text("""
-            SELECT iva_activo, iva_incluido,
-                   iva_tipo_default_mano_obra, iva_tipo_default_repuestos
-            FROM Usuarios WHERE id = :uid
-        """),
-        {"uid": user_id}
-    ).fetchone()
+# Config del taller cacheada (antes era una consulta cruda sin caché
+# repetida en cada rerun de esta página)
+_config_taller = obtener_config_taller(user_id)
 
-IVA_ACTIVO = bool(fila_iva[0]) if fila_iva and fila_iva[0] is not None else False
-IVA_INCLUIDO = bool(fila_iva[1]) if fila_iva and fila_iva[1] is not None else False
-IVA_TIPO_DEFAULT_MO = fila_iva[2] if fila_iva and fila_iva[2] in IVA_OPCIONES else "Excluido"
-IVA_TIPO_DEFAULT_REP = fila_iva[3] if fila_iva and fila_iva[3] in IVA_OPCIONES else "Excluido"
+IVA_ACTIVO = bool(_config_taller[4]) if _config_taller and _config_taller[4] is not None else False
+IVA_INCLUIDO = bool(_config_taller[5]) if _config_taller and _config_taller[5] is not None else False
+IVA_TIPO_DEFAULT_MO = _config_taller[6] if _config_taller and _config_taller[6] in IVA_OPCIONES else "Excluido"
+IVA_TIPO_DEFAULT_REP = _config_taller[7] if _config_taller and _config_taller[7] in IVA_OPCIONES else "Excluido"
 
 st.title("Expediente de Orden y Facturación")
 st.markdown(f"Gestión de órdenes para: **{nombre_taller}**")

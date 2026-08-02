@@ -5,7 +5,7 @@ import hashlib
 import uuid
 from sqlalchemy import text
 from db import obtener_conexion, init_db
-from queries import obtener_metricas_dashboard
+from queries import obtener_metricas_dashboard, obtener_metricas_financieras
 from datetime import datetime, date
 
 # 1. CONFIGURACIÓN DE PÁGINA
@@ -389,36 +389,10 @@ else:
 
     total_activos, total_cotizar, total_ordenes_activas, total_empresas = obtener_metricas_dashboard(user_id)
 
-    # Calcular margen neto del mes actual
+    # Calcular margen neto del mes actual (cacheado, ttl=60s: antes eran dos
+    # consultas crudas sin caché que se repetían en cada rerun del dashboard)
     hoy = datetime.today()
-    with engine.connect() as conn:
-        # Ingresos del mes
-        ingresos_mes = conn.execute(
-            text("""
-                SELECT COALESCE(SUM(d.precio_venta), 0) as total
-                FROM Detalles_Orden d
-                JOIN Hojas_Trabajo h ON d.hoja_id = h.id
-                WHERE h.usuario_id = :uid AND h.estado = 'Facturado'
-                AND EXTRACT(YEAR FROM h.fecha_ingreso) = :año
-                AND EXTRACT(MONTH FROM h.fecha_ingreso) = :mes
-            """),
-            {"uid": user_id, "año": hoy.year, "mes": hoy.month}
-        ).scalar()
-        ingresos_mes = float(ingresos_mes) if ingresos_mes else 0
-
-        # Gastos del mes
-        gastos_mes = conn.execute(
-            text("""
-                SELECT COALESCE(SUM(monto), 0) as total
-                FROM Gastos
-                WHERE usuario_id = :uid
-                AND EXTRACT(YEAR FROM fecha) = :año
-                AND EXTRACT(MONTH FROM fecha) = :mes
-            """),
-            {"uid": user_id, "año": hoy.year, "mes": hoy.month}
-        ).scalar()
-        gastos_mes = float(gastos_mes) if gastos_mes else 0
-
+    ingresos_mes, gastos_mes = obtener_metricas_financieras(user_id, hoy.year, hoy.month)
     margen_neto = ingresos_mes - gastos_mes
 
     m1, m2, m3, m4 = st.columns(4)

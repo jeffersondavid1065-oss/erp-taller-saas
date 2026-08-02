@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import text
 from db import obtener_conexion, init_db
-from queries import obtener_catalogos, obtener_inventario_activo, invalidar_cache_ordenes, invalidar_cache_inventario
+from queries import obtener_catalogos, obtener_inventario_activo, obtener_config_taller, invalidar_cache_ordenes, invalidar_cache_inventario
 from pdf_utils import IVA_OPCIONES
 
 st.set_page_config(page_title="Recepcion de Vehiculos", layout="wide")
@@ -64,14 +64,11 @@ if 'carrito_items' not in st.session_state:
 if "limpiar_cod_rep" not in st.session_state:
     st.session_state.limpiar_cod_rep = False
 
-engine_iva = obtener_conexion()
-with engine_iva.connect() as conn_cfg:
-    fila_cfg = conn_cfg.execute(
-        text("SELECT iva_tipo_default_mano_obra, iva_tipo_default_repuestos FROM Usuarios WHERE id = :uid"),
-        {"uid": user_id}
-    ).fetchone()
-IVA_TIPO_DEFAULT_MO = fila_cfg[0] if fila_cfg and fila_cfg[0] in IVA_OPCIONES else "Excluido"
-IVA_TIPO_DEFAULT_REP = fila_cfg[1] if fila_cfg and fila_cfg[1] in IVA_OPCIONES else "Excluido"
+# Config del taller cacheada (antes era una consulta cruda sin caché
+# repetida en cada rerun de esta página)
+_config_taller = obtener_config_taller(user_id)
+IVA_TIPO_DEFAULT_MO = _config_taller[6] if _config_taller and _config_taller[6] in IVA_OPCIONES else "Excluido"
+IVA_TIPO_DEFAULT_REP = _config_taller[7] if _config_taller and _config_taller[7] in IVA_OPCIONES else "Excluido"
 
 st.title("Recepcion y Asignacion de Trabajos")
 if es_patio:

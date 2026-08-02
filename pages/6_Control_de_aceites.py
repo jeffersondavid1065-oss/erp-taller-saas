@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from sqlalchemy import text
 from db import obtener_conexion
-from queries import obtener_catalogos, obtener_mecanicos_activos, invalidar_cache_inventario
+from queries import obtener_catalogos, obtener_mecanicos_activos, invalidar_cache_inventario, obtener_metricas_financieras
 
 st.set_page_config(page_title="Control de Aceites y Flotas", layout="wide")
 
@@ -344,6 +344,7 @@ with tab_flota:
                             # (fechas y kilometraje actualizados).
                             invalidar_cache_inventario()
                             invalidar_cache_flota()
+                            obtener_metricas_financieras.clear()
                             st.success(f"Orden #{nueva_hoja_id} creada. Repuestos descontados y mano de obra sumada a {mec_sel}.")
                             st.rerun()
                         except Exception as e:

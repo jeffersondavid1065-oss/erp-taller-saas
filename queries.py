@@ -16,8 +16,10 @@ la función exacta que necesita invalidar tras una escritura, por ejemplo:
     ...
     obtener_vehiculos.clear()
 """
+import calendar
 import streamlit as st
 import pandas as pd
+from datetime import date
 from sqlalchemy import text
 from db import obtener_conexion
 
@@ -175,29 +177,30 @@ def obtener_gastos_filtrado(uid, fecha_inicio, fecha_fin, categoria_id=None):
 
 @st.cache_data(ttl=60)
 def obtener_metricas_financieras(uid, año, mes):
-    """Ingresos (órdenes facturadas) y gastos totales en un mes específico."""
+    """Ingresos (órdenes facturadas) y gastos totales en un mes específico.
+    Usa un rango de fechas en vez de EXTRACT(): EXTRACT(YEAR/MONTH FROM ...)
+    es sintaxis exclusiva de Postgres y rompe contra el fallback local a
+    SQLite (mismo ajuste aplicado en MyInv/obtener_metricas_mes)."""
     engine = obtener_conexion()
+    f_ini = date(año, mes, 1).strftime('%Y-%m-%d')
+    f_fin = date(año, mes, calendar.monthrange(año, mes)[1]).strftime('%Y-%m-%d')
     with engine.connect() as conn:
-        query = text("""
-            SELECT
-                COALESCE(SUM(CASE WHEN tipo='Ingresos' THEN monto ELSE 0 END), 0) as ingresos,
-                COALESCE(SUM(CASE WHEN tipo='Gastos' THEN monto ELSE 0 END), 0) as gastos
-            FROM (
-                SELECT SUM(d.precio_venta) as monto, 'Ingresos' as tipo, EXTRACT(YEAR FROM h.fecha_ingreso) as año, EXTRACT(MONTH FROM h.fecha_ingreso) as mes
-                FROM Hojas_Trabajo h
-                JOIN Detalles_Orden d ON d.hoja_id = h.id
-                WHERE h.usuario_id = :uid AND h.estado = 'Facturado'
-                GROUP BY año, mes
-                UNION ALL
-                SELECT SUM(monto) as monto, 'Gastos' as tipo, EXTRACT(YEAR FROM fecha) as año, EXTRACT(MONTH FROM fecha) as mes
-                FROM Gastos
-                WHERE usuario_id = :uid
-                GROUP BY año, mes
-            ) movimientos
-            WHERE año = :año AND mes = :mes
-        """)
-        row = conn.execute(query, {"uid": uid, "año": año, "mes": mes}).fetchone()
-    return row[0] if row else (0, 0)
+        ingresos = conn.execute(text("""
+            SELECT COALESCE(SUM(d.precio_venta), 0)
+            FROM Hojas_Trabajo h
+            JOIN Detalles_Orden d ON d.hoja_id = h.id
+            WHERE h.usuario_id = :uid AND h.estado = 'Facturado'
+            AND DATE(h.fecha_ingreso) >= :f_ini AND DATE(h.fecha_ingreso) <= :f_fin
+        """), {"uid": uid, "f_ini": f_ini, "f_fin": f_fin}).scalar()
+
+        gastos = conn.execute(text("""
+            SELECT COALESCE(SUM(monto), 0)
+            FROM Gastos
+            WHERE usuario_id = :uid
+            AND fecha >= :f_ini AND fecha <= :f_fin
+        """), {"uid": uid, "f_ini": f_ini, "f_fin": f_fin}).scalar()
+
+    return (float(ingresos) if ingresos else 0.0, float(gastos) if gastos else 0.0)
 
 
 @st.cache_data(ttl=30)
@@ -241,15 +244,64 @@ def invalidar_cache_directorio():
 def invalidar_cache_ordenes():
     """
     Llamar después de CUALQUIER escritura que cambie estado, precios o ítems
-    de una orden (Hojas_Trabajo / Detalles_Orden). Cubre Dashboard, Tablero
-    y la lista de pendientes por cotizar.
+    de una orden (Hojas_Trabajo / Detalles_Orden). Cubre Dashboard, Tablero,
+    la lista de pendientes por cotizar y los ingresos del mes (una orden que
+    pasa a o desde 'Facturado', o cuyos precios cambian, altera el total
+    facturado del mes).
     """
     obtener_metricas_dashboard.clear()
     obtener_ordenes_con_items_pendientes.clear()
     obtener_vehiculos.clear()
+    obtener_metricas_financieras.clear()
 
 
 def invalidar_cache_inventario():
     """Llamar además de invalidar_cache_ordenes() cuando la escritura también
     descuenta o modifica stock de Inventario."""
     obtener_inventario_activo.clear()
+
+
+@st.cache_data(ttl=120)
+def obtener_config_taller(uid):
+    """Config del taller (tabla Usuarios): datos de contacto, logo e IVA.
+    Centraliza una consulta que antes se repetía sin caché en Recepción,
+    Expediente, Inventario y Configuración del Taller — cada una la
+    disparaba de nuevo en cada rerun de página."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("""
+                SELECT nombre_taller, nombre_dueno, email, logo_path,
+                       iva_activo, iva_incluido,
+                       iva_tipo_default_mano_obra, iva_tipo_default_repuestos
+                FROM Usuarios WHERE id = :uid
+            """),
+            {"uid": uid}
+        ).fetchone()
+    return tuple(row) if row else None
+
+
+def invalidar_cache_config_taller():
+    """Llamar tras guardar el logo o la configuración de IVA en Configuración del Taller."""
+    obtener_config_taller.clear()
+
+
+@st.cache_data(ttl=30)
+def obtener_operarios_patio(uid):
+    """Operarios de patio del taller, para Configuración del Taller."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        return conn.execute(
+            text("""
+                SELECT id, nombre_operario, usuario_login, activo
+                FROM Operarios_Patio
+                WHERE usuario_id = :uid
+                ORDER BY nombre_operario ASC
+            """),
+            {"uid": uid}
+        ).fetchall()
+
+
+def invalidar_cache_operarios():
+    """Llamar tras crear, activar/desactivar o resetear la clave de un operario de patio."""
+    obtener_operarios_patio.clear()

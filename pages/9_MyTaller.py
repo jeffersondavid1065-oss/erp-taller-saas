@@ -5,6 +5,12 @@ import bcrypt
 from sqlalchemy import text
 from db import obtener_conexion
 from pdf_utils import IVA_OPCIONES
+from queries import (
+    obtener_config_taller,
+    invalidar_cache_config_taller,
+    obtener_operarios_patio,
+    invalidar_cache_operarios,
+)
 
 st.set_page_config(page_title="Configuración del Taller", layout="wide")
 
@@ -49,17 +55,9 @@ st.title("Configuración del Taller")
 st.markdown("Personaliza tu taller, datos de contacto, IVA, logotipo y operarios de patio.")
 st.markdown("---")
 
-# Cargar datos actuales del taller
-with engine.connect() as conn:
-    datos = conn.execute(
-        text("""
-            SELECT nombre_taller, nombre_dueno, email, logo_path,
-                   iva_activo, iva_incluido,
-                   iva_tipo_default_mano_obra, iva_tipo_default_repuestos
-            FROM Usuarios WHERE id = :uid
-        """),
-        {"uid": user_id}
-    ).fetchone()
+# Cargar datos actuales del taller (cacheado: antes era una consulta cruda
+# sin caché que se repetía en cada rerun de esta página)
+datos = obtener_config_taller(user_id)
 
 nombre_actual    = datos[0] if datos else ""
 dueno_actual     = datos[1] if datos else ""
@@ -149,6 +147,7 @@ with tab_logo:
                         text("UPDATE Usuarios SET logo_path = :logo WHERE id = :uid"),
                         {"logo": logo_path, "uid": user_id}
                     )
+                invalidar_cache_config_taller()
 
                 # Actualizar session_state
                 if "taller_config" not in st.session_state:
@@ -170,6 +169,7 @@ with tab_logo:
                             text("UPDATE Usuarios SET logo_path = NULL WHERE id = :uid"),
                             {"uid": user_id}
                         )
+                    invalidar_cache_config_taller()
                     st.success("Logo eliminado.")
                     st.rerun()
                 except Exception as e:
@@ -250,6 +250,7 @@ with tab_iva:
                             "uid": user_id,
                         }
                     )
+                invalidar_cache_config_taller()
                 st.success("Configuración de IVA guardada correctamente.")
                 st.rerun()
             except Exception as e:
@@ -306,6 +307,7 @@ with tab_operarios:
                                     "login": usuario_op.strip(), "pass": pass_hash_op,
                                 }
                             )
+                        invalidar_cache_operarios()
                         st.success(f"✅ Operario '{nombre_op}' creado con éxito.")
                         st.rerun()
                     except Exception as e:
@@ -317,16 +319,7 @@ with tab_operarios:
     st.markdown("---")
     st.markdown("#### Operarios registrados")
 
-    with engine.connect() as conn_list:
-        operarios = conn_list.execute(
-            text("""
-                SELECT id, nombre_operario, usuario_login, activo
-                FROM Operarios_Patio
-                WHERE usuario_id = :uid
-                ORDER BY nombre_operario ASC
-            """),
-            {"uid": user_id}
-        ).fetchall()
+    operarios = obtener_operarios_patio(user_id)
 
     if not operarios:
         st.info("Aún no has creado ningún operario de patio.")
@@ -355,6 +348,7 @@ with tab_operarios:
                                         text("UPDATE Operarios_Patio SET activo = :nuevo_estado, token_sesion = NULL WHERE id = :oid AND usuario_id = :uid"),
                                         {"nuevo_estado": not op_activo, "oid": op_id, "uid": user_id}
                                     )
+                                invalidar_cache_operarios()
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Error: {e}")
