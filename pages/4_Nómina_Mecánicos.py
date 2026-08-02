@@ -184,7 +184,7 @@ if not df_trabajos.empty:
             "mecanico": "Mecánico",
             "tipo_item": "Tipo",
             "descripcion": "Descripción del Trabajo (Editable)",
-            "precio_venta": st.column_config.NumberColumn("Precio Venta (Editable)", format="$%d")
+            "precio_venta": st.column_config.NumberColumn("Precio Venta (Editable)", format="$%,d")
         }
     )
 

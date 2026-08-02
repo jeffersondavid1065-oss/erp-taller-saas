@@ -191,10 +191,10 @@ with tab_stock:
                     "stock_minimo": st.column_config.NumberColumn(
                         "Stock Mínimo", min_value=0, step=0.001, format="%.3f"
                     ),
-                    "costo_compra": st.column_config.NumberColumn("Costo ($)", format="$%d"),
-                    "precio_venta": st.column_config.NumberColumn("Precio sin IVA ($)", format="$%d"),
-                    "precio_con_iva": st.column_config.NumberColumn("Precio con IVA ($)", format="$%d"),
-                    "ganancia": st.column_config.NumberColumn("Ganancia ($)", format="$%d"),
+                    "costo_compra": st.column_config.NumberColumn("Costo ($)", format="$%,d"),
+                    "precio_venta": st.column_config.NumberColumn("Precio sin IVA ($)", format="$%,d"),
+                    "precio_con_iva": st.column_config.NumberColumn("Precio con IVA ($)", format="$%,d"),
+                    "ganancia": st.column_config.NumberColumn("Ganancia ($)", format="$%,d"),
                     "pct_ganancia": st.column_config.NumberColumn("% Ganancia", format="%.1f%%"),
                     "iva_tipo": st.column_config.SelectboxColumn(
                         "Impuesto (IVA)", options=IVA_OPCIONES,

@@ -189,10 +189,11 @@ if len(fechas_filtro) == 2:
 
         with engine.connect() as conn:
             df_lista = pd.read_sql_query(text(sql_final_list), con=conn, params=params_exp)
-            
-        df_lista['Total'] = df_lista['Total'].apply(formato_cop)
-        
-        st.dataframe(df_lista, use_container_width=True, hide_index=True)
+
+        st.dataframe(
+            df_lista.style.format({'Total': lambda x: formato_cop(x)}),
+            use_container_width=True, hide_index=True
+        )
     else:
         st.info("No se encontraron órdenes que coincidan con los filtros seleccionados.")
 else:
@@ -256,7 +257,10 @@ if orden_busqueda:
                     df_mostrar = df_trabajos[['tipo_item', 'descripcion', 'mecanico', 'precio_venta', 'iva_tipo']].copy()
                     df_mostrar['iva_tipo'] = df_mostrar['iva_tipo'].fillna('(default de categoría)')
                     df_mostrar.columns = ['Tipo', 'Descripción', 'Técnico', 'Cobro al Cliente', 'Impuesto (IVA)']
-                    st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
+                    st.dataframe(
+                        df_mostrar.style.format({'Cobro al Cliente': lambda x: formato_cop(x)}),
+                        use_container_width=True, hide_index=True
+                    )
 
                     if IVA_ACTIVO:
                         n_cols = 2 + max(len(desglose_iva_orden), 1)
