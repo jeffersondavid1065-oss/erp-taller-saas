@@ -4,7 +4,7 @@ import bcrypt
 import hashlib
 import uuid
 from sqlalchemy import text
-from db import obtener_conexion, init_db
+from db import obtener_conexion, init_db, mensaje_error_amigable
 from queries import obtener_metricas_dashboard, obtener_metricas_financieras
 from datetime import datetime, date
 
@@ -234,7 +234,7 @@ if not is_logged:
                         else:
                             st.error("Credenciales incorrectas.")
                     except Exception as e:
-                        st.error(f"Error de conexión con la base de datos: {e}")
+                        st.error(mensaje_error_amigable(e, "iniciar sesión"))
                 else:
                     st.warning("Completa todos los campos.")
 
@@ -292,7 +292,7 @@ if not is_logged:
                         else:
                             st.error("Usuario o contraseña incorrectos.")
                     except Exception as e:
-                        st.error(f"Error de conexión con la base de datos: {e}")
+                        st.error(mensaje_error_amigable(e, "iniciar sesión"))
                 else:
                     st.warning("Completa usuario y contraseña.")
 
@@ -333,7 +333,7 @@ if not is_logged:
                                 "para activar tu suscripción."
                             )
                         except Exception as e:
-                            st.error(f"Error al registrar el taller: {e}")
+                            st.error(mensaje_error_amigable(e, "registrar el taller"))
                     else:
                         st.warning("Completa todos los campos.")
 
@@ -421,9 +421,9 @@ else:
     with col_info2:
         with st.container(border=True):
             st.subheader("Accesos Rápidos")
-            st.write("• Dirígete a Expediente para auditar estados y cotizar pendientes.")
+            st.write("• Dirígete a Facturación e historial para auditar estados y cotizar pendientes.")
             st.write("• Consulta Nómina Mecánicos para calcular comisiones de personal.")
-            st.write("• Gestiona tu cartera de clientes desde el Directorio.")
+            st.write("• Gestiona tus clientes desde Registros, y revisa los créditos pendientes por cobrar en Cartera.")
 
     st.markdown("")
     if st.button("Cerrar Sesión"):

@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 from sqlalchemy import text
-from db import obtener_conexion
+from db import obtener_conexion, mensaje_error_amigable
 from queries import obtener_catalogos, obtener_mecanicos_activos, invalidar_cache_inventario, obtener_metricas_financieras
 
 st.set_page_config(page_title="Control de Aceites y Flotas", layout="wide")
@@ -183,7 +183,7 @@ with tab_flota:
                             st.success(f"Vehiculo {placa_v} registrado.")
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Error al registrar: {e}")
+                            st.error(mensaje_error_amigable(e, "registrar el vehículo"))
                     else:
                         st.warning("La placa es obligatoria.")
         else:
@@ -221,13 +221,26 @@ with tab_flota:
                     col_item3.write(f"Unidad: {formato_cop(row['precio_venta'])}")
                     with col_item4:
                         if st.button("Eliminar", key=f"del_receta_{row['id']}"):
-                            try:
-                                with engine.begin() as conn_del:
-                                    conn_del.execute(text("DELETE FROM Recetas_Vehiculo WHERE id = :rid"), {"rid": row['id']})
-                                invalidar_cache_receta()
+                            st.session_state[f"del_confirm_receta_{row['id']}"] = True
+
+                    if st.session_state.get(f"del_confirm_receta_{row['id']}", False):
+                        col_rc1, col_rc2, col_rc3 = st.columns([2, 1, 1])
+                        col_rc1.warning(f"¿Quitar **{row['nombre_producto']}** de la lista de este vehículo?")
+                        with col_rc2:
+                            if st.button("Sí, quitar", key=f"yes_del_receta_{row['id']}", type="primary", use_container_width=True):
+                                try:
+                                    with engine.begin() as conn_del:
+                                        conn_del.execute(text("DELETE FROM Recetas_Vehiculo WHERE id = :rid"), {"rid": row['id']})
+                                    invalidar_cache_receta()
+                                    st.session_state[f"del_confirm_receta_{row['id']}"] = False
+                                    st.success("Insumo eliminado de la lista.")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(mensaje_error_amigable(e, "eliminar el insumo"))
+                        with col_rc3:
+                            if st.button("Cancelar", key=f"no_del_receta_{row['id']}", use_container_width=True):
+                                st.session_state[f"del_confirm_receta_{row['id']}"] = False
                                 st.rerun()
-                            except Exception as e:
-                                st.error(f"Error: {e}")
             else:
                 st.caption("No hay insumos configurados para este vehiculo.")
 
@@ -269,7 +282,7 @@ with tab_flota:
                             st.success("Insumo guardado.")
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Error: {e}")
+                            st.error(mensaje_error_amigable(e, "guardar el insumo"))
 
         # ==========================================
         # PESTAÑA: DESPACHO Y ORDENES
@@ -348,7 +361,7 @@ with tab_flota:
                             st.success(f"Orden #{nueva_hoja_id} creada. Repuestos descontados y mano de obra sumada a {mec_sel}.")
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Error: {e}")
+                            st.error(mensaje_error_amigable(e, "crear la orden"))
             else:
                 st.warning("Configura los insumos de este vehiculo en la pestaña anterior para poder despachar.")
     else:

@@ -3,7 +3,7 @@ import pandas as pd
 import math
 from datetime import datetime, timedelta
 from sqlalchemy import text
-from db import obtener_conexion, init_db
+from db import obtener_conexion, init_db, mensaje_error_amigable
 from queries import (
     obtener_catalogos, obtener_config_taller, invalidar_cache_ordenes, invalidar_cache_inventario,
     tiene_fe_habilitada, obtener_credenciales_alegra,
@@ -12,7 +12,7 @@ from io import BytesIO
 from pdf_utils import generar_pdf_orden_profesional, calcular_totales_orden, IVA_OPCIONES
 import alegra_utils
 
-st.set_page_config(page_title="Expediente", layout="wide")
+st.set_page_config(page_title="Facturación e historial", layout="wide")
 
 init_db()
 
@@ -299,25 +299,28 @@ if orden_busqueda:
                     
                     st.markdown("#### Exportar Documento")
                     
-                    # Leer config del taller (logo, NIT, tel, dirección)
-                    cfg = st.session_state.get("taller_config", {})
-                    
-                    # Cargar logo_path desde BD si no está en session_state
-                    logo_path = cfg.get("logo_path")
-                    if not logo_path:
-                        with engine.connect() as conn_logo:
-                            logo_row = conn_logo.execute(
-                                text("SELECT logo_path FROM Usuarios WHERE id = :uid"),
-                                {"uid": user_id}
-                            ).fetchone()
-                            logo_path = logo_row[0] if logo_row and logo_row[0] else None
-                    
+                    # Leer config del taller (logo, NIT, tel, dirección) — persistida
+                    # en BD, ya no depende de session_state (se perdía al recargar).
+                    logo_path = _config_taller[3] if _config_taller and _config_taller[3] else None
+                    taller_nit = _config_taller[8] if _config_taller and len(_config_taller) > 8 and _config_taller[8] else ""
+                    taller_telefono = _config_taller[9] if _config_taller and len(_config_taller) > 9 and _config_taller[9] else ""
+                    taller_direccion_raw = _config_taller[10] if _config_taller and len(_config_taller) > 10 and _config_taller[10] else ""
+                    taller_ciudad = _config_taller[11] if _config_taller and len(_config_taller) > 11 and _config_taller[11] else ""
+                    taller_direccion = f"{taller_direccion_raw}, {taller_ciudad}".strip(", ") if taller_ciudad else taller_direccion_raw
+                    taller_email = _config_taller[2] if _config_taller and _config_taller[2] else ""
+
+                    if not taller_nit:
+                        st.warning(
+                            "Tu taller todavía no tiene NIT configurado — la factura saldrá sin ese dato. "
+                            "Complétalo en Configuración > Datos del Taller."
+                        )
+
                     pdf_bytes = generar_pdf_orden_profesional(
                         taller_nombre=nombre_taller,
-                        taller_nit=cfg.get("nit", ""),
-                        taller_telefono=cfg.get("telefono", ""),
-                        taller_direccion=cfg.get("direccion", ""),
-                        taller_email=cfg.get("email", ""),
+                        taller_nit=taller_nit,
+                        taller_telefono=taller_telefono,
+                        taller_direccion=taller_direccion,
+                        taller_email=taller_email,
                         taller_logo_path=logo_path,
                         hoja_id=hoja_id,
                         fecha=fecha,
@@ -487,7 +490,10 @@ if orden_busqueda:
                         "Genera una nota crédito ante la DIAN que anula la factura electrónica de esta orden."
                     )
                     st.warning(f"Vas a anular la factura #{numero_factura_actual} de esta orden. Esta acción no se puede deshacer.")
-                    if st.button("Anular factura con nota crédito", type="primary", use_container_width=True):
+                    confirmar_anular = st.checkbox(
+                        f"Entiendo que anular la factura #{numero_factura_actual} es irreversible y confirmo que quiero hacerlo."
+                    )
+                    if st.button("Anular factura con nota crédito", type="primary", use_container_width=True, disabled=not confirmar_anular):
                         with st.spinner("Emitiendo nota crédito..."):
                             ok_nc, msg_nc = alegra_utils.anular_factura_orden(user_id, hoja_id)
                         if ok_nc:
@@ -525,7 +531,7 @@ if orden_busqueda:
                             st.success("Estado actualizado correctamente.")
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Error: {e}")
+                            st.error(mensaje_error_amigable(e, "actualizar el estado"))
                 
                 st.markdown("---")
                 st.subheader("2. Gestión y Modificación de Ítems")
@@ -543,17 +549,29 @@ if orden_busqueda:
                                 st.session_state[f"modo_edit_{row['id']}"] = True
                         with col_e4:
                             if st.button("Eliminar", key=f"del_{row['id']}"):
-                                try:
-                                    with engine.begin() as conn_del:
-                                        conn_del.execute(
-                                            text("DELETE FROM Detalles_Orden WHERE id = :did"),
-                                            {"did": row['id']}
-                                        )
-                                    invalidar_cache_ordenes()
-                                    st.success("Ítem eliminado.")
+                                st.session_state[f"del_confirm_item_{row['id']}"] = True
+
+                        if st.session_state.get(f"del_confirm_item_{row['id']}", False):
+                            col_di1, col_di2, col_di3 = st.columns([2, 1, 1])
+                            col_di1.warning(f"¿Eliminar **{row['descripcion']}** de esta orden?")
+                            with col_di2:
+                                if st.button("Sí, eliminar", key=f"yes_del_item_{row['id']}", type="primary", use_container_width=True):
+                                    try:
+                                        with engine.begin() as conn_del:
+                                            conn_del.execute(
+                                                text("DELETE FROM Detalles_Orden WHERE id = :did"),
+                                                {"did": row['id']}
+                                            )
+                                        invalidar_cache_ordenes()
+                                        st.session_state[f"del_confirm_item_{row['id']}"] = False
+                                        st.success("Ítem eliminado.")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(mensaje_error_amigable(e, "eliminar el ítem"))
+                            with col_di3:
+                                if st.button("Cancelar", key=f"no_del_item_{row['id']}", use_container_width=True):
+                                    st.session_state[f"del_confirm_item_{row['id']}"] = False
                                     st.rerun()
-                                except Exception as e:
-                                    st.error(f"Error al eliminar: {e}")
 
                         if st.session_state.get(f"modo_edit_{row['id']}", False):
                             with st.form(key=f"form_edit_item_{row['id']}"):
@@ -586,7 +604,7 @@ if orden_busqueda:
                                             st.success("Ítem actualizado y sincronizado en todo el sistema.")
                                             st.rerun()
                                         except Exception as e:
-                                            st.error(f"Error al actualizar: {e}")
+                                            st.error(mensaje_error_amigable(e, "actualizar el ítem"))
                                 with col_fe2:
                                     if st.form_submit_button("Cancelar"):
                                         st.session_state[f"modo_edit_{row['id']}"] = False
@@ -626,7 +644,7 @@ if orden_busqueda:
                                     st.success("Trabajo agregado con éxito.")
                                     st.rerun()
                                 except Exception as e:
-                                    st.error(f"Error: {e}")
+                                    st.error(mensaje_error_amigable(e, "agregar el trabajo"))
                             else:
                                 st.error("Completa la descripción, el precio y asegúrate de tener mecánicos registrados.")
                             
@@ -662,7 +680,7 @@ if orden_busqueda:
                                         st.success("Repuesto agregado con éxito.")
                                         st.rerun()
                                     except Exception as e:
-                                        st.error(f"Error: {e}")
+                                        st.error(mensaje_error_amigable(e, "agregar el repuesto"))
                                 else:
                                     st.error("Completa la descripción y el precio de venta.")
                         else:
@@ -712,7 +730,7 @@ if orden_busqueda:
                                         st.success("Repuesto asignado y descontado del almacén.")
                                         st.rerun()
                                     except Exception as e:
-                                        st.error(f"Error al asignar repuesto del almacén: {e}")
+                                        st.error(mensaje_error_amigable(e, "asignar el repuesto del almacén"))
                             else:
                                 st.info("No tienes productos con stock disponible en tu almacén.")
     else:

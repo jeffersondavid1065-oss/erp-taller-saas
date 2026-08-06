@@ -8,6 +8,7 @@ import json
 import re
 from PIL import Image
 import io
+from db import mensaje_error_amigable
 
 
 def configurar_cliente():
@@ -18,7 +19,7 @@ def configurar_cliente():
         client = genai.Client(api_key=api_key)
         return client
     except Exception as e:
-        st.error(f"Error al configurar Gemini: {e}")
+        st.error(mensaje_error_amigable(e, "conectar con el lector de facturas por IA"))
         return None
 
 
@@ -86,7 +87,7 @@ def leer_factura_imagen(imagen_bytes):
         st.error("Gemini no pudo extraer los datos en formato correcto. Intenta con una imagen más clara.")
         return None
     except Exception as e:
-        st.error(f"Error al procesar la imagen: {e}")
+        st.error(mensaje_error_amigable(e, "leer la imagen de la factura"))
         return None
 
 
@@ -119,5 +120,5 @@ def leer_factura_pdf(pdf_bytes):
         st.error("Gemini no pudo extraer los datos en formato correcto. Intenta con una imagen más clara.")
         return None
     except Exception as e:
-        st.error(f"Error al procesar el PDF: {e}")
+        st.error(mensaje_error_amigable(e, "leer el PDF de la factura"))
         return None

@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import date, timedelta
 from sqlalchemy import text
-from db import obtener_conexion
+from db import obtener_conexion, mensaje_error_amigable
 from queries import establecer_fe_habilitada
 
 st.set_page_config(page_title="Administración - MyTaller", layout="wide")
@@ -126,21 +126,33 @@ if not df_talleres.empty:
                     st.success(f"Suscripción actualizada exitosamente. Nueva fecha de corte: {nueva_fecha}")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Error en la actualización de base de datos: {e}")
-            
+                    st.error(mensaje_error_amigable(e, "extender la suscripción"))
+
             if st.button("Suspender Acceso", use_container_width=True):
-                fecha_vencida = date.today() - timedelta(days=1) 
-                try:
-                    with engine.begin() as conn_bloq:
-                        conn_bloq.execute(
-                            text("UPDATE Usuarios SET fecha_pago_limite = :f_lim WHERE id = :id"),
-                            {"f_lim": fecha_vencida, "id": taller_id_activo}
-                        )
-                    obtener_talleres.clear()
-                    st.warning(f"El acceso para el taller '{taller_row['nombre_taller']}' ha sido suspendido.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error al procesar la suspensión: {e}")
+                st.session_state[f"confirmar_suspender_{taller_id_activo}"] = True
+
+            if st.session_state.get(f"confirmar_suspender_{taller_id_activo}", False):
+                st.warning(f"¿Suspender el acceso de **{taller_row['nombre_taller']}**? El taller no podrá usar el sistema hasta que le extiendas la suscripción de nuevo.")
+                col_sa1, col_sa2 = st.columns(2)
+                with col_sa1:
+                    if st.button("Sí, suspender", type="primary", use_container_width=True, key=f"yes_susp_{taller_id_activo}"):
+                        fecha_vencida = date.today() - timedelta(days=1)
+                        try:
+                            with engine.begin() as conn_bloq:
+                                conn_bloq.execute(
+                                    text("UPDATE Usuarios SET fecha_pago_limite = :f_lim WHERE id = :id"),
+                                    {"f_lim": fecha_vencida, "id": taller_id_activo}
+                                )
+                            obtener_talleres.clear()
+                            st.session_state[f"confirmar_suspender_{taller_id_activo}"] = False
+                            st.warning(f"El acceso para el taller '{taller_row['nombre_taller']}' ha sido suspendido.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(mensaje_error_amigable(e, "suspender el acceso"))
+                with col_sa2:
+                    if st.button("Cancelar", use_container_width=True, key=f"no_susp_{taller_id_activo}"):
+                        st.session_state[f"confirmar_suspender_{taller_id_activo}"] = False
+                        st.rerun()
 
         st.markdown("---")
         st.markdown("### Facturación Electrónica")

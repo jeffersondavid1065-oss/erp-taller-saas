@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 from sqlalchemy import text
-from db import obtener_conexion
+from db import obtener_conexion, mensaje_error_amigable
 from queries import obtener_catalogos, invalidar_cache_ordenes
 
 st.set_page_config(page_title="Nómina y Comisiones", layout="wide")
@@ -209,7 +209,7 @@ if not df_trabajos.empty:
                 st.success("Cambios aplicados y sincronizados con éxito.")
                 st.rerun()
             except Exception as e:
-                st.error(f"Error al guardar: {e}")
+                st.error(mensaje_error_amigable(e, "guardar los cambios"))
         else:
             st.warning("No se detectaron cambios nuevos para guardar.")
 else:

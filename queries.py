@@ -410,12 +410,31 @@ def obtener_config_taller(uid):
             text("""
                 SELECT nombre_taller, nombre_dueno, email, logo_path,
                        iva_activo, iva_incluido,
-                       iva_tipo_default_mano_obra, iva_tipo_default_repuestos
+                       iva_tipo_default_mano_obra, iva_tipo_default_repuestos,
+                       nit_taller, telefono_taller, direccion_taller, ciudad_taller
                 FROM Usuarios WHERE id = :uid
             """),
             {"uid": uid}
         ).fetchone()
     return tuple(row) if row else None
+
+
+def guardar_datos_taller(uid, nit, telefono, direccion, ciudad):
+    """Persiste los datos fiscales/contacto del taller en BD (antes solo
+    vivían en session_state y se perdían al cerrar el navegador o recargar,
+    dejando facturas sin NIT/dirección sin ningún aviso)."""
+    engine = obtener_conexion()
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+                UPDATE Usuarios
+                SET nit_taller = :nit, telefono_taller = :tel,
+                    direccion_taller = :dir, ciudad_taller = :ciu
+                WHERE id = :uid
+            """),
+            {"nit": nit, "tel": telefono, "dir": direccion, "ciu": ciudad, "uid": uid}
+        )
+    invalidar_cache_config_taller()
 
 
 def invalidar_cache_config_taller():

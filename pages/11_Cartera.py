@@ -1,5 +1,6 @@
 import streamlit as st
 from queries import obtener_creditos_pendientes, obtener_abonos_orden, registrar_abono
+from db import mensaje_error_amigable
 import alegra_utils
 
 st.set_page_config(page_title="Cartera", layout="wide")
@@ -75,10 +76,24 @@ else:
         st.markdown("---")
 
     st.markdown("**Todas las órdenes con saldo pendiente:**")
+    busqueda_cartera = st.text_input(
+        "Buscar por cliente, placa o N° de orden",
+        placeholder="Ej: Pérez, ABC123 o 45",
+        key="busqueda_cartera"
+    )
     df_mostrar = df_creditos.copy()
+    if busqueda_cartera.strip():
+        termino = busqueda_cartera.strip().lower()
+        df_mostrar = df_mostrar[
+            df_mostrar['cliente'].astype(str).str.lower().str.contains(termino, na=False)
+            | df_mostrar['placa'].astype(str).str.lower().str.contains(termino, na=False)
+            | df_mostrar['hoja_id'].astype(str).str.contains(termino, na=False)
+        ]
     df_mostrar['numero_factura_texto'] = (
         df_mostrar['factura_prefijo'].fillna('').astype(str) + df_mostrar['factura_numero'].fillna('').astype(str)
     )
+    if df_mostrar.empty:
+        st.info("Ninguna orden coincide con la búsqueda.")
     df_mostrar = df_mostrar[[
         'hoja_id', 'placa', 'cliente', 'telefono', 'saldo_pendiente',
         'fecha_vencimiento_credito', 'vencido', 'numero_factura_texto'
@@ -113,10 +128,16 @@ else:
         f"Factura_Orden_{hoja_id_sel}.pdf", "application/pdf"
     )
 
+    st.caption(f"Saldo pendiente de esta orden: **{formato_cop(saldo_actual)}**")
+
     col_ab1, col_ab2 = st.columns(2)
     with col_ab1:
         monto_abono = st.number_input(
-            "Monto del abono", min_value=0, max_value=int(saldo_actual), step=5000, value=int(saldo_actual)
+            "Monto del abono", min_value=0, max_value=int(saldo_actual), step=5000, value=0,
+            help=(
+                "Un 'abono' es un pago parcial de la deuda del cliente. Escribe cuánto pagó "
+                "ahora — si pagó todo, escribe el saldo pendiente completo."
+            )
         )
         metodo_abono = st.selectbox("Método de pago", ["Efectivo", "Transferencia"])
     with col_ab2:
@@ -124,18 +145,21 @@ else:
 
     if st.button("Registrar Abono", type="primary", use_container_width=True):
         if monto_abono <= 0:
-            st.warning("El monto debe ser mayor a cero.")
+            st.warning("Escribe cuánto pagó el cliente. El monto debe ser mayor a cero.")
         else:
-            with st.spinner("Registrando abono..."):
-                ok_sync, msg_sync = alegra_utils.registrar_abono_orden(user_id, hoja_id_sel, monto_abono, metodo_abono)
-            registrar_abono(user_id, hoja_id_sel, monto_abono, notas_abono or None)
-            if ok_sync:
-                st.success(f"Abono de {formato_cop(monto_abono)} registrado.")
-            else:
-                st.warning(
-                    f"Abono guardado en MyTaller, pero no se pudo sincronizar con Alegra: {msg_sync}"
-                )
-            st.rerun()
+            try:
+                with st.spinner("Registrando abono..."):
+                    ok_sync, msg_sync = alegra_utils.registrar_abono_orden(user_id, hoja_id_sel, monto_abono, metodo_abono)
+                registrar_abono(user_id, hoja_id_sel, monto_abono, notas_abono or None)
+                if ok_sync:
+                    st.success(f"Abono de {formato_cop(monto_abono)} registrado.")
+                else:
+                    st.warning(
+                        f"Abono guardado en MyTaller, pero no se pudo sincronizar con Alegra: {msg_sync}"
+                    )
+                st.rerun()
+            except Exception as e:
+                st.error(mensaje_error_amigable(e, "registrar el abono"))
 
     with st.expander(f"Historial de abonos de la Orden #{hoja_id_sel}"):
         abonos = obtener_abonos_orden(hoja_id_sel)

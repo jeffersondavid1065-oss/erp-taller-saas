@@ -1,7 +1,7 @@
 import streamlit as st
 import html
 from sqlalchemy import text
-from db import obtener_conexion
+from db import obtener_conexion, mensaje_error_amigable
 
 st.set_page_config(page_title="Tablero de Control", layout="wide")
 
@@ -186,7 +186,7 @@ if ordenes_sin_precio:
                     st.success("Precios actualizados y sincronizados en el sistema.")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Error al guardar precios: {e}")
+                    st.error(mensaje_error_amigable(e, "guardar los precios"))
 
     st.markdown("---")
 
@@ -197,7 +197,7 @@ try:
     vehiculos = obtener_vehiculos(user_id)
 except Exception as e:
     vehiculos = []
-    st.error(f"Error al conectar con la base de datos: {e}")
+    st.error(mensaje_error_amigable(e, "cargar el tablero"))
 
 col1, col2, col3, col4, col5 = st.columns(5)
 
@@ -214,7 +214,7 @@ def dibujar_columna(columna, titulo, estado_filtro, clase_css):
             placa_segura = html.escape(str(placa))
             empresa_segura = html.escape(str(empresa))
             aviso_pendiente = (
-                '<div style="font-size:0.8rem; color:#b45309; margin-top:4px;">Pendiente por Cotizar ($0)</div>'
+                '<div style="font-size:0.9rem; font-weight:600; color:#b45309; margin-top:4px;">Pendiente por Cotizar ($0)</div>'
                 if sin_precio and sin_precio > 0 else ""
             )
             tarjetas_html.append(f"""
@@ -228,7 +228,10 @@ def dibujar_columna(columna, titulo, estado_filtro, clase_css):
             """)
 
     if not tarjetas_html:
-        tarjetas_html.append('<div style="color:#888; font-size:0.9rem;">Vacío</div>')
+        tarjetas_html.append(
+            '<div style="color:#666; font-size:0.95rem; padding:6px 0;">'
+            'No hay vehículos en este estado por ahora.</div>'
+        )
 
     with columna:
         st.markdown(f"""

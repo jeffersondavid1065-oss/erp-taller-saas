@@ -28,6 +28,23 @@ def obtener_conexion():
     return engine
 
 
+def mensaje_error_amigable(e, accion="completar la acción"):
+    """Traduce una excepción cruda de BD/red a un mensaje que un usuario sin
+    conocimientos técnicos pueda entender, en vez de mostrarle la traza de
+    Python/SQL tal cual. `accion` describe en pocas palabras qué se intentaba
+    hacer (ej. "eliminar el mecánico"), para que el mensaje sea específico."""
+    texto = str(e).lower()
+    if "unique" in texto or "duplicate" in texto:
+        return "Ya existe un registro con ese mismo dato (posible duplicado). Verifica e intenta de nuevo."
+    if "foreign key" in texto or "violates foreign key" in texto or "referenced" in texto:
+        return "No se pudo completar porque hay otra información del sistema relacionada con esto."
+    if "not null" in texto or "null value" in texto:
+        return "Falta completar un campo obligatorio."
+    if "timeout" in texto or "connection" in texto or "operationalerror" in texto or "could not connect" in texto:
+        return "No se pudo conectar con la base de datos. Revisa tu conexión a internet e intenta de nuevo en unos segundos."
+    return f"No se pudo {accion}. Intenta de nuevo en unos segundos; si el problema sigue, contacta a soporte."
+
+
 @st.cache_resource
 def init_db():
     engine = obtener_conexion()
@@ -450,6 +467,16 @@ def init_db():
                 # --- NUEVO: Cartera (saldo pendiente de órdenes facturadas a crédito) ---
                 if 'saldo_pendiente' not in cols_ht:
                     conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN saldo_pendiente REAL"))
+                # --- NUEVO: datos fiscales/contacto del taller, para que aparezcan en las
+                # facturas en PDF sin depender de session_state (se perdían al recargar) ---
+                if 'nit_taller' not in cols_u:
+                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN nit_taller TEXT"))
+                if 'telefono_taller' not in cols_u:
+                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN telefono_taller TEXT"))
+                if 'direccion_taller' not in cols_u:
+                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN direccion_taller TEXT"))
+                if 'ciudad_taller' not in cols_u:
+                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN ciudad_taller TEXT"))
             else:
                 conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS token_sesion VARCHAR(255)"))
                 conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS logo_path TEXT"))
@@ -506,6 +533,12 @@ def init_db():
                 conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS nota_credito_fecha TIMESTAMP"))
                 # --- NUEVO: Cartera (saldo pendiente de órdenes facturadas a crédito) ---
                 conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS saldo_pendiente NUMERIC(12,2)"))
+                # --- NUEVO: datos fiscales/contacto del taller, para que aparezcan en las
+                # facturas en PDF sin depender de session_state (se perdían al recargar) ---
+                conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS nit_taller TEXT"))
+                conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS telefono_taller TEXT"))
+                conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS direccion_taller TEXT"))
+                conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS ciudad_taller TEXT"))
 
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_usuarios_token ON Usuarios(token_sesion)"))
         except Exception:

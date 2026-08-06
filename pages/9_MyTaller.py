@@ -3,11 +3,12 @@ import os
 import uuid
 import bcrypt
 from sqlalchemy import text
-from db import obtener_conexion
+from db import obtener_conexion, mensaje_error_amigable
 from pdf_utils import IVA_OPCIONES
 from queries import (
     obtener_config_taller,
     invalidar_cache_config_taller,
+    guardar_datos_taller,
     obtener_operarios_patio,
     invalidar_cache_operarios,
     obtener_credenciales_alegra,
@@ -72,6 +73,10 @@ iva_activo_actual      = bool(datos[4]) if datos and datos[4] is not None else F
 iva_incluido_actual    = bool(datos[5]) if datos and datos[5] is not None else False
 iva_tipo_mo_actual     = datos[6] if datos and datos[6] in IVA_OPCIONES else "Excluido"
 iva_tipo_rep_actual    = datos[7] if datos and datos[7] in IVA_OPCIONES else "Excluido"
+nit_actual             = datos[8] if datos and datos[8] else ""
+telefono_actual        = datos[9] if datos and datos[9] else ""
+direccion_actual       = datos[10] if datos and datos[10] else ""
+ciudad_actual          = datos[11] if datos and datos[11] else ""
 
 # Carpeta de logos
 LOGOS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logos")
@@ -91,31 +96,27 @@ with tab_datos:
     with st.form("form_datos_taller"):
         col1, col2 = st.columns(2)
         with col1:
-            nit_input       = st.text_input("NIT del Taller", placeholder="Ej: 900123456-7")
-            telefono_input  = st.text_input("Teléfono", placeholder="Ej: 3001234567")
+            nit_input = st.text_input(
+                "NIT del Taller", value=nit_actual, placeholder="Ej: 900123456-7",
+                help="Número de identificación tributaria de tu taller. Aparece en el encabezado de cada factura."
+            )
+            telefono_input = st.text_input("Teléfono", value=telefono_actual, placeholder="Ej: 3001234567")
         with col2:
-            direccion_input = st.text_input("Dirección", placeholder="Ej: Calle 15 # 10-25, Valledupar")
-            ciudad_input    = st.text_input("Ciudad", placeholder="Ej: Valledupar, Cesar")
+            direccion_input = st.text_input("Dirección", value=direccion_actual, placeholder="Ej: Calle 15 # 10-25")
+            ciudad_input    = st.text_input("Ciudad", value=ciudad_actual, placeholder="Ej: Valledupar, Cesar")
 
         st.markdown("")
         if st.form_submit_button("Guardar Datos", type="primary"):
             try:
-                # Guardar en session_state para uso inmediato
-                st.session_state.taller_config = {
-                    "nit": nit_input,
-                    "telefono": telefono_input,
-                    "direccion": f"{direccion_input}, {ciudad_input}".strip(", "),
-                    "ciudad": ciudad_input,
-                }
+                guardar_datos_taller(user_id, nit_input, telefono_input, direccion_input, ciudad_input)
                 st.success("Datos guardados. Aparecerán en tus próximas facturas.")
+                st.rerun()
             except Exception as e:
-                st.error(f"Error al guardar: {e}")
+                st.error("No se pudieron guardar los datos. Intenta de nuevo en unos segundos.")
 
-    # Mostrar config actual
-    if "taller_config" in st.session_state:
-        cfg = st.session_state.taller_config
-        st.info(f"**Config actual:** NIT: {cfg.get('nit','---')} | Tel: {cfg.get('telefono','---')} | Dir: {cfg.get('direccion','---')}")
-        st.caption("⚠️ Estos datos se guardan solo en tu sesión actual y se perderán si cierras el navegador o recargas. Vuelve a diligenciarlos si no aparecen en tu próxima factura.")
+    # Mostrar config actual (ya persistida en base de datos)
+    if nit_actual or telefono_actual or direccion_actual:
+        st.info(f"**Datos guardados:** NIT: {nit_actual or '---'} | Tel: {telefono_actual or '---'} | Dir: {direccion_actual or '---'}")
 
 # ==========================================
 # TAB 2: LOGOTIPO
@@ -154,11 +155,6 @@ with tab_logo:
                     )
                 invalidar_cache_config_taller()
 
-                # Actualizar session_state
-                if "taller_config" not in st.session_state:
-                    st.session_state.taller_config = {}
-                st.session_state.taller_config["logo_path"] = logo_path
-
                 st.success("¡Logotipo subido exitosamente! Ya aparecerá en tus próximas facturas.")
                 st.image(archivo_logo, width=150)
 
@@ -167,18 +163,30 @@ with tab_logo:
         if logo_path_actual and os.path.exists(logo_path_actual):
             st.image(logo_path_actual, width=120)
             if st.button("Eliminar logo"):
-                try:
-                    os.remove(logo_path_actual)
-                    with engine.begin() as conn:
-                        conn.execute(
-                            text("UPDATE Usuarios SET logo_path = NULL WHERE id = :uid"),
-                            {"uid": user_id}
-                        )
-                    invalidar_cache_config_taller()
-                    st.success("Logo eliminado.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error al eliminar: {e}")
+                st.session_state.confirmar_eliminar_logo = True
+
+            if st.session_state.get("confirmar_eliminar_logo", False):
+                st.warning("¿Quitar el logo? Tus próximas facturas saldrán con el placeholder gris hasta que subas uno nuevo.")
+                col_lg1, col_lg2 = st.columns(2)
+                with col_lg1:
+                    if st.button("Sí, quitar logo", type="primary", use_container_width=True):
+                        try:
+                            os.remove(logo_path_actual)
+                            with engine.begin() as conn:
+                                conn.execute(
+                                    text("UPDATE Usuarios SET logo_path = NULL WHERE id = :uid"),
+                                    {"uid": user_id}
+                                )
+                            invalidar_cache_config_taller()
+                            st.session_state.confirmar_eliminar_logo = False
+                            st.success("Logo eliminado.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(mensaje_error_amigable(e, "eliminar el logo"))
+                with col_lg2:
+                    if st.button("Cancelar", use_container_width=True):
+                        st.session_state.confirmar_eliminar_logo = False
+                        st.rerun()
         else:
             st.info("Sin logotipo. Se mostrará un placeholder gris en el PDF.")
 
@@ -259,7 +267,7 @@ with tab_iva:
                 st.success("Configuración de IVA guardada correctamente.")
                 st.rerun()
             except Exception as e:
-                st.error(f"Error al guardar: {e}")
+                st.error(mensaje_error_amigable(e, "guardar la configuración de IVA"))
 
     if iva_activo_actual:
         modo_txt = "incluido en el precio" if iva_incluido_actual else "se suma aparte al precio"
@@ -319,7 +327,7 @@ with tab_operarios:
                         if "UNIQUE" in str(e).upper() or "duplicate" in str(e).lower():
                             st.error("Ese nombre de usuario ya está en uso. Elige otro (ej. agrega un número o el nombre del taller).")
                         else:
-                            st.error(f"Error al crear el operario: {e}")
+                            st.error(mensaje_error_amigable(e, "crear el operario"))
 
     st.markdown("---")
     st.markdown("#### Operarios registrados")
@@ -356,7 +364,7 @@ with tab_operarios:
                                 invalidar_cache_operarios()
                                 st.rerun()
                             except Exception as e:
-                                st.error(f"Error: {e}")
+                                st.error(mensaje_error_amigable(e, "cambiar el estado del operario"))
                     with col_btn2:
                         if st.button("Cambiar clave", key=f"reset_op_{op_id}", use_container_width=True):
                             st.session_state[f"mostrar_reset_{op_id}"] = True
@@ -379,7 +387,7 @@ with tab_operarios:
                                         st.success("Contraseña actualizada.")
                                         st.rerun()
                                     except Exception as e:
-                                        st.error(f"Error: {e}")
+                                        st.error(mensaje_error_amigable(e, "actualizar la contraseña"))
                                 else:
                                     st.error("La contraseña debe tener al menos 4 caracteres.")
                         with col_fr2:
@@ -423,9 +431,21 @@ with tab_alegra:
                     st.error(msg)
         with col_a2:
             if st.button("Desconectar cuenta", use_container_width=True):
-                eliminar_credenciales_alegra(user_id)
-                st.success("Cuenta desconectada.")
-                st.rerun()
+                st.session_state.confirmar_desconectar_alegra = True
+
+        if st.session_state.get("confirmar_desconectar_alegra", False):
+            st.warning("¿Desconectar tu cuenta de Alegra? No podrás emitir facturas electrónicas hasta que conectes una cuenta de nuevo.")
+            col_da1, col_da2 = st.columns(2)
+            with col_da1:
+                if st.button("Sí, desconectar", type="primary", use_container_width=True):
+                    eliminar_credenciales_alegra(user_id)
+                    st.session_state.confirmar_desconectar_alegra = False
+                    st.success("Cuenta desconectada.")
+                    st.rerun()
+            with col_da2:
+                if st.button("Cancelar", use_container_width=True):
+                    st.session_state.confirmar_desconectar_alegra = False
+                    st.rerun()
 
         st.markdown("---")
         st.markdown("**Cambiar de cuenta:**")

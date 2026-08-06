@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 from sqlalchemy import text
-from db import obtener_conexion
+from db import obtener_conexion, mensaje_error_amigable
 from queries import (
     obtener_categorias_gasto,
     obtener_gastos_filtrado,
@@ -288,7 +288,7 @@ def inicializar_categorias_predefinidas(uid):
 
 inicializar_categorias_predefinidas(user_id)
 
-tab_registrar, tab_historial, tab_analisis = st.tabs(["Registrar Gasto", "Historial de Gastos", "Análisis Financiero"])
+tab_registrar, tab_historial, tab_analisis = st.tabs(["Registrar Gasto", "Historial de Gastos", "Margen y Rentabilidad"])
 
 # ==========================================
 # TAB 1: REGISTRAR GASTO
@@ -332,7 +332,7 @@ with tab_registrar:
                         st.success(f"Gasto de {formato_cop(monto)} registrado en {categoria_sel}.")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Error al guardar: {e}")
+                        st.error(mensaje_error_amigable(e, "guardar el gasto"))
                 else:
                     st.warning("Completa todos los campos obligatorios.")
     else:
@@ -418,7 +418,7 @@ with tab_historial:
 # TAB 3: ANÁLISIS FINANCIERO
 # ==========================================
 with tab_analisis:
-    st.subheader("Dashboard Financiero Mensual")
+    st.subheader("Margen y Rentabilidad del Mes")
 
     col_mes1, col_mes2 = st.columns(2)
     with col_mes1:
@@ -435,7 +435,7 @@ with tab_analisis:
     df_gastos_mes = obtener_gastos_filtrado(user_id, fecha_inicio_mes, fecha_fin_mes)
 
     # Ingresos y gastos del mes ya sin el IVA cobrado mezclado (el IVA no es
-    # ingreso del taller - ver "Análisis Financiero" para el detalle a declarar).
+    # ingreso del taller - ver la página "Análisis Financiero" para el detalle a declarar).
     ingresos_totales, gastos_totales = obtener_metricas_financieras(user_id, año_sel, mes_sel)
 
     margen_neto = ingresos_totales - gastos_totales
@@ -447,7 +447,7 @@ with tab_analisis:
     if ingresos_totales > 0:
         pct_margen = (margen_neto / ingresos_totales) * 100
         col_m4.metric("% Margen", f"{pct_margen:.1f}%")
-    st.caption("Los ingresos no incluyen el IVA cobrado (ese IVA hay que declararlo, no es utilidad del taller). Ver la página **Análisis Financiero** para el detalle a declarar.")
+    st.caption("Los ingresos no incluyen el IVA cobrado (ese IVA hay que declararlo, no es utilidad del taller). Ve al módulo **Análisis Financiero** en el menú lateral para ver el detalle a declarar.")
 
     st.markdown("---")
 

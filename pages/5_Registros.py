@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 from sqlalchemy import text
-from db import obtener_conexion
+from db import obtener_conexion, mensaje_error_amigable
 from queries import (
     obtener_empresas_directorio,
     obtener_mecanicos_directorio,
@@ -11,7 +11,7 @@ from queries import (
     obtener_metricas_dashboard,
 )
 
-st.set_page_config(page_title="Directorio y CRM", layout="wide")
+st.set_page_config(page_title="Registros", layout="wide")
 
 # ==========================================
 # ESTILOS CSS: MÁSCARA DERECHA ADAPTABLE Y ANIMACIONES
@@ -63,7 +63,7 @@ nombre_taller = st.session_state.auth["nombre_taller"]
 def formato_cop(numero):
     return f"${numero:,.0f}".replace(",", ".")
 
-st.title("Directorio y Expediente de Clientes")
+st.title("Registros de Clientes y Personal")
 st.markdown(f"Administración de clientes, flotas y personal para: **{nombre_taller}**")
 st.markdown("---")
 
@@ -116,7 +116,7 @@ with tab_empresas:
                         if "unique constraint" in str(e).lower() or "duplicate key" in str(e).lower():
                             st.error("Error: Ya existe una empresa registrada con ese mismo NIT en el taller.")
                         else:
-                            st.error(f"Error al registrar: {e}")
+                            st.error(mensaje_error_amigable(e, "registrar la empresa"))
                 else:
                     st.warning("La Razón Social y el NIT son campos obligatorios.")
 
@@ -194,7 +194,7 @@ with tab_empresas:
                                 st.success("Empresa eliminada con éxito.")
                                 st.rerun()
                             except Exception as e:
-                                st.error(f"Error al eliminar: {e}")
+                                st.error(mensaje_error_amigable(e, "eliminar la empresa"))
                     with col_conf2:
                         if st.button("Cancelar", key=f"no_del_emp_{empresa_info['id']}"):
                             st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = False
@@ -244,7 +244,7 @@ with tab_empresas:
                                 st.success("Empresa actualizada con éxito.")
                                 st.rerun()
                             except Exception as e:
-                                st.error(f"Error al actualizar: {e}")
+                                st.error(mensaje_error_amigable(e, "actualizar la empresa"))
                         if cancelar_emp:
                             st.session_state[f"edit_emp_mode_{empresa_info['id']}"] = False
                             st.rerun()
@@ -367,7 +367,7 @@ with tab_mecanicos:
                         if "unique constraint" in str(e).lower() or "duplicate key" in str(e).lower():
                             st.error("Este documento ya está registrado en el sistema.")
                         else:
-                            st.error(f"Error al registrar: {e}")
+                            st.error(mensaje_error_amigable(e, "registrar el mecánico"))
                 else:
                     st.warning("Por favor, completa ambos campos.")
     
@@ -388,18 +388,30 @@ with tab_mecanicos:
                             st.session_state[f"edit_mode_{row['id']}"] = True
                     with col_m2:
                         if st.button("Eliminar", key=f"btn_del_mec_{row['id']}", use_container_width=True):
-                            try:
-                                with engine.begin() as conn_del:
-                                    conn_del.execute(
-                                        text("DELETE FROM Mecanicos WHERE id = :id AND usuario_id = :uid"),
-                                        {"id": int(row['id']), "uid": user_id}
-                                    )
-                                invalidar_cache_directorio()
-                                st.success("Mecánico eliminado.")
+                            st.session_state[f"del_confirm_mec_{row['id']}"] = True
+
+                    if st.session_state.get(f"del_confirm_mec_{row['id']}", False):
+                        st.warning(f"¿Eliminar a **{row['nombre']}** del equipo? Esta acción no se puede deshacer.")
+                        col_dc1, col_dc2 = st.columns(2)
+                        with col_dc1:
+                            if st.button("Sí, eliminar definitivamente", key=f"yes_del_mec_{row['id']}", type="primary", use_container_width=True):
+                                try:
+                                    with engine.begin() as conn_del:
+                                        conn_del.execute(
+                                            text("DELETE FROM Mecanicos WHERE id = :id AND usuario_id = :uid"),
+                                            {"id": int(row['id']), "uid": user_id}
+                                        )
+                                    invalidar_cache_directorio()
+                                    st.session_state[f"del_confirm_mec_{row['id']}"] = False
+                                    st.success("Mecánico eliminado.")
+                                    st.rerun()
+                                except Exception:
+                                    st.error("No se puede eliminar: tiene trabajos asociados en órdenes de servicio.")
+                        with col_dc2:
+                            if st.button("Cancelar", key=f"no_del_mec_{row['id']}", use_container_width=True):
+                                st.session_state[f"del_confirm_mec_{row['id']}"] = False
                                 st.rerun()
-                            except Exception:
-                                st.error("No se puede eliminar: tiene trabajos asociados en órdenes de servicio.")
-                    
+
                     if st.session_state.get(f"edit_mode_{row['id']}", False):
                         with st.form(key=f"form_update_mec_{row['id']}"):
                             nuevo_nombre = st.text_input("Nombre", value=row['nombre'])
@@ -434,7 +446,7 @@ with tab_mecanicos:
                                     st.success("Registro actualizado con éxito.")
                                     st.rerun()
                                 except Exception as e:
-                                    st.error(f"Error al actualizar: {e}")
+                                    st.error(mensaje_error_amigable(e, "actualizar el mecánico"))
                             if cancelar:
                                 st.session_state[f"edit_mode_{row['id']}"] = False
                                 st.rerun()

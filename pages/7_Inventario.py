@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from sqlalchemy import text
-from db import obtener_conexion, init_db
+from db import obtener_conexion, init_db, mensaje_error_amigable
 from queries import invalidar_cache_inventario, obtener_config_taller
 from pdf_utils import IVA_OPCIONES
 
@@ -232,7 +232,7 @@ with tab_stock:
                     st.success("Inventario actualizado y sincronizado.")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Error al actualizar inventario: {e}")
+                    st.error(mensaje_error_amigable(e, "actualizar el inventario"))
 
 # ==========================================
 # TAB 2: REGISTRAR NUEVO PRODUCTO
@@ -315,7 +315,7 @@ with tab_nuevo:
                     st.success(f"✅ '{nom_p}' registrado — {formato_cant(stk_p, unidad_p)} en stock a {formato_cop(venta_p)}/{unidad_p} ({iva_tipo_p}).")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Error al guardar producto: {e}")
+                    st.error(mensaje_error_amigable(e, "guardar el producto"))
             else:
                 st.warning("Escribe el nombre del producto y asigna un precio de venta válido.")
 
@@ -372,7 +372,7 @@ with tab_entradas:
                         else:
                             st.error("No se detectaron productos. Intenta con imagen más clara.")
                     except Exception as e:
-                        st.error(f"Error: {e}")
+                        st.error(mensaje_error_amigable(e, "leer la factura con IA"))
 
     with col_cab2:
         num_factura = st.text_input("Número de Factura",
@@ -396,10 +396,22 @@ with tab_entradas:
             st.rerun()
     with col_btn2:
         if st.button("🗑️ Limpiar todo", use_container_width=True, key="btn_clear_taller"):
-            st.session_state.items_entrada_taller = []
-            if "nf_taller" in st.session_state:
-                del st.session_state.nf_taller
-            st.rerun()
+            st.session_state.confirmar_limpiar_taller = True
+
+    if st.session_state.get("confirmar_limpiar_taller", False):
+        st.warning("¿Quitar todos los repuestos de esta entrada? Se perderá lo detectado por la IA y lo agregado manualmente.")
+        col_cl1, col_cl2 = st.columns(2)
+        with col_cl1:
+            if st.button("Sí, limpiar todo", type="primary", use_container_width=True, key="btn_clear_confirm_taller"):
+                st.session_state.items_entrada_taller = []
+                if "nf_taller" in st.session_state:
+                    del st.session_state.nf_taller
+                st.session_state.confirmar_limpiar_taller = False
+                st.rerun()
+        with col_cl2:
+            if st.button("Cancelar", use_container_width=True, key="btn_clear_cancel_taller"):
+                st.session_state.confirmar_limpiar_taller = False
+                st.rerun()
 
     if not st.session_state.items_entrada_taller:
         st.info("Sube una factura para que la IA detecte los repuestos, o agrega uno manualmente.")
@@ -433,7 +445,7 @@ with tab_entradas:
                     else:
                         st.warning("⚠️ Repuesto nuevo — se creará en el inventario")
                 with col_h2:
-                    if st.button("❌", key=f"del_t_{i}"):
+                    if st.button("❌", key=f"del_t_{i}", help="Quitar este repuesto de la lista"):
                         items_a_eliminar.append(i)
 
                 col_f1, col_f2, col_f3, col_f4 = st.columns([3, 1, 1, 1])
@@ -567,4 +579,4 @@ with tab_entradas:
                     st.success(f"✅ Entrada registrada: **{nuevos}** nuevo(s), **{actualizados}** actualizado(s).")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Error al registrar: {e}")
+                    st.error(mensaje_error_amigable(e, "registrar la entrada de mercancía"))

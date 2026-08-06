@@ -9,6 +9,7 @@ from datetime import date
 import pandas as pd
 import requests
 import streamlit as st
+from db import mensaje_error_amigable
 
 BASE_URL = "https://api.alegra.com/api/v1"
 
@@ -106,7 +107,7 @@ def crear_contacto(email, token, nombre, identificacion, tipo_identificacion="NI
         st.error(f"Error al crear contacto ({resp.status_code}): {_mensaje_error(resp)}")
         return None
     except requests.RequestException as e:
-        st.error(f"Error de conexión al crear contacto: {e}")
+        st.error(mensaje_error_amigable(e, "conectar con Alegra para crear el contacto"))
         return None
 
 
@@ -149,7 +150,7 @@ def crear_item_ad_hoc(email, token, nombre, precio, unidad_medida="Unidad"):
         st.error(f"Error al crear ítem '{nombre}' ({resp.status_code}): {_mensaje_error(resp)}")
         return None
     except requests.RequestException as e:
-        st.error(f"Error de conexión al crear ítem: {e}")
+        st.error(mensaje_error_amigable(e, "conectar con Alegra para crear el ítem"))
         return None
 
 
@@ -199,7 +200,7 @@ def crear_factura_orden(email, token, cliente_id, items, due_date=None,
         st.error(f"Error al crear factura ({resp.status_code}): {_mensaje_error(resp)}")
         return None
     except requests.RequestException as e:
-        st.error(f"Error de conexión al crear factura: {e}")
+        st.error(mensaje_error_amigable(e, "conectar con Alegra para crear la factura"))
         return None
 
 
@@ -291,7 +292,7 @@ def crear_nota_credito(email, token, factura_alegra_id, cliente_id, items, total
         st.error(f"Error al crear nota crédito ({resp.status_code}): {_mensaje_error(resp)}")
         return None
     except requests.RequestException as e:
-        st.error(f"Error de conexión al crear nota crédito: {e}")
+        st.error(mensaje_error_amigable(e, "conectar con Alegra para crear la nota crédito"))
         return None
 
 

@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from sqlalchemy import text
-from db import obtener_conexion, init_db
+from db import obtener_conexion, init_db, mensaje_error_amigable
 from queries import obtener_catalogos, obtener_inventario_activo, obtener_config_taller, invalidar_cache_ordenes, invalidar_cache_inventario
 from pdf_utils import IVA_OPCIONES
 
@@ -119,15 +119,21 @@ tab1, tab2 = st.tabs(["Mano de Obra", "Repuestos"])
 
 with tab1:
     with st.container(border=True):
-        st.markdown("**Agregar Mano de Obra con Retencion Fiscal (%)**")
+        st.markdown("**Agregar Mano de Obra con Retención Fiscal (%)**")
         col_mo1, col_mo2, col_mo3, col_mo4 = st.columns([2, 1, 1, 1])
         with col_mo1:
-            desc_mo = st.text_input("Descripcion del trabajo realizado", key="desc_mo")
-            mecanico_sel = st.selectbox("Mecanico responsable", options=opciones_mecanicos, key="mec_mo")
+            desc_mo = st.text_input("Descripción del trabajo realizado", key="desc_mo")
+            mecanico_sel = st.selectbox("Mecánico responsable", options=opciones_mecanicos, key="mec_mo")
         with col_mo2:
             venta_mo = st.number_input("Cobro Bruto al Cliente ($0 si pdte)", min_value=0.0, step=5000.0, key="venta_mo")
         with col_mo3:
-            porcentaje_ret = st.number_input("Retencion Fiscal (%)", min_value=0.0, max_value=100.0, step=1.0, key="ret_mo")
+            porcentaje_ret = st.number_input(
+                "Retención Fiscal (%)", min_value=0.0, max_value=100.0, step=1.0, key="ret_mo",
+                help=(
+                    "Porcentaje que se le descuenta al mecánico de este trabajo (ej. retención "
+                    "en la fuente). Déjalo en 0 si no aplica retención."
+                )
+            )
         with col_mo4:
             iva_mo_sel = st.selectbox("Impuesto (IVA)", options=IVA_OPCIONES,
                                        index=IVA_OPCIONES.index(IVA_TIPO_DEFAULT_MO), key="iva_mo")
@@ -429,6 +435,6 @@ if st.session_state.carrito_items:
                     st.success(f"Orden #{hoja_id} guardada con exito para el vehiculo {placa}.")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Error al guardar: {e}")
+                    st.error(mensaje_error_amigable(e, "guardar la orden"))
 else:
     st.info("Aun no se han agregado trabajos ni repuestos a la orden actual.")
