@@ -33,9 +33,6 @@ def aplicar_estilos():
         [data-testid="stAppViewBlockContainer"] {
             animation: fade-in-up 0.6s ease-out;
         }
-        div[data-testid="stVerticalBlock"] > div {
-            animation: fade-in-up 0.5s ease-out;
-        }
 
         /* Div overlay que bloquea la esquina derecha */
         #header-blocker {

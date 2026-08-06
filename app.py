@@ -123,7 +123,6 @@ st.markdown("""
         100% { opacity: 1; transform: translateY(0); }
     }
     [data-testid="stAppViewBlockContainer"] { animation: fade-in-up 0.6s ease-out; }
-    div[data-testid="stVerticalBlock"] > div { animation: fade-in-up 0.5s ease-out; }
     </style>
 """, unsafe_allow_html=True)
 
