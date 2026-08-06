@@ -343,28 +343,33 @@ st.markdown("---")
 # ==========================================
 st.subheader("3. Resumen de la Orden")
 if st.session_state.carrito_items:
+    # Sin st.container(border=True) por fila: con un carrito de varios ítems,
+    # cada contenedor es un elemento más que Streamlit tiene que volver a
+    # dibujar en cada clic. Las columnas solas, separadas por una línea,
+    # se ven igual de ordenadas y son mucho más livianas (mismo criterio
+    # que ya usa MyInv en su carrito de ventas).
     for i, item in enumerate(st.session_state.carrito_items):
-        with st.container(border=True):
-            col_res1, col_res2, col_res3, col_res4 = st.columns([3, 2, 2, 1])
-            with col_res1:
-                st.markdown(f"**{item['Tipo']}**: {item['Descripción']}")
-                st.caption(f"🧾 {item.get('IVA_Tipo', 'Excluido')}")
-            with col_res2:
-                if item['Tipo'] == 'Mano de Obra':
-                    st.caption(f"Tecnico: {item['Mecánico']}")
-                else:
-                    st.caption(f"Costo: {formato_cop(item['Costo'])}")
-            with col_res3:
-                if item['PVP Cliente'] == 0:
-                    st.markdown("**Por Cotizar ($0)**")
-                else:
-                    st.markdown(f"**Cobro al Cliente: {formato_cop(item['PVP Cliente'])}**")
-                    if item.get('Base_Nomina') and item['Base_Nomina'] < item['PVP Cliente']:
-                        st.caption(f"Base Nomina: {formato_cop(item['Base_Nomina'])}")
-            with col_res4:
-                if st.button("Quitar", key=f"borrar_{i}", use_container_width=True):
-                    st.session_state.carrito_items.pop(i)
-                    st.rerun()
+        col_res1, col_res2, col_res3, col_res4 = st.columns([3, 2, 2, 1])
+        with col_res1:
+            st.markdown(f"**{item['Tipo']}**: {item['Descripción']}")
+            st.caption(f"🧾 {item.get('IVA_Tipo', 'Excluido')}")
+        with col_res2:
+            if item['Tipo'] == 'Mano de Obra':
+                st.caption(f"Tecnico: {item['Mecánico']}")
+            else:
+                st.caption(f"Costo: {formato_cop(item['Costo'])}")
+        with col_res3:
+            if item['PVP Cliente'] == 0:
+                st.markdown("**Por Cotizar ($0)**")
+            else:
+                st.markdown(f"**Cobro al Cliente: {formato_cop(item['PVP Cliente'])}**")
+                if item.get('Base_Nomina') and item['Base_Nomina'] < item['PVP Cliente']:
+                    st.caption(f"Base Nomina: {formato_cop(item['Base_Nomina'])}")
+        with col_res4:
+            if st.button("Quitar", key=f"borrar_{i}", use_container_width=True):
+                st.session_state.carrito_items.pop(i)
+                st.rerun()
+        st.divider()
 
     st.markdown("---")
     total_cobro = sum(float(item['PVP Cliente']) for item in st.session_state.carrito_items)

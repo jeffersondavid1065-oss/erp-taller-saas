@@ -1,4 +1,5 @@
 import streamlit as st
+import html
 from sqlalchemy import text
 from db import obtener_conexion
 
@@ -196,29 +197,42 @@ except Exception as e:
 col1, col2, col3, col4, col5 = st.columns(5)
 
 def dibujar_columna(columna, titulo, estado_filtro, clase_css):
+    # Las tarjetas son puro texto de solo lectura (sin botones ni campos
+    # adentro), así que se arma todo el HTML de la columna de una sola vez
+    # en vez de un st.container(border=True) nativo por tarjeta: mismo look,
+    # una sola llamada a Streamlit por columna en lugar de una por orden -
+    # mucho menos trabajo para volver a dibujar en cada clic.
+    tarjetas_html = []
+    for v in vehiculos:
+        orden_id, placa, empresa, estado_actual, sin_precio = v
+        if estado_actual == estado_filtro:
+            placa_segura = html.escape(str(placa))
+            empresa_segura = html.escape(str(empresa))
+            aviso_pendiente = (
+                '<div style="font-size:0.8rem; color:#b45309; margin-top:4px;">Pendiente por Cotizar ($0)</div>'
+                if sin_precio and sin_precio > 0 else ""
+            )
+            tarjetas_html.append(f"""
+                <div style="border:1px solid rgba(49,51,63,0.15); border-radius:8px;
+                            padding:10px 12px; margin-bottom:8px; background:rgba(255,255,255,0.6);">
+                    <div style="font-weight:600;">Orden #{orden_id}</div>
+                    <div>Placa: <strong>{placa_segura}</strong></div>
+                    <div style="font-size:0.85rem; color:#555;">Empresa: {empresa_segura}</div>
+                    {aviso_pendiente}
+                </div>
+            """)
+
+    if not tarjetas_html:
+        tarjetas_html.append('<div style="color:#888; font-size:0.9rem;">Vacío</div>')
+
     with columna:
         st.markdown(f"""
             <div class="kanban-column {clase_css}">
                 <h4 style="margin-top: 0; font-weight: 600; color: #31333F; font-size: 1.1rem;">{titulo}</h4>
                 <hr style="margin: 8px 0; border: none; border-top: 1px solid rgba(0,0,0,0.08);">
+                {''.join(tarjetas_html)}
+            </div>
         """, unsafe_allow_html=True)
-        
-        contador = 0
-        for v in vehiculos:
-            orden_id, placa, empresa, estado_actual, sin_precio = v
-            if estado_actual == estado_filtro:
-                with st.container(border=True):
-                    st.markdown(f"**Orden #{orden_id}**")
-                    st.markdown(f"Placa: **{placa}**")
-                    st.caption(f"Empresa: {empresa}")
-                    if sin_precio and sin_precio > 0:
-                        st.caption("Pendiente por Cotizar ($0)")
-                contador += 1
-                
-        if contador == 0:
-            st.caption("Vacío")
-            
-        st.markdown("</div>", unsafe_allow_html=True)
 
 dibujar_columna(col1, "Cotizar", "Cotizar", "bg-cotizar")
 dibujar_columna(col2, "En Revisión", "En revisión", "bg-revision")

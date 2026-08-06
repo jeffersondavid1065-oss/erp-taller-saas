@@ -482,66 +482,68 @@ if orden_busqueda:
                 st.markdown("---")
                 st.subheader("2. Gestión y Modificación de Ítems")
                 if not df_trabajos.empty:
+                    # Sin st.container(border=True) por fila - más liviano de
+                    # volver a dibujar en cada clic, separado con una línea.
                     for index, row in df_trabajos.iterrows():
-                        with st.container(border=True):
-                            col_e1, col_e2, col_e3, col_e4 = st.columns([3, 2, 1, 1])
-                            with col_e1:
-                                st.write(f"**{row['tipo_item']}**: {row['descripcion']}")
-                            with col_e2:
-                                st.write(f"Valor: {formato_cop(row['precio_venta'])}")
-                            with col_e3:
-                                if st.button("Editar", key=f"edit_item_{row['id']}"):
-                                    st.session_state[f"modo_edit_{row['id']}"] = True
-                            with col_e4:
-                                if st.button("Eliminar", key=f"del_{row['id']}"):
-                                    try:
-                                        with engine.begin() as conn_del:
-                                            conn_del.execute(
-                                                text("DELETE FROM Detalles_Orden WHERE id = :did"),
-                                                {"did": row['id']}
-                                            )
-                                        invalidar_cache_ordenes()
-                                        st.success("Ítem eliminado.")
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Error al eliminar: {e}")
+                        col_e1, col_e2, col_e3, col_e4 = st.columns([3, 2, 1, 1])
+                        with col_e1:
+                            st.write(f"**{row['tipo_item']}**: {row['descripcion']}")
+                        with col_e2:
+                            st.write(f"Valor: {formato_cop(row['precio_venta'])}")
+                        with col_e3:
+                            if st.button("Editar", key=f"edit_item_{row['id']}"):
+                                st.session_state[f"modo_edit_{row['id']}"] = True
+                        with col_e4:
+                            if st.button("Eliminar", key=f"del_{row['id']}"):
+                                try:
+                                    with engine.begin() as conn_del:
+                                        conn_del.execute(
+                                            text("DELETE FROM Detalles_Orden WHERE id = :did"),
+                                            {"did": row['id']}
+                                        )
+                                    invalidar_cache_ordenes()
+                                    st.success("Ítem eliminado.")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error al eliminar: {e}")
 
-                            if st.session_state.get(f"modo_edit_{row['id']}", False):
-                                with st.form(key=f"form_edit_item_{row['id']}"):
-                                    st.markdown(f"Editando ítem #{row['id']}")
-                                    nueva_desc = st.text_input("Nueva Descripción", value=row['descripcion'])
-                                    nuevo_precio = st.number_input("Nuevo Precio ($)", min_value=0.0, step=5000.0, value=float(row['precio_venta']))
+                        if st.session_state.get(f"modo_edit_{row['id']}", False):
+                            with st.form(key=f"form_edit_item_{row['id']}"):
+                                st.markdown(f"Editando ítem #{row['id']}")
+                                nueva_desc = st.text_input("Nueva Descripción", value=row['descripcion'])
+                                nuevo_precio = st.number_input("Nuevo Precio ($)", min_value=0.0, step=5000.0, value=float(row['precio_venta']))
 
-                                    opciones_iva_edit = ["Usar el default de su categoría"] + IVA_OPCIONES
-                                    iva_tipo_actual = row.get('iva_tipo', None)
-                                    idx_iva_edit = opciones_iva_edit.index(iva_tipo_actual) if iva_tipo_actual in IVA_OPCIONES else 0
-                                    sel_iva_edit = st.selectbox("Impuesto (IVA) para este ítem", opciones_iva_edit, index=idx_iva_edit)
-                                    
-                                    col_fe1, col_fe2 = st.columns(2)
-                                    with col_fe1:
-                                        if st.form_submit_button("Guardar Cambios", type="primary"):
-                                            nuevo_iva_tipo = None if sel_iva_edit == "Usar el default de su categoría" else sel_iva_edit
-                                            try:
-                                                with engine.begin() as conn_upd:
-                                                    conn_upd.execute(
-                                                        text("""
-                                                            UPDATE Detalles_Orden
-                                                            SET descripcion = :desc, precio_venta = :precio, iva_tipo = :iva_tipo
-                                                            WHERE id = :did
-                                                        """),
-                                                        {"desc": nueva_desc, "precio": float(nuevo_precio),
-                                                         "iva_tipo": nuevo_iva_tipo, "did": row['id']}
-                                                    )
-                                                invalidar_cache_ordenes()
-                                                st.session_state[f"modo_edit_{row['id']}"] = False
-                                                st.success("Ítem actualizado y sincronizado en todo el sistema.")
-                                                st.rerun()
-                                            except Exception as e:
-                                                st.error(f"Error al actualizar: {e}")
-                                    with col_fe2:
-                                        if st.form_submit_button("Cancelar"):
+                                opciones_iva_edit = ["Usar el default de su categoría"] + IVA_OPCIONES
+                                iva_tipo_actual = row.get('iva_tipo', None)
+                                idx_iva_edit = opciones_iva_edit.index(iva_tipo_actual) if iva_tipo_actual in IVA_OPCIONES else 0
+                                sel_iva_edit = st.selectbox("Impuesto (IVA) para este ítem", opciones_iva_edit, index=idx_iva_edit)
+
+                                col_fe1, col_fe2 = st.columns(2)
+                                with col_fe1:
+                                    if st.form_submit_button("Guardar Cambios", type="primary"):
+                                        nuevo_iva_tipo = None if sel_iva_edit == "Usar el default de su categoría" else sel_iva_edit
+                                        try:
+                                            with engine.begin() as conn_upd:
+                                                conn_upd.execute(
+                                                    text("""
+                                                        UPDATE Detalles_Orden
+                                                        SET descripcion = :desc, precio_venta = :precio, iva_tipo = :iva_tipo
+                                                        WHERE id = :did
+                                                    """),
+                                                    {"desc": nueva_desc, "precio": float(nuevo_precio),
+                                                     "iva_tipo": nuevo_iva_tipo, "did": row['id']}
+                                                )
+                                            invalidar_cache_ordenes()
                                             st.session_state[f"modo_edit_{row['id']}"] = False
+                                            st.success("Ítem actualizado y sincronizado en todo el sistema.")
                                             st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Error al actualizar: {e}")
+                                with col_fe2:
+                                    if st.form_submit_button("Cancelar"):
+                                        st.session_state[f"modo_edit_{row['id']}"] = False
+                                        st.rerun()
+                        st.divider()
                 else:
                     st.warning("No hay ítems para modificar.")
 
