@@ -10,7 +10,12 @@ from queries import (
     invalidar_cache_config_taller,
     obtener_operarios_patio,
     invalidar_cache_operarios,
+    obtener_credenciales_alegra,
+    guardar_credenciales_alegra,
+    eliminar_credenciales_alegra,
+    tiene_fe_habilitada,
 )
+import alegra_utils
 
 st.set_page_config(page_title="Configuración del Taller", layout="wide")
 
@@ -72,8 +77,8 @@ iva_tipo_rep_actual    = datos[7] if datos and datos[7] in IVA_OPCIONES else "Ex
 LOGOS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logos")
 os.makedirs(LOGOS_DIR, exist_ok=True)
 
-tab_datos, tab_logo, tab_iva, tab_operarios = st.tabs([
-    "Datos del Taller", "Logotipo", "IVA (Colombia)", "Operarios de Patio"
+tab_datos, tab_logo, tab_iva, tab_operarios, tab_alegra = st.tabs([
+    "Datos del Taller", "Logotipo", "IVA (Colombia)", "Operarios de Patio", "Facturación Electrónica"
 ])
 
 # ==========================================
@@ -381,6 +386,70 @@ with tab_operarios:
                             if st.form_submit_button("Cancelar"):
                                 st.session_state[f"mostrar_reset_{op_id}"] = False
                                 st.rerun()
+
+# ==========================================
+# TAB 5: FACTURACIÓN ELECTRÓNICA
+# ==========================================
+with tab_alegra:
+    st.subheader("Facturación Electrónica")
+
+    if not tiene_fe_habilitada(user_id):
+        st.info(
+            "Esta función todavía no está habilitada para tu taller. "
+            "Contacta al administrador para activarla."
+        )
+        st.stop()
+
+    st.caption(
+        "Conecta tu propia cuenta del proveedor de facturación electrónica para poder "
+        "emitir facturas desde tus órdenes. Cada taller usa su propia cuenta — la "
+        "factura sale a nombre de tu NIT, no del nuestro."
+    )
+
+    creds = obtener_credenciales_alegra(user_id)
+    conectado = bool(creds and creds.alegra_email and creds.alegra_token)
+
+    if conectado:
+        st.success(f"Cuenta conectada: **{creds.alegra_email}**")
+
+        col_a1, col_a2 = st.columns(2)
+        with col_a1:
+            if st.button("Probar conexión", use_container_width=True):
+                with st.spinner("Probando..."):
+                    ok, msg = alegra_utils.probar_conexion(creds.alegra_email, creds.alegra_token)
+                if ok:
+                    st.success(msg)
+                else:
+                    st.error(msg)
+        with col_a2:
+            if st.button("Desconectar cuenta", use_container_width=True):
+                eliminar_credenciales_alegra(user_id)
+                st.success("Cuenta desconectada.")
+                st.rerun()
+
+        st.markdown("---")
+        st.markdown("**Cambiar de cuenta:**")
+
+    with st.form("form_alegra"):
+        st.caption(
+            "Consigue estos datos en tu cuenta de Alegra: "
+            "Configuración → \"API - Integraciones con otros sistemas\"."
+        )
+        email_alegra_input = st.text_input("Email de tu cuenta Alegra", placeholder="tucorreo@ejemplo.com")
+        token_alegra_input = st.text_input("Token de Alegra", type="password")
+
+        if st.form_submit_button("Guardar y probar conexión", type="primary"):
+            if not email_alegra_input or not token_alegra_input:
+                st.warning("Completa ambos campos.")
+            else:
+                with st.spinner("Validando credenciales..."):
+                    ok, msg = alegra_utils.probar_conexion(email_alegra_input, token_alegra_input)
+                if ok:
+                    guardar_credenciales_alegra(user_id, email_alegra_input, token_alegra_input)
+                    st.success("Credenciales válidas y guardadas. Ya puedes facturar electrónicamente.")
+                    st.rerun()
+                else:
+                    st.error(f"No se guardó: {msg}")
 
 st.markdown("---")
 st.caption("💡 **Tip:** Después de subir tu logo, descarga una factura de prueba en Expediente para verificar cómo queda.")

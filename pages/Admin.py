@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import date, timedelta
 from sqlalchemy import text
 from db import obtener_conexion
+from queries import establecer_fe_habilitada
 
 st.set_page_config(page_title="Administración - MyTaller", layout="wide")
 
@@ -73,7 +74,11 @@ def obtener_talleres():
     engine = obtener_conexion()
     with engine.connect() as conn:
         return pd.read_sql_query(
-            text("SELECT id, nombre_taller, nombre_dueno, email, activo, fecha_pago_limite FROM Usuarios ORDER BY id DESC"),
+            text("""
+                SELECT id, nombre_taller, nombre_dueno, email, activo, fecha_pago_limite,
+                       COALESCE(fe_habilitada, FALSE) as fe_habilitada
+                FROM Usuarios ORDER BY id DESC
+            """),
             con=conn
         )
 
@@ -140,5 +145,28 @@ if not df_talleres.empty:
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error al procesar la suspensión: {e}")
+
+        st.markdown("---")
+        st.markdown("### Facturación Electrónica")
+        st.caption(
+            "Controla qué talleres pueden ver y usar la integración de facturación electrónica "
+            "(configurar credenciales, emitir facturas/notas crédito ante la DIAN). "
+            "Nuevos talleres empiezan sin acceso."
+        )
+        fe_activa = bool(taller_row['fe_habilitada'])
+        st.write(f"Estado actual: {'Habilitada' if fe_activa else 'Deshabilitada'}")
+        col_fe1, col_fe2 = st.columns(2)
+        with col_fe1:
+            if st.button("Habilitar FE", type="primary", use_container_width=True, disabled=fe_activa):
+                establecer_fe_habilitada(taller_id_activo, True)
+                obtener_talleres.clear()
+                st.success(f"Facturación Electrónica habilitada para '{taller_row['nombre_taller']}'.")
+                st.rerun()
+        with col_fe2:
+            if st.button("Deshabilitar FE", use_container_width=True, disabled=not fe_activa):
+                establecer_fe_habilitada(taller_id_activo, False)
+                obtener_talleres.clear()
+                st.warning(f"Facturación Electrónica deshabilitada para '{taller_row['nombre_taller']}'.")
+                st.rerun()
 else:
     st.info("Actualmente no existen talleres registrados en el sistema.")

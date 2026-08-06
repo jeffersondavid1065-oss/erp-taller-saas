@@ -7,3 +7,4 @@ bcrypt
 openpyxl
 google-genai>=1.0.0
 Pillow>=10.0.0
+requests

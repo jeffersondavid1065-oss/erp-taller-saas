@@ -127,7 +127,8 @@ def obtener_empresas_directorio(uid):
     engine = obtener_conexion()
     with engine.connect() as conn:
         return pd.read_sql_query(
-            text("SELECT id, razon_social, nit, telefono, email FROM Empresas_Clientes "
+            text("SELECT id, razon_social, nit, telefono, email, "
+                 "COALESCE(tipo_documento, 'NIT') as tipo_documento FROM Empresas_Clientes "
                  "WHERE usuario_id = :uid ORDER BY razon_social ASC"),
             con=conn, params={"uid": uid}
         )
@@ -305,3 +306,190 @@ def obtener_operarios_patio(uid):
 def invalidar_cache_operarios():
     """Llamar tras crear, activar/desactivar o resetear la clave de un operario de patio."""
     obtener_operarios_patio.clear()
+
+
+# ==========================================
+# FACTURACIÓN ELECTRÓNICA (ALEGRA)
+# ==========================================
+def obtener_credenciales_alegra(uid):
+    """Credenciales de Alegra configuradas por este taller (o None si no ha configurado nada)."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        return conn.execute(text("""
+            SELECT alegra_email, alegra_token
+            FROM Usuarios WHERE id = :uid
+        """), {"uid": uid}).fetchone()
+
+
+def guardar_credenciales_alegra(uid, email, token):
+    """Guarda (o actualiza) las credenciales de Alegra de este taller."""
+    engine = obtener_conexion()
+    with engine.begin() as conn:
+        conn.execute(text("""
+            UPDATE Usuarios SET alegra_email = :email, alegra_token = :token WHERE id = :uid
+        """), {"email": email, "token": token, "uid": uid})
+
+
+def eliminar_credenciales_alegra(uid):
+    """Desconecta la cuenta de Alegra de este taller."""
+    engine = obtener_conexion()
+    with engine.begin() as conn:
+        conn.execute(text("""
+            UPDATE Usuarios SET alegra_email = NULL, alegra_token = NULL WHERE id = :uid
+        """), {"uid": uid})
+
+
+@st.cache_data(ttl=60)
+def tiene_fe_habilitada(uid):
+    """Indica si el administrador habilitó la Facturación Electrónica para este
+    taller. Controla el acceso a toda la funcionalidad de Alegra/DIAN."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        valor = conn.execute(
+            text("SELECT fe_habilitada FROM Usuarios WHERE id = :uid"), {"uid": uid}
+        ).scalar()
+    return bool(valor)
+
+
+def establecer_fe_habilitada(uid, habilitada):
+    """Habilita o deshabilita la Facturación Electrónica para un taller (solo admin)."""
+    engine = obtener_conexion()
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE Usuarios SET fe_habilitada = :val WHERE id = :uid"),
+            {"val": bool(habilitada), "uid": uid}
+        )
+    tiene_fe_habilitada.clear()
+
+
+def obtener_datos_facturacion_empresa(uid, empresa_id):
+    """Datos de la Empresa_Cliente necesarios para facturar electrónicamente (sin caché, siempre al día)."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        return conn.execute(text("""
+            SELECT id, razon_social, nit, tipo_documento, email, alegra_contact_id
+            FROM Empresas_Clientes
+            WHERE usuario_id = :uid AND id = :eid
+        """), {"uid": uid, "eid": empresa_id}).fetchone()
+
+
+def guardar_alegra_contact_id(empresa_id, alegra_contact_id):
+    """Guarda el id de contacto en Alegra la primera vez que se crea, para reutilizarlo después."""
+    engine = obtener_conexion()
+    with engine.begin() as conn:
+        conn.execute(text("""
+            UPDATE Empresas_Clientes SET alegra_contact_id = :alegra_id WHERE id = :eid
+        """), {"alegra_id": alegra_contact_id, "eid": empresa_id})
+    invalidar_cache_directorio()
+
+
+def obtener_orden_para_facturar(uid, hoja_id):
+    """Datos base de una orden necesarios para emitirla como factura electrónica."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        return conn.execute(text("""
+            SELECT id, empresa_id, tipo_pago, fecha_vencimiento_credito,
+                   factura_alegra_id, factura_estado, factura_cufe,
+                   factura_pdf_url, factura_xml_url,
+                   nota_credito_alegra_id, nota_credito_pdf_url, nota_credito_xml_url
+            FROM Hojas_Trabajo
+            WHERE id = :hid AND usuario_id = :uid
+        """), {"hid": hoja_id, "uid": uid}).fetchone()
+
+
+def obtener_items_orden(hoja_id):
+    """Renglones de una orden (mano de obra/repuestos) para armar la factura electrónica."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        return conn.execute(text("""
+            SELECT id, tipo_item, descripcion, precio_venta, iva_tipo
+            FROM Detalles_Orden WHERE hoja_id = :hid
+        """), {"hid": hoja_id}).fetchall()
+
+
+def guardar_resultado_factura(hoja_id, alegra_id=None, cufe=None, pdf_url=None, xml_url=None,
+                               estado="emitida", prefijo=None, numero=None,
+                               tipo_pago=None, fecha_vencimiento=None):
+    """Guarda el resultado de crear (o intentar emitir) la factura electrónica de una orden."""
+    engine = obtener_conexion()
+    with engine.begin() as conn:
+        conn.execute(text("""
+            UPDATE Hojas_Trabajo
+            SET factura_alegra_id = :alegra_id, factura_cufe = :cufe,
+                factura_pdf_url = :pdf_url, factura_xml_url = :xml_url, factura_estado = :estado,
+                factura_prefijo = :prefijo, factura_numero = :numero,
+                tipo_pago = COALESCE(:tipo_pago, tipo_pago),
+                fecha_vencimiento_credito = COALESCE(:fecha_vencimiento, fecha_vencimiento_credito)
+            WHERE id = :hid
+        """), {
+            "alegra_id": alegra_id, "cufe": cufe, "pdf_url": pdf_url, "xml_url": xml_url,
+            "estado": estado, "prefijo": prefijo, "numero": numero, "hid": hoja_id,
+            "tipo_pago": tipo_pago, "fecha_vencimiento": fecha_vencimiento,
+        })
+    invalidar_cache_ordenes()
+
+
+def actualizar_datos_factura(hoja_id, cufe=None, pdf_url=None, xml_url=None, prefijo=None, numero=None):
+    """Completa CUFE/PDF/XML/prefijo/número de una factura ya emitida sin pisar lo que ya
+    estaba guardado. Se usa al refrescar el enlace de una factura antigua."""
+    engine = obtener_conexion()
+    with engine.begin() as conn:
+        conn.execute(text("""
+            UPDATE Hojas_Trabajo
+            SET factura_cufe = COALESCE(:cufe, factura_cufe),
+                factura_pdf_url = COALESCE(:pdf_url, factura_pdf_url),
+                factura_xml_url = COALESCE(:xml_url, factura_xml_url),
+                factura_prefijo = COALESCE(:prefijo, factura_prefijo),
+                factura_numero = COALESCE(:numero, factura_numero)
+            WHERE id = :hid
+        """), {
+            "cufe": cufe, "pdf_url": pdf_url, "xml_url": xml_url,
+            "prefijo": prefijo, "numero": numero, "hid": hoja_id
+        })
+    invalidar_cache_ordenes()
+
+
+def guardar_nota_credito(hoja_id, nota_credito_alegra_id, pdf_url=None, xml_url=None, prefijo=None, numero=None):
+    """Guarda el id, número (prefijo+consecutivo) y PDF/XML de la nota crédito
+    emitida en Alegra para una orden anulada."""
+    engine = obtener_conexion()
+    with engine.begin() as conn:
+        conn.execute(text("""
+            UPDATE Hojas_Trabajo SET nota_credito_alegra_id = :ncid, nota_credito_pdf_url = :pdf_url,
+                   nota_credito_xml_url = :xml_url, nota_credito_prefijo = :prefijo,
+                   nota_credito_numero = :numero
+            WHERE id = :hid
+        """), {
+            "ncid": nota_credito_alegra_id, "pdf_url": pdf_url, "xml_url": xml_url,
+            "prefijo": prefijo, "numero": numero, "hid": hoja_id
+        })
+    invalidar_cache_ordenes()
+
+
+def actualizar_pdf_nota_credito(hoja_id, pdf_url, xml_url=None, prefijo=None, numero=None):
+    """Completa PDF/XML/número de una nota crédito ya emitida, cuando no llegaron
+    en la respuesta de creación, o al refrescar un enlace antiguo."""
+    engine = obtener_conexion()
+    with engine.begin() as conn:
+        conn.execute(text("""
+            UPDATE Hojas_Trabajo
+            SET nota_credito_pdf_url = COALESCE(:pdf_url, nota_credito_pdf_url),
+                nota_credito_xml_url = COALESCE(:xml_url, nota_credito_xml_url),
+                nota_credito_prefijo = COALESCE(:prefijo, nota_credito_prefijo),
+                nota_credito_numero = COALESCE(:numero, nota_credito_numero)
+            WHERE id = :hid
+        """), {
+            "pdf_url": pdf_url, "xml_url": xml_url,
+            "prefijo": prefijo, "numero": numero, "hid": hoja_id
+        })
+    invalidar_cache_ordenes()
+
+
+def marcar_orden_facturada(hoja_id):
+    """Pasa la orden a estado operativo 'Facturado' cuando su factura
+    electrónica queda emitida ante la DIAN (evita el paso manual de cambiar
+    el estado aparte)."""
+    engine = obtener_conexion()
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE Hojas_Trabajo SET estado = 'Facturado' WHERE id = :hid"), {"hid": hoja_id})
+    invalidar_cache_ordenes()

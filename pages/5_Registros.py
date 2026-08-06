@@ -83,28 +83,31 @@ with tab_empresas:
             col1, col2 = st.columns(2)
             with col1:
                 razon_social = st.text_input("Razón Social o Nombre del Cliente")
+                tipo_doc = st.radio("Tipo de documento", ["NIT", "CC"], horizontal=True,
+                                     help="NIT para empresas, CC (cédula) para personas naturales. Se usa al facturar electrónicamente.")
                 nit = st.text_input("NIT o Cédula (Sin puntos)")
             with col2:
                 telefono = st.text_input("Teléfono de Contacto")
                 email = st.text_input("Correo Electrónico")
-            
+
             submit_empresa = st.form_submit_button("Guardar Empresa", type="primary")
-            
+
             if submit_empresa:
                 if razon_social and nit:
                     try:
                         with engine.begin() as conn:
                             conn.execute(
                                 text('''
-                                    INSERT INTO Empresas_Clientes (usuario_id, razon_social, nit, telefono, email) 
-                                    VALUES (:uid, :razon, :nit, :tel, :email)
+                                    INSERT INTO Empresas_Clientes (usuario_id, razon_social, nit, telefono, email, tipo_documento)
+                                    VALUES (:uid, :razon, :nit, :tel, :email, :tipo_doc)
                                 '''),
                                 {
-                                    "uid": user_id, 
-                                    "razon": razon_social, 
-                                    "nit": nit, 
-                                    "tel": telefono, 
-                                    "email": email
+                                    "uid": user_id,
+                                    "razon": razon_social,
+                                    "nit": nit,
+                                    "tel": telefono,
+                                    "email": email,
+                                    "tipo_doc": tipo_doc,
                                 }
                             )
                         # Nueva empresa: refresca directorio/catálogos y el
@@ -206,23 +209,28 @@ with tab_empresas:
                     with st.form(key=f"form_update_emp_{empresa_info['id']}"):
                         st.markdown(f"**Actualizar datos de:** {empresa_info['razon_social']}")
                         upd_razon = st.text_input("Razón Social o Nombre", value=empresa_info['razon_social'])
+                        upd_tipo_doc = st.radio(
+                            "Tipo de documento", ["NIT", "CC"], horizontal=True,
+                            index=["NIT", "CC"].index(empresa_info['tipo_documento']) if empresa_info['tipo_documento'] in ["NIT", "CC"] else 0
+                        )
                         upd_nit = st.text_input("NIT o Cédula", value=empresa_info['nit'])
                         upd_tel = st.text_input("Teléfono", value=empresa_info['telefono'] or "")
                         upd_email = st.text_input("Correo Electrónico", value=empresa_info['email'] or "")
-                        
+
                         col_f1, col_f2 = st.columns(2)
                         with col_f1:
                             guardar_emp = st.form_submit_button("Guardar Cambios", type="primary")
                         with col_f2:
                             cancelar_emp = st.form_submit_button("Cancelar")
-                            
+
                         if guardar_emp:
                             try:
                                 with engine.begin() as conn_upd:
                                     conn_upd.execute(
                                         text('''
-                                            UPDATE Empresas_Clientes 
-                                            SET razon_social = :razon, nit = :nit, telefono = :tel, email = :email 
+                                            UPDATE Empresas_Clientes
+                                            SET razon_social = :razon, nit = :nit, telefono = :tel, email = :email,
+                                                tipo_documento = :tipo_doc
                                             WHERE id = :id AND usuario_id = :uid
                                         '''),
                                         {
@@ -230,6 +238,7 @@ with tab_empresas:
                                             "nit": upd_nit,
                                             "tel": upd_tel,
                                             "email": upd_email,
+                                            "tipo_doc": upd_tipo_doc,
                                             "id": int(empresa_info['id']),
                                             "uid": user_id
                                         }

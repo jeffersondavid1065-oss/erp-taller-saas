@@ -4,9 +4,13 @@ import math
 from datetime import datetime, timedelta
 from sqlalchemy import text
 from db import obtener_conexion, init_db
-from queries import obtener_catalogos, obtener_config_taller, invalidar_cache_ordenes, invalidar_cache_inventario
+from queries import (
+    obtener_catalogos, obtener_config_taller, invalidar_cache_ordenes, invalidar_cache_inventario,
+    tiene_fe_habilitada, obtener_credenciales_alegra,
+)
 from io import BytesIO
 from pdf_utils import generar_pdf_orden_profesional, calcular_totales_orden, IVA_OPCIONES
+import alegra_utils
 
 st.set_page_config(page_title="Expediente", layout="wide")
 
@@ -250,7 +254,9 @@ if orden_busqueda:
                 iva_tipo_default_mano_obra=IVA_TIPO_DEFAULT_MO, iva_tipo_default_repuestos=IVA_TIPO_DEFAULT_REP
             )
 
-            tab_factura, tab_editar = st.tabs(["Detalles y Copia de Ítems", "Edición y Gestión"])
+            tab_factura, tab_facturar_dian, tab_editar = st.tabs(
+                ["Detalles y Copia de Ítems", "Facturar", "Edición y Gestión"]
+            )
             
             with tab_factura:
                 if not df_trabajos.empty:
@@ -334,6 +340,105 @@ if orden_busqueda:
                             st.code(row['descripcion'], language="text")
                 else:
                     st.info("No hay trabajos registrados para esta orden todavía.")
+
+            with tab_facturar_dian:
+                st.subheader("Facturación Electrónica (DIAN)")
+
+                if not tiene_fe_habilitada(user_id):
+                    st.info(
+                        "Esta función todavía no está habilitada para tu taller. "
+                        "Contacta al administrador para activarla."
+                    )
+                else:
+                    creds_fe = obtener_credenciales_alegra(user_id)
+                    if not (creds_fe and creds_fe.alegra_email and creds_fe.alegra_token):
+                        st.warning(
+                            "Todavía no conectaste tu cuenta de Alegra. Ve a "
+                            "**Configuración del Taller → Facturación Electrónica** para conectarla."
+                        )
+                    else:
+                        with engine.connect() as conn_fe:
+                            orden_fe = conn_fe.execute(text("""
+                                SELECT factura_estado, factura_alegra_id, factura_prefijo, factura_numero,
+                                       nota_credito_alegra_id
+                                FROM Hojas_Trabajo WHERE id = :hid
+                            """), {"hid": hoja_id}).fetchone()
+
+                        factura_estado_fe = orden_fe[0] if orden_fe else None
+                        numero_factura_fe = f"{orden_fe[2] or ''}{orden_fe[3] or ''}" if orden_fe else ""
+
+                        if not factura_estado_fe:
+                            st.markdown("Completa el método de pago para crear la factura electrónica de esta orden.")
+                            if df_trabajos.empty:
+                                st.warning("Esta orden no tiene ítems. Agrega al menos uno en 'Edición y Gestión' antes de facturar.")
+                            else:
+                                opciones_pago = ["Efectivo", "Transferencia", "Credito", "Mixto"]
+                                tipo_pago_sel = st.selectbox("Método de pago", opciones_pago, key="tipo_pago_facturar")
+                                fecha_venc_sel = None
+                                if tipo_pago_sel == "Credito":
+                                    fecha_venc_sel = st.date_input(
+                                        "Fecha de vencimiento del crédito",
+                                        value=datetime.today() + timedelta(days=30),
+                                        key="fecha_venc_facturar"
+                                    )
+                                if st.button("Crear factura electrónica", type="primary", use_container_width=True):
+                                    with st.spinner("Creando factura en Alegra..."):
+                                        ok_f, msg_f = alegra_utils.facturar_orden(user_id, hoja_id, tipo_pago_sel, fecha_venc_sel)
+                                    if ok_f:
+                                        st.success(msg_f)
+                                    else:
+                                        st.error(msg_f)
+                                    st.rerun()
+
+                        elif factura_estado_fe == "abierta":
+                            st.info(f"Factura creada (#{numero_factura_fe}) — todavía no se ha emitido ante la DIAN.")
+                            pdf_mostrar_fe, _ = alegra_utils.refrescar_url_factura_orden(user_id, hoja_id)
+                            if pdf_mostrar_fe:
+                                st.link_button("Ver PDF (borrador)", pdf_mostrar_fe, use_container_width=True)
+                            if st.button("Emitir a la DIAN", type="primary", use_container_width=True):
+                                with st.spinner("Emitiendo ante la DIAN..."):
+                                    ok_e, msg_e = alegra_utils.emitir_factura_dian_orden(user_id, hoja_id)
+                                if ok_e:
+                                    st.success(msg_e)
+                                else:
+                                    st.error(msg_e)
+                                st.rerun()
+
+                        elif factura_estado_fe == "emitida":
+                            st.success(f"Factura electrónica emitida ante la DIAN (#{numero_factura_fe}).")
+                            pdf_mostrar_fe, xml_mostrar_fe = alegra_utils.refrescar_url_factura_orden(user_id, hoja_id)
+                            col_fpdf, col_fxml = st.columns(2)
+                            if pdf_mostrar_fe:
+                                col_fpdf.link_button("Ver PDF de la factura", pdf_mostrar_fe, use_container_width=True)
+                            if xml_mostrar_fe:
+                                col_fxml.link_button("Descargar XML (DIAN)", xml_mostrar_fe, use_container_width=True)
+
+                            st.markdown("---")
+                            if orden_fe[4]:
+                                st.warning("Esta factura fue anulada mediante nota crédito.")
+                                pdf_nc_fe, xml_nc_fe = alegra_utils.refrescar_url_nota_credito_orden(user_id, hoja_id)
+                                col_ncpdf, col_ncxml = st.columns(2)
+                                if pdf_nc_fe:
+                                    col_ncpdf.link_button("Ver PDF de la Nota Crédito", pdf_nc_fe, use_container_width=True)
+                                if xml_nc_fe:
+                                    col_ncxml.link_button("Descargar XML (DIAN)", xml_nc_fe, use_container_width=True)
+                            else:
+                                with st.expander("Anular esta factura (nota crédito)"):
+                                    st.caption(
+                                        "Usa esto solo si el trabajo se anuló o devolvió después de facturado. "
+                                        "Genera una nota crédito ante la DIAN que anula esta factura."
+                                    )
+                                    if st.button("Anular factura con nota crédito", use_container_width=True):
+                                        with st.spinner("Emitiendo nota crédito..."):
+                                            ok_nc, msg_nc = alegra_utils.anular_factura_orden(user_id, hoja_id)
+                                        if ok_nc:
+                                            st.success(msg_nc)
+                                        else:
+                                            st.error(msg_nc)
+                                        st.rerun()
+
+                        else:
+                            st.error(f"Estado de facturación no reconocido: {factura_estado_fe}")
 
             with tab_editar:
                 st.subheader("1. Cambio de Estado Operativo")
