@@ -433,22 +433,10 @@ with tab_analisis:
         fecha_fin_mes = datetime(año_sel, mes_sel + 1, 1).date() - timedelta(days=1)
 
     df_gastos_mes = obtener_gastos_filtrado(user_id, fecha_inicio_mes, fecha_fin_mes)
-    gastos_totales = df_gastos_mes['monto'].sum() if not df_gastos_mes.empty else 0
 
-    # Calcular ingresos del mes (órdenes facturadas)
-    with engine.connect() as conn:
-        ingresos_result = conn.execute(
-            text("""
-                SELECT COALESCE(SUM(d.precio_venta), 0) as total
-                FROM Detalles_Orden d
-                JOIN Hojas_Trabajo h ON d.hoja_id = h.id
-                WHERE h.usuario_id = :uid AND h.estado = 'Facturado'
-                AND EXTRACT(YEAR FROM h.fecha_ingreso) = :año
-                AND EXTRACT(MONTH FROM h.fecha_ingreso) = :mes
-            """),
-            {"uid": user_id, "año": año_sel, "mes": mes_sel}
-        ).scalar()
-    ingresos_totales = float(ingresos_result) if ingresos_result else 0
+    # Ingresos y gastos del mes ya sin el IVA cobrado mezclado (el IVA no es
+    # ingreso del taller - ver "Análisis Financiero" para el detalle a declarar).
+    ingresos_totales, gastos_totales = obtener_metricas_financieras(user_id, año_sel, mes_sel)
 
     margen_neto = ingresos_totales - gastos_totales
 
@@ -459,6 +447,7 @@ with tab_analisis:
     if ingresos_totales > 0:
         pct_margen = (margen_neto / ingresos_totales) * 100
         col_m4.metric("% Margen", f"{pct_margen:.1f}%")
+    st.caption("Los ingresos no incluyen el IVA cobrado (ese IVA hay que declararlo, no es utilidad del taller). Ver la página **Análisis Financiero** para el detalle a declarar.")
 
     st.markdown("---")
 

@@ -176,32 +176,167 @@ def obtener_gastos_filtrado(uid, fecha_inicio, fecha_fin, categoria_id=None):
         return pd.read_sql_query(query, con=conn, params=params)
 
 
-@st.cache_data(ttl=60)
-def obtener_metricas_financieras(uid, año, mes):
-    """Ingresos (órdenes facturadas) y gastos totales en un mes específico.
-    Usa un rango de fechas en vez de EXTRACT(): EXTRACT(YEAR/MONTH FROM ...)
-    es sintaxis exclusiva de Postgres y rompe contra el fallback local a
-    SQLite (mismo ajuste aplicado en MyInv/obtener_metricas_mes)."""
+def _resumen_financiero_periodo(uid, f_ini, f_fin):
+    """
+    Ingresos, costo directo, gastos operativos, utilidad e IVA recaudado de
+    un período (f_ini/f_fin como 'yyyy-mm-dd'), solo con órdenes 'Facturado'.
+
+    El precio de cada ítem puede o no incluir IVA (Usuarios.iva_incluido), y
+    cada ítem tiene su propio tipo de impuesto (o hereda el default de su
+    categoría) - mismo cálculo que ya usa calcular_totales_orden() para el
+    desglose que se le muestra al taller en el expediente, aplicado aquí
+    ítem por ítem para separar cuánto de lo cobrado es ingreso real y cuánto
+    es IVA que hay que declarar y entregar a la DIAN (no es utilidad).
+    """
+    from pdf_utils import IVA_TASA, resolver_iva_tipo
+
     engine = obtener_conexion()
-    f_ini = date(año, mes, 1).strftime('%Y-%m-%d')
-    f_fin = date(año, mes, calendar.monthrange(año, mes)[1]).strftime('%Y-%m-%d')
+    config = obtener_config_taller(uid)
+    iva_activo = bool(config[4]) if config and config[4] is not None else False
+    iva_incluido = bool(config[5]) if config and config[5] is not None else False
+    iva_tipo_mo = config[6] if config and config[6] else "Excluido"
+    iva_tipo_rep = config[7] if config and config[7] else "Excluido"
+
     with engine.connect() as conn:
-        ingresos = conn.execute(text("""
-            SELECT COALESCE(SUM(d.precio_venta), 0)
-            FROM Hojas_Trabajo h
-            JOIN Detalles_Orden d ON d.hoja_id = h.id
+        rows = conn.execute(text("""
+            SELECT d.tipo_item, d.precio_venta, d.costo_compra, d.iva_tipo
+            FROM Detalles_Orden d
+            JOIN Hojas_Trabajo h ON d.hoja_id = h.id
             WHERE h.usuario_id = :uid AND h.estado = 'Facturado'
-            AND DATE(h.fecha_ingreso) >= :f_ini AND DATE(h.fecha_ingreso) <= :f_fin
+              AND DATE(h.fecha_ingreso) >= :f_ini AND DATE(h.fecha_ingreso) <= :f_fin
+        """), {"uid": uid, "f_ini": f_ini, "f_fin": f_fin}).fetchall()
+
+        num_ordenes = conn.execute(text("""
+            SELECT COUNT(DISTINCT h.id) FROM Hojas_Trabajo h
+            WHERE h.usuario_id = :uid AND h.estado = 'Facturado'
+              AND DATE(h.fecha_ingreso) >= :f_ini AND DATE(h.fecha_ingreso) <= :f_fin
         """), {"uid": uid, "f_ini": f_ini, "f_fin": f_fin}).scalar()
 
         gastos = conn.execute(text("""
-            SELECT COALESCE(SUM(monto), 0)
-            FROM Gastos
-            WHERE usuario_id = :uid
-            AND fecha >= :f_ini AND fecha <= :f_fin
+            SELECT COALESCE(SUM(monto), 0) FROM Gastos
+            WHERE usuario_id = :uid AND fecha >= :f_ini AND fecha <= :f_fin
         """), {"uid": uid, "f_ini": f_ini, "f_fin": f_fin}).scalar()
 
-    return (float(ingresos) if ingresos else 0.0, float(gastos) if gastos else 0.0)
+    ingresos = 0.0
+    iva_recaudado = 0.0
+    costo_directo = 0.0
+    for tipo_item, precio_venta, costo_compra, iva_tipo in rows:
+        etiqueta = resolver_iva_tipo(iva_tipo)
+        if etiqueta is None:
+            etiqueta = iva_tipo_mo if tipo_item == "Mano de Obra" else iva_tipo_rep
+        if not iva_activo:
+            etiqueta = "Excluido"
+        tasa = IVA_TASA.get(etiqueta, 0.0) / 100.0
+        precio = float(precio_venta or 0)
+        if iva_incluido and tasa > 0:
+            base = precio / (1 + tasa)
+            iva_item = precio - base
+        else:
+            base = precio
+            iva_item = precio * tasa
+        ingresos += base
+        iva_recaudado += iva_item
+        costo_directo += float(costo_compra or 0)
+
+    gastos = float(gastos) if gastos else 0.0
+    utilidad_bruta = ingresos - costo_directo
+    utilidad_neta = utilidad_bruta - gastos
+
+    return {
+        "ingresos": round(ingresos, 2),
+        "costo_directo": round(costo_directo, 2),
+        "utilidad_bruta": round(utilidad_bruta, 2),
+        "gastos": round(gastos, 2),
+        "utilidad_neta": round(utilidad_neta, 2),
+        "iva_recaudado": round(iva_recaudado, 2),
+        "num_ordenes": int(num_ordenes or 0),
+    }
+
+
+@st.cache_data(ttl=60)
+def obtener_metricas_financieras(uid, año, mes):
+    """Ingresos (sin IVA, ver _resumen_financiero_periodo) y gastos totales
+    de un mes específico. Usa un rango de fechas en vez de EXTRACT():
+    EXTRACT(YEAR/MONTH FROM ...) es sintaxis exclusiva de Postgres y rompe
+    contra el fallback local a SQLite (mismo ajuste aplicado en
+    MyInv/obtener_metricas_mes)."""
+    f_ini = date(año, mes, 1).strftime('%Y-%m-%d')
+    f_fin = date(año, mes, calendar.monthrange(año, mes)[1]).strftime('%Y-%m-%d')
+    resumen = _resumen_financiero_periodo(uid, f_ini, f_fin)
+    return (resumen["ingresos"], resumen["gastos"])
+
+
+@st.cache_data(ttl=60)
+def obtener_resumen_financiero_periodo(uid, fecha_inicio, fecha_fin):
+    """Versión por rango de fechas (no solo un mes) de _resumen_financiero_periodo,
+    para la página de Análisis Financiero. Devuelve un diccionario con
+    ingresos, costo_directo, utilidad_bruta, gastos, utilidad_neta,
+    iva_recaudado y num_ordenes."""
+    return _resumen_financiero_periodo(
+        uid, fecha_inicio.strftime('%Y-%m-%d'), fecha_fin.strftime('%Y-%m-%d')
+    )
+
+
+@st.cache_data(ttl=60)
+def obtener_iva_por_tasa_periodo(uid, fecha_inicio, fecha_fin):
+    """IVA generado en el período, desglosado por tasa (Excluido, IVA 5%,
+    IVA 19%, etc.) - insumo para saber cuánto declarar y pagar a la DIAN
+    (equivalente a la casilla de IVA Generado del Formulario 300)."""
+    from pdf_utils import IVA_TASA, resolver_iva_tipo
+
+    engine = obtener_conexion()
+    config = obtener_config_taller(uid)
+    iva_activo = bool(config[4]) if config and config[4] is not None else False
+    iva_incluido = bool(config[5]) if config and config[5] is not None else False
+    iva_tipo_mo = config[6] if config and config[6] else "Excluido"
+    iva_tipo_rep = config[7] if config and config[7] else "Excluido"
+
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT d.tipo_item, d.precio_venta, d.iva_tipo
+            FROM Detalles_Orden d
+            JOIN Hojas_Trabajo h ON d.hoja_id = h.id
+            WHERE h.usuario_id = :uid AND h.estado = 'Facturado'
+              AND DATE(h.fecha_ingreso) >= :f_ini AND DATE(h.fecha_ingreso) <= :f_fin
+        """), {
+            "uid": uid,
+            "f_ini": fecha_inicio.strftime('%Y-%m-%d'),
+            "f_fin": fecha_fin.strftime('%Y-%m-%d'),
+        }).fetchall()
+
+    filas = {}
+    for tipo_item, precio_venta, iva_tipo in rows:
+        etiqueta = resolver_iva_tipo(iva_tipo)
+        if etiqueta is None:
+            etiqueta = iva_tipo_mo if tipo_item == "Mano de Obra" else iva_tipo_rep
+        if not iva_activo:
+            etiqueta = "Excluido"
+        tasa = IVA_TASA.get(etiqueta, 0.0) / 100.0
+        precio = float(precio_venta or 0)
+        if iva_incluido and tasa > 0:
+            base = precio / (1 + tasa)
+            iva_item = precio - base
+        else:
+            base = precio
+            iva_item = precio * tasa
+        if etiqueta not in filas:
+            filas[etiqueta] = {"base": 0.0, "iva": 0.0}
+        filas[etiqueta]["base"] += base
+        filas[etiqueta]["iva"] += iva_item
+
+    resultado = [
+        {"Tasa": k, "Base Gravable": round(v["base"], 2), "IVA Generado": round(v["iva"], 2)}
+        for k, v in filas.items() if round(v["iva"], 2) > 0
+    ]
+    return pd.DataFrame(resultado) if resultado else pd.DataFrame(columns=["Tasa", "Base Gravable", "IVA Generado"])
+
+
+def invalidar_cache_financiero():
+    """Llamar tras cualquier cambio que afecte ingresos/IVA/gastos (factura
+    emitida, ítem editado, gasto registrado, etc.)."""
+    obtener_metricas_financieras.clear()
+    obtener_resumen_financiero_periodo.clear()
+    obtener_iva_por_tasa_periodo.clear()
 
 
 @st.cache_data(ttl=30)
@@ -224,8 +359,8 @@ def invalidar_cache_gastos():
     """Llamar después de crear, editar o eliminar un gasto."""
     obtener_categorias_gasto.clear()
     obtener_gastos_filtrado.clear()
-    obtener_metricas_financieras.clear()
     obtener_gastos_por_categoria.clear()
+    invalidar_cache_financiero()
 
 
 def invalidar_cache_directorio():
@@ -253,7 +388,7 @@ def invalidar_cache_ordenes():
     obtener_metricas_dashboard.clear()
     obtener_ordenes_con_items_pendientes.clear()
     obtener_vehiculos.clear()
-    obtener_metricas_financieras.clear()
+    invalidar_cache_financiero()
 
 
 def invalidar_cache_inventario():
