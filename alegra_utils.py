@@ -647,8 +647,11 @@ def _nota_credito_cache(email, token, nota_id):
 
 def _es_copia_propia(url):
     """True si el enlace ya contiene el archivo adentro (no depende de que
-    Alegra lo siga teniendo) - no hace falta pedir nada más para ese caso."""
-    return bool(url) and url.startswith("data:")
+    Alegra lo siga teniendo) - no hace falta pedir nada más para ese caso.
+    isinstance(url, str) primero: un valor vacío proveniente de un DataFrame
+    de pandas llega como NaN (float), no None, y bool(float('nan')) es True
+    - sin este chequeo, NaN.startswith(...) revienta con AttributeError."""
+    return isinstance(url, str) and url.startswith("data:")
 
 
 def _bytes_desde_enlace_propio(url):
@@ -676,7 +679,7 @@ def mostrar_documento(contenedor, etiqueta, url, nombre_archivo, mime_type):
     Alegra), usa st.link_button como respaldo.
     contenedor: st, o una columna devuelta por st.columns().
     """
-    if not url:
+    if not isinstance(url, str) or not url:
         return
     contenido = _bytes_desde_enlace_propio(url)
     if contenido:
