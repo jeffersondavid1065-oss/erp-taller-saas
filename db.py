@@ -477,6 +477,14 @@ def init_db():
                     conn.execute(text("ALTER TABLE Usuarios ADD COLUMN direccion_taller TEXT"))
                 if 'ciudad_taller' not in cols_u:
                     conn.execute(text("ALTER TABLE Usuarios ADD COLUMN ciudad_taller TEXT"))
+                # --- FIX: Recepción guardaba 'En revision'/'En reparacion' (sin tilde)
+                # mientras que el Tablero de Pendientes y Facturación e historial
+                # esperan 'En revisión'/'En reparación' (con tilde) - las órdenes en
+                # esos dos estados no coincidían con ninguna columna y desaparecían
+                # del tablero. Se normaliza lo ya guardado; el selector de Recepción
+                # ya quedó corregido para no volver a generar el desajuste.
+                conn.execute(text("UPDATE Hojas_Trabajo SET estado = 'En revisión' WHERE estado = 'En revision'"))
+                conn.execute(text("UPDATE Hojas_Trabajo SET estado = 'En reparación' WHERE estado = 'En reparacion'"))
             else:
                 conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS token_sesion VARCHAR(255)"))
                 conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS logo_path TEXT"))
@@ -539,6 +547,14 @@ def init_db():
                 conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS telefono_taller TEXT"))
                 conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS direccion_taller TEXT"))
                 conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS ciudad_taller TEXT"))
+                # --- FIX: Recepción guardaba 'En revision'/'En reparacion' (sin tilde)
+                # mientras que el Tablero de Pendientes y Facturación e historial
+                # esperan 'En revisión'/'En reparación' (con tilde) - las órdenes en
+                # esos dos estados no coincidían con ninguna columna y desaparecían
+                # del tablero. Se normaliza lo ya guardado; el selector de Recepción
+                # ya quedó corregido para no volver a generar el desajuste.
+                conn.execute(text("UPDATE Hojas_Trabajo SET estado = 'En revisión' WHERE estado = 'En revision'"))
+                conn.execute(text("UPDATE Hojas_Trabajo SET estado = 'En reparación' WHERE estado = 'En reparacion'"))
 
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_usuarios_token ON Usuarios(token_sesion)"))
         except Exception:

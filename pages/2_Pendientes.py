@@ -31,17 +31,6 @@ st.markdown("""
         animation: fade-in-up 0.6s ease-out;
     }
 
-    .kanban-column {
-        padding: 16px;
-        border-radius: 12px;
-        margin-bottom: 10px;
-        border: 1px solid rgba(0, 0, 0, 0.04);
-    }
-    .bg-cotizar { background-color: #f0f4f8; }
-    .bg-revision { background-color: #fcf8e8; }
-    .bg-repuestos { background-color: #fbf1ed; }
-    .bg-reparacion { background-color: #f0ebf8; }
-    .bg-facturar { background-color: #edf7ed; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -199,18 +188,22 @@ except Exception as e:
     vehiculos = []
     st.error(mensaje_error_amigable(e, "cargar el tablero"))
 
-col1, col2, col3, col4, col5 = st.columns(5)
+def dibujar_estado(icono, titulo, estado_filtro):
+    # Cada estado es una ventana desplegable (colapsada por defecto) en vez
+    # de una columna siempre visible: con muchas órdenes activas, mostrarlo
+    # todo de una vez saturaba la pantalla. Las tarjetas siguen siendo puro
+    # texto de solo lectura armado como un solo bloque HTML (más liviano de
+    # volver a dibujar en cada clic que un st.container(border=True) por orden).
+    ordenes_estado = [v for v in vehiculos if v[3] == estado_filtro]
 
-def dibujar_columna(columna, titulo, estado_filtro, clase_css):
-    # Las tarjetas son puro texto de solo lectura (sin botones ni campos
-    # adentro), así que se arma todo el HTML de la columna de una sola vez
-    # en vez de un st.container(border=True) nativo por tarjeta: mismo look,
-    # una sola llamada a Streamlit por columna en lugar de una por orden -
-    # mucho menos trabajo para volver a dibujar en cada clic.
-    tarjetas_html = []
-    for v in vehiculos:
-        orden_id, placa, empresa, estado_actual, sin_precio = v
-        if estado_actual == estado_filtro:
+    with st.expander(f"{icono} {titulo} ({len(ordenes_estado)})", expanded=False):
+        if not ordenes_estado:
+            st.caption("No hay vehículos en este estado por ahora.")
+            return
+
+        tarjetas_html = []
+        for v in ordenes_estado:
+            orden_id, placa, empresa, estado_actual, sin_precio = v
             placa_segura = html.escape(str(placa))
             empresa_segura = html.escape(str(empresa))
             aviso_pendiente = (
@@ -219,7 +212,7 @@ def dibujar_columna(columna, titulo, estado_filtro, clase_css):
             )
             tarjetas_html.append(f"""
                 <div style="border:1px solid rgba(49,51,63,0.15); border-radius:8px;
-                            padding:10px 12px; margin-bottom:8px; background:rgba(255,255,255,0.6);">
+                            padding:10px 12px; margin-bottom:8px;">
                     <div style="font-weight:600;">Orden #{orden_id}</div>
                     <div>Placa: <strong>{placa_segura}</strong></div>
                     <div style="font-size:0.85rem; color:#555;">Empresa: {empresa_segura}</div>
@@ -227,26 +220,13 @@ def dibujar_columna(columna, titulo, estado_filtro, clase_css):
                 </div>
             """)
 
-    if not tarjetas_html:
-        tarjetas_html.append(
-            '<div style="color:#666; font-size:0.95rem; padding:6px 0;">'
-            'No hay vehículos en este estado por ahora.</div>'
-        )
+        st.markdown(''.join(tarjetas_html), unsafe_allow_html=True)
 
-    with columna:
-        st.markdown(f"""
-            <div class="kanban-column {clase_css}">
-                <h4 style="margin-top: 0; font-weight: 600; color: #31333F; font-size: 1.1rem;">{titulo}</h4>
-                <hr style="margin: 8px 0; border: none; border-top: 1px solid rgba(0,0,0,0.08);">
-                {''.join(tarjetas_html)}
-            </div>
-        """, unsafe_allow_html=True)
-
-dibujar_columna(col1, "Cotizar", "Cotizar", "bg-cotizar")
-dibujar_columna(col2, "En Revisión", "En revisión", "bg-revision")
-dibujar_columna(col3, "Esperando Repuestos", "Esperando repuestos", "bg-repuestos")
-dibujar_columna(col4, "En Reparación", "En reparación", "bg-reparacion")
-dibujar_columna(col5, "Listo para Facturar", "Listo para facturar", "bg-facturar")
+dibujar_estado("🔵", "Cotizar", "Cotizar")
+dibujar_estado("🟡", "En Revisión", "En revisión")
+dibujar_estado("🟠", "Esperando Repuestos", "Esperando repuestos")
+dibujar_estado("🟣", "En Reparación", "En reparación")
+dibujar_estado("🟢", "Listo para Facturar", "Listo para facturar")
 
 st.markdown("---")
 if st.button("Actualizar Tablero", use_container_width=True):

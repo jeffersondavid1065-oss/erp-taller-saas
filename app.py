@@ -5,7 +5,7 @@ import hashlib
 import uuid
 from sqlalchemy import text
 from db import obtener_conexion, init_db, mensaje_error_amigable
-from queries import obtener_metricas_dashboard, obtener_metricas_financieras
+from queries import obtener_metricas_dashboard, obtener_metricas_financieras, buscar_ordenes, obtener_creditos_pendientes
 from datetime import datetime, date
 
 # 1. CONFIGURACIÓN DE PÁGINA
@@ -386,6 +386,49 @@ else:
     st.markdown(f"Resumen gerencial y contable para: **{st.session_state.auth['nombre_taller']}**")
     st.markdown("---")
 
+    # ---------------- Buscador rápido de órdenes/placas ----------------
+    with st.form("form_busqueda_global", clear_on_submit=False):
+        col_bg1, col_bg2 = st.columns([5, 1])
+        with col_bg1:
+            termino_busqueda_global = st.text_input(
+                "Buscar orden",
+                placeholder="Busca por N° de orden o placa (ej: 123 o ABC123)",
+                label_visibility="collapsed",
+            )
+        with col_bg2:
+            buscar_global_click = st.form_submit_button("🔍 Buscar", use_container_width=True)
+
+    # Los resultados se guardan en session_state (no solo en una variable local)
+    # porque al hacer clic en "Ir a esta orden" Streamlit vuelve a correr todo
+    # el script desde cero: si los resultados solo vivieran en la rama del
+    # "if buscar_global_click", desaparecerían justo antes de poder navegar.
+    if buscar_global_click and termino_busqueda_global.strip():
+        st.session_state["resultados_busqueda_global"] = buscar_ordenes(user_id, termino_busqueda_global)
+        st.session_state["termino_busqueda_global_mostrado"] = termino_busqueda_global
+
+    resultados_busqueda_global = st.session_state.get("resultados_busqueda_global")
+    if resultados_busqueda_global is not None:
+        termino_mostrado = st.session_state.get("termino_busqueda_global_mostrado", "")
+        if not resultados_busqueda_global:
+            st.warning(f"No se encontró ninguna orden que coincida con '{termino_mostrado}'.")
+        elif len(resultados_busqueda_global) == 1:
+            st.session_state["orden_busqueda_valor"] = str(resultados_busqueda_global[0][0])
+            del st.session_state["resultados_busqueda_global"]
+            st.switch_page("pages/3_Facturación_e_historial.py")
+        else:
+            st.info(f"Se encontraron {len(resultados_busqueda_global)} órdenes. Elige una para abrirla:")
+            for r in resultados_busqueda_global:
+                oid_r, placa_r, cliente_r, fecha_r, estado_r = r
+                if st.button(
+                    f"Orden #{oid_r} — Placa {placa_r} — {cliente_r} — {fecha_r} — {estado_r}",
+                    key=f"ir_orden_global_{oid_r}", use_container_width=True
+                ):
+                    st.session_state["orden_busqueda_valor"] = str(oid_r)
+                    del st.session_state["resultados_busqueda_global"]
+                    st.switch_page("pages/3_Facturación_e_historial.py")
+
+    st.markdown("---")
+
     total_activos, total_cotizar, total_ordenes_activas, total_empresas = obtener_metricas_dashboard(user_id)
 
     # Calcular margen neto del mes actual (cacheado, ttl=60s: antes eran dos
@@ -406,6 +449,20 @@ else:
     col_mes1.metric("Ingresos Mes Actual", formato_cop(ingresos_mes))
     col_mes2.metric("Gastos Mes Actual", formato_cop(gastos_mes), delta=f"-{formato_cop(gastos_mes)}")
     col_mes3.metric("Margen Neto Mes", formato_cop(margen_neto), delta_color="inverse" if margen_neto < 0 else "normal")
+
+    # ---------------- Aviso de créditos vencidos ----------------
+    # Antes esto solo se veía si el dueño entraba a Cartera por su cuenta;
+    # ahora aparece de una vez en el panel principal, difícil de pasar por alto.
+    df_creditos_dash = obtener_creditos_pendientes(user_id)
+    if not df_creditos_dash.empty:
+        vencidos_dash = df_creditos_dash[df_creditos_dash['vencido'] == True]
+        if not vencidos_dash.empty:
+            total_vencido_dash = vencidos_dash['saldo_pendiente'].sum()
+            st.markdown("---")
+            st.error(
+                f"⚠️ Tienes **{len(vencidos_dash)} crédito(s) vencido(s)** por "
+                f"{formato_cop(total_vencido_dash)}. Revisa el detalle en el módulo **Cartera**."
+            )
 
     st.markdown("---")
 

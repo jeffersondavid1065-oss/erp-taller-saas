@@ -61,6 +61,32 @@ def obtener_catalogos(uid):
     return [tuple(e) for e in empresas_db], [tuple(m) for m in mecanicos_db]
 
 
+def buscar_ordenes(uid, termino):
+    """Busca órdenes por N° exacto (si el término es numérico) o por placa
+    (coincidencia parcial), para el buscador rápido del Panel Principal.
+    Sin caché: es una búsqueda puntual disparada por el usuario, no una
+    consulta que se repita en cada rerun de una página."""
+    termino = (termino or "").strip()
+    if not termino:
+        return []
+    engine = obtener_conexion()
+    condiciones = ["h.placa LIKE :placa"]
+    params = {"uid": uid, "placa": f"%{termino.upper()}%"}
+    if termino.isdigit():
+        condiciones.append("h.id = :oid")
+        params["oid"] = int(termino)
+    sql = f'''
+        SELECT h.id, h.placa, e.razon_social, date(h.fecha_ingreso), h.estado
+        FROM Hojas_Trabajo h
+        JOIN Empresas_Clientes e ON h.empresa_id = e.id
+        WHERE h.usuario_id = :uid AND ({" OR ".join(condiciones)})
+        ORDER BY h.fecha_ingreso DESC
+        LIMIT 10
+    '''
+    with engine.connect() as conn:
+        return conn.execute(text(sql), params).fetchall()
+
+
 @st.cache_data(ttl=60)
 def obtener_inventario_activo(uid):
     engine = obtener_conexion()

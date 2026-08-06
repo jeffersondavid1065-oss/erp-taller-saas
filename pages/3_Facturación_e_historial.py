@@ -11,6 +11,7 @@ from queries import (
 from io import BytesIO
 from pdf_utils import generar_pdf_orden_profesional, calcular_totales_orden, IVA_OPCIONES
 import alegra_utils
+import excel_utils
 
 st.set_page_config(page_title="Facturación e historial", layout="wide")
 
@@ -194,6 +195,24 @@ if len(fechas_filtro) == 2:
             df_lista.style.format({'Total': lambda x: formato_cop(x)}),
             use_container_width=True, hide_index=True
         )
+
+        # El Excel exporta TODOS los resultados que coinciden con los filtros
+        # (no solo la página visible en pantalla) — tope de 5000 filas, más
+        # que suficiente para el historial de cualquier taller.
+        sql_export = sql_list_select + " " + " ".join(sql_conditions) + " GROUP BY h.id, h.fecha_ingreso, h.placa, e.razon_social, h.estado ORDER BY h.id DESC LIMIT 5000"
+        with engine.connect() as conn:
+            df_export = pd.read_sql_query(text(sql_export), con=conn, params=params_exp)
+
+        excel_historial = excel_utils.generar_excel_tabla(
+            df_export, "Historial de Órdenes", nombre_taller,
+            columnas_moneda=["Total"], nombre_hoja="Órdenes", columna_total="Total"
+        )
+        st.download_button(
+            f"📥 Descargar Excel ({total_registros} orden(es) que coinciden con los filtros)",
+            data=excel_historial,
+            file_name=f"Historial_Ordenes_{datetime.today().strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
     else:
         st.info("No se encontraron órdenes que coincidan con los filtros seleccionados.")
 else:
@@ -204,7 +223,7 @@ st.markdown("---")
 st.subheader("Abrir Expediente Específico")
 st.markdown("Ingresa el número de orden para consultar detalles, auditar o modificar registros.")
 
-orden_busqueda = st.text_input("Número de Orden")
+orden_busqueda = st.text_input("Número de Orden", key="orden_busqueda_valor")
 
 if orden_busqueda:
     if orden_busqueda.isdigit(): 

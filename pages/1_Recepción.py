@@ -105,8 +105,8 @@ with st.container(border=True):
         empresa_sel = st.selectbox("Empresa / Cliente", options=opciones_empresas)
     with col3:
         estado = st.selectbox("Estado Operativo", [
-            "Cotizar", "En revision", "Esperando repuestos",
-            "En reparacion", "Listo para facturar"
+            "Cotizar", "En revisión", "Esperando repuestos",
+            "En reparación", "Listo para facturar"
         ])
 
 st.markdown("---")

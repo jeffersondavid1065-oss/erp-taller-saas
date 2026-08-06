@@ -1,7 +1,9 @@
+from datetime import datetime
 import streamlit as st
 from queries import obtener_creditos_pendientes, obtener_abonos_orden, registrar_abono
 from db import mensaje_error_amigable
 import alegra_utils
+import excel_utils
 
 st.set_page_config(page_title="Cartera", layout="wide")
 
@@ -110,6 +112,17 @@ else:
         }
     )
     st.caption("Para descargar la factura de una orden específica, selecciónala abajo en \"Registrar Abono\".")
+
+    if not df_mostrar.empty:
+        excel_cartera = excel_utils.generar_excel_tabla(
+            df_mostrar, "Cartera - Créditos Pendientes", nombre_taller,
+            columnas_moneda=["Saldo Pendiente"], nombre_hoja="Cartera", columna_total="Saldo Pendiente"
+        )
+        st.download_button(
+            "📥 Descargar Excel de Cartera", data=excel_cartera,
+            file_name=f"Cartera_{datetime.today().strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
     st.markdown("---")
     st.subheader("Registrar Abono")
