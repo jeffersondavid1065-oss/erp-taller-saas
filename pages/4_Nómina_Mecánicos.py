@@ -116,7 +116,7 @@ query_base_sql = [
     JOIN Hojas_Trabajo h ON d.hoja_id = h.id
     JOIN Empresas_Clientes e ON h.empresa_id = e.id
     LEFT JOIN Mecanicos m ON d.mecanico_id = m.id
-    WHERE h.usuario_id = :uid AND h.estado != 'Facturado'
+    WHERE h.usuario_id = :uid AND h.estado != 'Facturado' AND h.factura_estado IS NULL
     '''
 ]
 

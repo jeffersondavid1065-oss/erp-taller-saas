@@ -497,6 +497,15 @@ if orden_busqueda:
                         st.rerun()
 
             with tab_editar:
+                if factura_estado_actual:
+                    st.warning(
+                        "Esta orden ya tiene una factura electrónica creada en Alegra y no se puede "
+                        "editar (ítems, precios ni estado): cambiar algo acá ya no coincidiría con lo "
+                        "que quedó facturado. Si necesitas corregirla, anula la factura primero en la "
+                        "pestaña \"Anular\"."
+                    )
+                    st.stop()
+
                 st.subheader("1. Cambio de Estado Operativo")
                 col_est1, col_est2 = st.columns([2, 1])
                 with col_est1:

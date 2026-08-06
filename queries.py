@@ -88,6 +88,7 @@ def obtener_ordenes_con_items_pendientes(uid):
             JOIN Empresas_Clientes e ON h.empresa_id = e.id
             JOIN Detalles_Orden d ON d.hoja_id = h.id
             WHERE h.usuario_id = :uid AND (d.precio_venta = 0 OR d.precio_venta IS NULL)
+              AND h.factura_estado IS NULL
             ORDER BY h.id DESC
         ''')
         return conn.execute(query, {"uid": uid}).fetchall()

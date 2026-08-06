@@ -73,12 +73,17 @@ def formato_cop(numero):
 @st.cache_data(ttl=15)
 def obtener_ordenes_con_items_pendientes(uid):
     with engine.connect() as conn:
+        # h.factura_estado IS NULL: una orden con factura ya creada en Alegra
+        # (aunque todavía no se haya emitido a la DIAN) no debe poder editarse
+        # acá - cambiar el precio dejaría a MyTaller desincronizado de lo que
+        # ya quedó facturado.
         query = text('''
             SELECT DISTINCT h.id, h.placa, e.razon_social
             FROM Hojas_Trabajo h
             JOIN Empresas_Clientes e ON h.empresa_id = e.id
             JOIN Detalles_Orden d ON d.hoja_id = h.id
             WHERE h.usuario_id = :uid AND (d.precio_venta = 0 OR d.precio_venta IS NULL)
+              AND h.factura_estado IS NULL
             ORDER BY h.id DESC
         ''')
         return conn.execute(query, {"uid": uid}).fetchall()
