@@ -420,8 +420,10 @@ if orden_busqueda:
                                 elif factura_estado_fe == "abierta":
                                     st.info(f"Factura creada (#{numero_factura_fe}) — todavía no se ha emitido ante la DIAN.")
                                     pdf_mostrar_fe, _ = alegra_utils.refrescar_url_factura_orden(user_id, hoja_id)
-                                    if pdf_mostrar_fe:
-                                        st.link_button("Ver PDF (borrador)", pdf_mostrar_fe, use_container_width=True)
+                                    alegra_utils.mostrar_documento(
+                                        st, "Ver PDF (borrador)", pdf_mostrar_fe,
+                                        f"Factura_Orden_{hoja_id}.pdf", "application/pdf"
+                                    )
                                     if st.button("Emitir a la DIAN", type="primary", use_container_width=True):
                                         with st.spinner("Emitiendo ante la DIAN..."):
                                             ok_e, msg_e = alegra_utils.emitir_factura_dian_orden(user_id, hoja_id)
@@ -435,20 +437,28 @@ if orden_busqueda:
                                     st.success(f"Factura electrónica emitida ante la DIAN (#{numero_factura_fe}).")
                                     pdf_mostrar_fe, xml_mostrar_fe = alegra_utils.refrescar_url_factura_orden(user_id, hoja_id)
                                     col_fpdf, col_fxml = st.columns(2)
-                                    if pdf_mostrar_fe:
-                                        col_fpdf.link_button("Ver PDF de la factura", pdf_mostrar_fe, use_container_width=True)
-                                    if xml_mostrar_fe:
-                                        col_fxml.link_button("Descargar XML (DIAN)", xml_mostrar_fe, use_container_width=True)
+                                    alegra_utils.mostrar_documento(
+                                        col_fpdf, "Ver PDF de la factura", pdf_mostrar_fe,
+                                        f"Factura_Orden_{hoja_id}.pdf", "application/pdf"
+                                    )
+                                    alegra_utils.mostrar_documento(
+                                        col_fxml, "Descargar XML (DIAN)", xml_mostrar_fe,
+                                        f"Factura_Orden_{hoja_id}.xml", "application/xml"
+                                    )
 
                                     if orden_fe[4]:
                                         st.markdown("---")
                                         st.warning("Esta factura fue anulada mediante nota crédito.")
                                         pdf_nc_fe, xml_nc_fe = alegra_utils.refrescar_url_nota_credito_orden(user_id, hoja_id)
                                         col_ncpdf, col_ncxml = st.columns(2)
-                                        if pdf_nc_fe:
-                                            col_ncpdf.link_button("Ver PDF de la Nota Crédito", pdf_nc_fe, use_container_width=True)
-                                        if xml_nc_fe:
-                                            col_ncxml.link_button("Descargar XML (DIAN)", xml_nc_fe, use_container_width=True)
+                                        alegra_utils.mostrar_documento(
+                                            col_ncpdf, "Ver PDF de la Nota Crédito", pdf_nc_fe,
+                                            f"NotaCredito_Orden_{hoja_id}.pdf", "application/pdf"
+                                        )
+                                        alegra_utils.mostrar_documento(
+                                            col_ncxml, "Descargar XML (DIAN)", xml_nc_fe,
+                                            f"NotaCredito_Orden_{hoja_id}.xml", "application/xml"
+                                        )
 
                                 else:
                                     st.error(f"Estado de facturación no reconocido: {factura_estado_fe}")
