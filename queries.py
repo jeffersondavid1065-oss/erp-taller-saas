@@ -450,14 +450,14 @@ def actualizar_datos_factura(hoja_id, cufe=None, pdf_url=None, xml_url=None, pre
 
 
 def guardar_nota_credito(hoja_id, nota_credito_alegra_id, pdf_url=None, xml_url=None, prefijo=None, numero=None):
-    """Guarda el id, número (prefijo+consecutivo) y PDF/XML de la nota crédito
-    emitida en Alegra para una orden anulada."""
+    """Guarda el id, número (prefijo+consecutivo), fecha y PDF/XML de la nota
+    crédito emitida en Alegra para una orden anulada."""
     engine = obtener_conexion()
     with engine.begin() as conn:
         conn.execute(text("""
             UPDATE Hojas_Trabajo SET nota_credito_alegra_id = :ncid, nota_credito_pdf_url = :pdf_url,
                    nota_credito_xml_url = :xml_url, nota_credito_prefijo = :prefijo,
-                   nota_credito_numero = :numero
+                   nota_credito_numero = :numero, nota_credito_fecha = CURRENT_TIMESTAMP
             WHERE id = :hid
         """), {
             "ncid": nota_credito_alegra_id, "pdf_url": pdf_url, "xml_url": xml_url,
@@ -493,3 +493,32 @@ def marcar_orden_facturada(hoja_id):
     with engine.begin() as conn:
         conn.execute(text("UPDATE Hojas_Trabajo SET estado = 'Facturado' WHERE id = :hid"), {"hid": hoja_id})
     invalidar_cache_ordenes()
+
+
+def obtener_notas_credito_periodo(uid, fecha_inicio, fecha_fin):
+    """Todas las notas crédito (anulaciones de factura electrónica) emitidas
+    en un período, con los datos de la orden/factura que anularon, para la
+    página de Anulaciones. Filtra por nota_credito_fecha, no por la fecha de
+    ingreso del vehículo (una NC puede emitirse días o semanas después)."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        return pd.read_sql_query(text("""
+            SELECT h.id as hoja_id, h.placa, e.razon_social as cliente, e.nit,
+                   h.factura_prefijo, h.factura_numero,
+                   h.nota_credito_prefijo, h.nota_credito_numero, h.nota_credito_fecha,
+                   h.nota_credito_pdf_url, h.nota_credito_xml_url,
+                   COALESCE(SUM(d.precio_venta), 0) as total
+            FROM Hojas_Trabajo h
+            JOIN Empresas_Clientes e ON h.empresa_id = e.id
+            LEFT JOIN Detalles_Orden d ON h.id = d.hoja_id
+            WHERE h.usuario_id = :uid AND h.nota_credito_alegra_id IS NOT NULL
+              AND h.nota_credito_fecha >= :f_ini AND h.nota_credito_fecha < :f_fin
+            GROUP BY h.id, h.placa, e.razon_social, e.nit, h.factura_prefijo, h.factura_numero,
+                     h.nota_credito_prefijo, h.nota_credito_numero, h.nota_credito_fecha,
+                     h.nota_credito_pdf_url, h.nota_credito_xml_url
+            ORDER BY h.nota_credito_fecha DESC
+        """), con=conn, params={
+            "uid": uid,
+            "f_ini": fecha_inicio.strftime('%Y-%m-%d'),
+            "f_fin": fecha_fin.strftime('%Y-%m-%d'),
+        })
