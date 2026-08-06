@@ -6,6 +6,7 @@ Usuarios.alegra_email / Usuarios.alegra_token — no hay credenciales globales.
 
 import base64
 from datetime import date
+import pandas as pd
 import requests
 import streamlit as st
 
@@ -428,7 +429,7 @@ def facturar_orden(uid, hoja_id, tipo_pago, fecha_vencimiento=None):
     iva_tipo_default_mo = config[6] if config and config[6] else "Excluido"
     iva_tipo_default_rep = config[7] if config and config[7] else "Excluido"
 
-    from pdf_utils import IVA_TASA, resolver_iva_tipo
+    from pdf_utils import IVA_TASA, resolver_iva_tipo, calcular_totales_orden
 
     items_payload = []
     for r in renglones:
@@ -443,6 +444,17 @@ def facturar_orden(uid, hoja_id, tipo_pago, fecha_vencimiento=None):
         if not item_id:
             return False, f"No se pudo crear el ítem '{r.descripcion}' en Alegra."
         items_payload.append(_construir_item_payload(item_id, r.precio_venta, iva_porcentaje, iva_incluido, email, token))
+
+    # Total real de la orden (mismo cálculo que se le muestra al taller en la
+    # pestaña de detalles), para dejarlo como saldo pendiente si es a crédito.
+    df_renglones = pd.DataFrame([
+        {"precio_venta": r.precio_venta, "tipo_item": r.tipo_item, "iva_tipo": r.iva_tipo} for r in renglones
+    ])
+    _, _, gran_total, _ = calcular_totales_orden(
+        df_renglones, iva_activo=iva_activo, iva_incluido=iva_incluido,
+        iva_tipo_default_mano_obra=iva_tipo_default_mo, iva_tipo_default_repuestos=iva_tipo_default_rep
+    )
+    saldo_pendiente = gran_total if tipo_pago == "Credito" else None
 
     payment_form, payment_method = _forma_y_medio_pago(tipo_pago)
     due_date = fecha_vencimiento.isoformat() if fecha_vencimiento else None
@@ -474,6 +486,7 @@ def facturar_orden(uid, hoja_id, tipo_pago, fecha_vencimiento=None):
         numero=str(number_template["number"]) if number_template.get("number") is not None else None,
         tipo_pago=tipo_pago,
         fecha_vencimiento=fecha_vencimiento,
+        saldo_pendiente=saldo_pendiente,
     )
 
     numero_texto = f"{number_template.get('prefix') or ''}{number_template.get('number') or factura.get('id')}"
@@ -691,3 +704,79 @@ def refrescar_url_nota_credito_orden(uid, hoja_id):
     if pdf_url != orden.nota_credito_pdf_url or xml_url != orden.nota_credito_xml_url:
         queries.actualizar_pdf_nota_credito(hoja_id, pdf_url, xml_url=xml_url)
     return pdf_url, xml_url
+
+
+@st.cache_data(ttl=3600)
+def obtener_cuenta_por_tipo(email, token, tipo):
+    """
+    Busca en el catálogo de cuentas bancarias/caja de Alegra la primera que
+    coincida con el tipo dado ('cash' para efectivo, 'bank' para transferencia).
+    Devuelve el id, o None si no encuentra ninguna.
+    """
+    try:
+        resp = requests.get(f"{BASE_URL}/bank-accounts", headers=_headers(email, token), params={"limit": 30}, timeout=15)
+        if resp.status_code != 200:
+            return None
+        cuentas = resp.json()
+        for c in cuentas:
+            if c.get("type") == tipo:
+                return c.get("id")
+        return None
+    except (requests.RequestException, ValueError):
+        return None
+
+
+def registrar_pago_factura(email, token, factura_id, contacto_id, monto, metodo_pago="cash"):
+    """
+    Registra un abono/pago sobre una factura ya emitida en Alegra.
+    metodo_pago: 'cash' (efectivo) o 'transfer' (transferencia).
+    Devuelve (True, mensaje) o (False, mensaje).
+    """
+    tipo_cuenta = "bank" if metodo_pago == "transfer" else "cash"
+    cuenta_id = obtener_cuenta_por_tipo(email, token, tipo_cuenta)
+    if not cuenta_id:
+        return False, f"No se encontró una cuenta de tipo '{tipo_cuenta}' para registrar el pago."
+
+    payload = {
+        "date": date.today().isoformat(),
+        "bankAccount": {"id": cuenta_id},
+        "paymentMethod": metodo_pago,
+        "client": {"id": contacto_id},
+        "invoices": [{"id": factura_id, "amount": float(monto)}],
+    }
+
+    try:
+        resp = requests.post(f"{BASE_URL}/payments", headers=_headers(email, token), json=payload, timeout=20)
+        if resp.status_code in (200, 201):
+            return True, "Pago registrado."
+        return False, f"El pago fue rechazado ({resp.status_code}): {_mensaje_error(resp)}"
+    except requests.RequestException as e:
+        return False, f"Error de conexión al registrar el pago: {e}"
+
+
+def registrar_abono_orden(uid, hoja_id, monto, metodo_pago="Efectivo"):
+    """
+    Sincroniza con Alegra un abono hecho en MyTaller sobre una orden a
+    crédito: si esa orden tiene factura electrónica emitida, registra el pago
+    contra esa factura en Alegra. Si la orden nunca se facturó, no hace nada
+    (no es un error). metodo_pago: 'Efectivo' o 'Transferencia'.
+    Devuelve (True, mensaje) o (False, mensaje).
+    """
+    import queries
+
+    orden = queries.obtener_orden_para_facturar(uid, hoja_id)
+    if not orden:
+        return False, "Orden no encontrada."
+    if orden.factura_estado != "emitida" or not orden.factura_alegra_id:
+        return True, "Esta orden no tiene factura electrónica, el abono no se sincroniza."
+
+    email, token = obtener_credenciales(uid)
+    if not email or not token:
+        return False, "Este taller no tiene configurada su cuenta de facturación electrónica."
+
+    contacto_id = obtener_o_crear_contacto_empresa(uid, orden.empresa_id, email, token)
+    if not contacto_id:
+        return False, "No se pudo obtener el cliente."
+
+    metodo_alegra = "transfer" if metodo_pago == "Transferencia" else "cash"
+    return registrar_pago_factura(email, token, orden.factura_alegra_id, contacto_id, monto, metodo_alegra)

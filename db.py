@@ -167,6 +167,19 @@ def init_db():
                     FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE
                 )
             '''))
+            # --- NUEVO: Cartera (abonos sobre órdenes facturadas a crédito) ---
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS Abonos_Taller (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    usuario_id INTEGER NOT NULL,
+                    hoja_id INTEGER NOT NULL,
+                    monto REAL NOT NULL DEFAULT 0,
+                    fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    notas TEXT,
+                    FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE,
+                    FOREIGN KEY (hoja_id) REFERENCES Hojas_Trabajo(id) ON DELETE CASCADE
+                )
+            '''))
         else:
             conn.execute(text('''
                 CREATE TABLE IF NOT EXISTS Usuarios (
@@ -303,6 +316,19 @@ def init_db():
                     FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE
                 )
             '''))
+            # --- NUEVO: Cartera (abonos sobre órdenes facturadas a crédito) ---
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS Abonos_Taller (
+                    id SERIAL PRIMARY KEY,
+                    usuario_id INTEGER NOT NULL,
+                    hoja_id INTEGER NOT NULL,
+                    monto NUMERIC(12,2) NOT NULL DEFAULT 0,
+                    fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    notas TEXT,
+                    FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE,
+                    FOREIGN KEY (hoja_id) REFERENCES Hojas_Trabajo(id) ON DELETE CASCADE
+                )
+            '''))
 
         # ==========================================
         # ÍNDICES
@@ -321,6 +347,8 @@ def init_db():
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_operarios_patio_usuario ON Operarios_Patio(usuario_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_operarios_patio_login ON Operarios_Patio(usuario_login)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_operarios_patio_token ON Operarios_Patio(token_sesion)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_abonos_taller_hoja ON Abonos_Taller(hoja_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_abonos_taller_usuario ON Abonos_Taller(usuario_id)"))
 
         # ==========================================
         # MIGRACIONES SEGURAS
@@ -419,6 +447,9 @@ def init_db():
                     conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN nota_credito_numero TEXT"))
                 if 'nota_credito_fecha' not in cols_ht:
                     conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN nota_credito_fecha TIMESTAMP"))
+                # --- NUEVO: Cartera (saldo pendiente de órdenes facturadas a crédito) ---
+                if 'saldo_pendiente' not in cols_ht:
+                    conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN saldo_pendiente REAL"))
             else:
                 conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS token_sesion VARCHAR(255)"))
                 conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS logo_path TEXT"))
@@ -473,6 +504,8 @@ def init_db():
                 conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS nota_credito_prefijo TEXT"))
                 conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS nota_credito_numero TEXT"))
                 conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS nota_credito_fecha TIMESTAMP"))
+                # --- NUEVO: Cartera (saldo pendiente de órdenes facturadas a crédito) ---
+                conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS saldo_pendiente NUMERIC(12,2)"))
 
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_usuarios_token ON Usuarios(token_sesion)"))
         except Exception:

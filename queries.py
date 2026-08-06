@@ -409,8 +409,11 @@ def obtener_items_orden(hoja_id):
 
 def guardar_resultado_factura(hoja_id, alegra_id=None, cufe=None, pdf_url=None, xml_url=None,
                                estado="emitida", prefijo=None, numero=None,
-                               tipo_pago=None, fecha_vencimiento=None):
-    """Guarda el resultado de crear (o intentar emitir) la factura electrónica de una orden."""
+                               tipo_pago=None, fecha_vencimiento=None, saldo_pendiente=None):
+    """Guarda el resultado de crear (o intentar emitir) la factura electrónica de una orden.
+    saldo_pendiente solo se pasa (y se guarda) al crear la factura por primera
+    vez si es a crédito - en llamadas posteriores (emitir a la DIAN) se omite
+    y COALESCE conserva el que ya haya, para no borrar abonos ya registrados."""
     engine = obtener_conexion()
     with engine.begin() as conn:
         conn.execute(text("""
@@ -419,14 +422,17 @@ def guardar_resultado_factura(hoja_id, alegra_id=None, cufe=None, pdf_url=None, 
                 factura_pdf_url = :pdf_url, factura_xml_url = :xml_url, factura_estado = :estado,
                 factura_prefijo = :prefijo, factura_numero = :numero,
                 tipo_pago = COALESCE(:tipo_pago, tipo_pago),
-                fecha_vencimiento_credito = COALESCE(:fecha_vencimiento, fecha_vencimiento_credito)
+                fecha_vencimiento_credito = COALESCE(:fecha_vencimiento, fecha_vencimiento_credito),
+                saldo_pendiente = COALESCE(:saldo_pendiente, saldo_pendiente)
             WHERE id = :hid
         """), {
             "alegra_id": alegra_id, "cufe": cufe, "pdf_url": pdf_url, "xml_url": xml_url,
             "estado": estado, "prefijo": prefijo, "numero": numero, "hid": hoja_id,
             "tipo_pago": tipo_pago, "fecha_vencimiento": fecha_vencimiento,
+            "saldo_pendiente": saldo_pendiente,
         })
     invalidar_cache_ordenes()
+    invalidar_cache_cartera()
 
 
 def actualizar_datos_factura(hoja_id, cufe=None, pdf_url=None, xml_url=None, prefijo=None, numero=None):
@@ -522,3 +528,57 @@ def obtener_notas_credito_periodo(uid, fecha_inicio, fecha_fin):
             "f_ini": fecha_inicio.strftime('%Y-%m-%d'),
             "f_fin": fecha_fin.strftime('%Y-%m-%d'),
         })
+
+
+# ==========================================
+# CARTERA (CRÉDITOS Y ABONOS)
+# ==========================================
+@st.cache_data(ttl=30)
+def obtener_creditos_pendientes(uid):
+    """Todas las órdenes facturadas a crédito con saldo pendiente (> 0), con
+    los datos del cliente y del vehículo, para la página de Cartera."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        return pd.read_sql_query(text("""
+            SELECT h.id as hoja_id, h.placa, e.razon_social as cliente, e.telefono,
+                   h.saldo_pendiente, h.fecha_vencimiento_credito,
+                   h.factura_prefijo, h.factura_numero, h.factura_pdf_url,
+                   CASE WHEN h.fecha_vencimiento_credito < :hoy THEN TRUE ELSE FALSE END as vencido
+            FROM Hojas_Trabajo h
+            JOIN Empresas_Clientes e ON h.empresa_id = e.id
+            WHERE h.usuario_id = :uid AND h.tipo_pago = 'Credito' AND h.saldo_pendiente > 0
+            ORDER BY h.fecha_vencimiento_credito ASC
+        """), con=conn, params={"uid": uid, "hoy": date.today().strftime('%Y-%m-%d')})
+
+
+def obtener_abonos_orden(hoja_id):
+    """Historial de abonos registrados sobre una orden específica."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        return conn.execute(text("""
+            SELECT id, monto, fecha, notas FROM Abonos_Taller
+            WHERE hoja_id = :hid ORDER BY fecha DESC
+        """), {"hid": hoja_id}).fetchall()
+
+
+def registrar_abono(uid, hoja_id, monto, notas=None):
+    """Registra un abono sobre una orden a crédito: lo guarda en el historial
+    y descuenta el saldo pendiente de la orden (sin bajar de 0)."""
+    engine = obtener_conexion()
+    with engine.begin() as conn:
+        conn.execute(text("""
+            INSERT INTO Abonos_Taller (usuario_id, hoja_id, monto, notas)
+            VALUES (:uid, :hid, :monto, :notas)
+        """), {"uid": uid, "hid": hoja_id, "monto": float(monto), "notas": notas})
+        conn.execute(text("""
+            UPDATE Hojas_Trabajo
+            SET saldo_pendiente = MAX(0, COALESCE(saldo_pendiente, 0) - :monto)
+            WHERE id = :hid AND usuario_id = :uid
+        """), {"monto": float(monto), "hid": hoja_id, "uid": uid})
+    invalidar_cache_cartera()
+    invalidar_cache_ordenes()
+
+
+def invalidar_cache_cartera():
+    """Llamar tras registrar un abono, crear una factura a crédito o emitirla."""
+    obtener_creditos_pendientes.clear()
