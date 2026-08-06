@@ -408,9 +408,23 @@ if orden_busqueda:
                                                 value=datetime.today() + timedelta(days=30),
                                                 key="fecha_venc_facturar"
                                             )
+                                        col_notas, col_oc = st.columns(2)
+                                        with col_notas:
+                                            notas_sel = st.text_area(
+                                                "Notas (opcional)", key="notas_facturar",
+                                                help="Aparece impresa en el PDF de la factura."
+                                            )
+                                        with col_oc:
+                                            orden_compra_sel = st.text_input(
+                                                "Orden de compra (opcional)", key="orden_compra_facturar",
+                                                help="Número de orden de compra del cliente, si tiene una."
+                                            )
                                         if st.button("Crear factura electrónica", type="primary", use_container_width=True):
                                             with st.spinner("Creando factura en Alegra..."):
-                                                ok_f, msg_f = alegra_utils.facturar_orden(user_id, hoja_id, tipo_pago_sel, fecha_venc_sel)
+                                                ok_f, msg_f = alegra_utils.facturar_orden(
+                                                    user_id, hoja_id, tipo_pago_sel, fecha_venc_sel,
+                                                    notas=notas_sel or None, orden_compra=orden_compra_sel or None,
+                                                )
                                             if ok_f:
                                                 st.success(msg_f)
                                                 _dibujar_estado_factura()

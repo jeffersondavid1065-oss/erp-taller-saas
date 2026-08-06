@@ -154,7 +154,8 @@ def crear_item_ad_hoc(email, token, nombre, precio, unidad_medida="Unidad"):
 
 
 def crear_factura_orden(email, token, cliente_id, items, due_date=None,
-                         payment_form=None, payment_method=None):
+                         payment_form=None, payment_method=None,
+                         notas=None, orden_compra=None):
     """
     Crea una factura de venta en Alegra a partir de una orden de MyTaller.
     items: lista de dicts [{"id": <id_item_alegra>, "price": float, "quantity": 1}, ...]
@@ -162,6 +163,12 @@ def crear_factura_orden(email, token, cliente_id, items, due_date=None,
     payment_form: 'CASH' o 'CREDIT' - obligatorio para facturación electrónica 2.1 en Colombia.
     payment_method: medio de pago (ej. 'CASH', 'DEBIT_TRANSFER_BANK') - obligatorio cuando
     payment_form es 'CASH' con facturación electrónica 2.1 activa.
+    notas: texto libre que SÍ aparece impreso en el PDF de la factura (campo
+    'anotation' de Alegra - 'observations' existe pero es interno, no sale
+    en el PDF, por eso no se usa acá).
+    orden_compra: número de orden de compra del cliente (campo
+    'purchaseOrderNumber' de Alegra, exclusivo de Colombia con facturación
+    electrónica activa).
     No se envía 'stamp' (timbrado): la factura queda 'abierta' en Alegra con su
     número asignado pero sin CUFE, hasta que se llame a emitir_factura_dian()
     para emitirla ante la DIAN cuando el taller lo decida.
@@ -180,6 +187,10 @@ def crear_factura_orden(email, token, cliente_id, items, due_date=None,
         payload["paymentForm"] = payment_form
     if payment_method:
         payload["paymentMethod"] = payment_method
+    if notas:
+        payload["anotation"] = notas
+    if orden_compra:
+        payload["purchaseOrderNumber"] = orden_compra
 
     try:
         resp = requests.post(f"{BASE_URL}/invoices", headers=_headers(email, token), json=payload, timeout=30)
@@ -392,12 +403,14 @@ def _forma_y_medio_pago(tipo_pago):
     return "CASH", PAYMENT_METHOD_ALEGRA.get(tipo_pago, "CASH")
 
 
-def facturar_orden(uid, hoja_id, tipo_pago, fecha_vencimiento=None):
+def facturar_orden(uid, hoja_id, tipo_pago, fecha_vencimiento=None, notas=None, orden_compra=None):
     """
     Crea en Alegra la factura electrónica de una orden ya registrada en
     MyTaller, usando la cuenta de Alegra propia del taller 'uid': crea (o
     reutiliza) el cliente, crea un ítem por cada renglón de la orden y arma
     la factura.
+    notas: texto libre que aparece impreso en el PDF de la factura.
+    orden_compra: número de orden de compra del cliente, si aplica.
     La factura queda 'abierta' (con su número asignado) pero SIN timbrar ante
     la DIAN todavía - eso requiere un paso aparte (emitir_factura_dian_orden),
     para que el taller pueda revisarla antes de emitirla oficialmente.
@@ -462,6 +475,7 @@ def facturar_orden(uid, hoja_id, tipo_pago, fecha_vencimiento=None):
     factura = crear_factura_orden(
         email, token, contacto_id, items_payload, due_date=due_date,
         payment_form=payment_form, payment_method=payment_method,
+        notas=notas, orden_compra=orden_compra,
     )
     if not factura:
         return False, "La factura fue rechazada. Revisa el error mostrado arriba."
