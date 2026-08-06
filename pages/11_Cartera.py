@@ -81,20 +81,20 @@ else:
     )
     df_mostrar = df_mostrar[[
         'hoja_id', 'placa', 'cliente', 'telefono', 'saldo_pendiente',
-        'fecha_vencimiento_credito', 'vencido', 'numero_factura_texto', 'factura_pdf_url'
+        'fecha_vencimiento_credito', 'vencido', 'numero_factura_texto'
     ]].rename(columns={
         'hoja_id': 'N° Orden', 'placa': 'Placa', 'cliente': 'Cliente', 'telefono': 'Teléfono',
         'saldo_pendiente': 'Saldo Pendiente', 'fecha_vencimiento_credito': 'Fecha Vencimiento',
-        'vencido': 'Vencido', 'numero_factura_texto': 'N° Factura', 'factura_pdf_url': 'Factura PDF',
+        'vencido': 'Vencido', 'numero_factura_texto': 'N° Factura',
     })
     st.dataframe(
         df_mostrar,
         use_container_width=True, hide_index=True,
         column_config={
             "Saldo Pendiente": st.column_config.NumberColumn(format="$%,d"),
-            "Factura PDF": st.column_config.LinkColumn(display_text="Abrir"),
         }
     )
+    st.caption("Para descargar la factura de una orden específica, selecciónala abajo en \"Registrar Abono\".")
 
     st.markdown("---")
     st.subheader("Registrar Abono")
@@ -105,7 +105,13 @@ else:
     }
     orden_sel_str = st.selectbox("Selecciona la orden a abonar", options=list(dict_ordenes_credito.keys()))
     hoja_id_sel = dict_ordenes_credito[orden_sel_str]
-    saldo_actual = float(df_creditos[df_creditos['hoja_id'] == hoja_id_sel]['saldo_pendiente'].iloc[0])
+    fila_credito_sel = df_creditos[df_creditos['hoja_id'] == hoja_id_sel].iloc[0]
+    saldo_actual = float(fila_credito_sel['saldo_pendiente'])
+
+    alegra_utils.mostrar_documento(
+        st, "Descargar factura de esta orden", fila_credito_sel['factura_pdf_url'],
+        f"Factura_Orden_{hoja_id_sel}.pdf", "application/pdf"
+    )
 
     col_ab1, col_ab2 = st.columns(2)
     with col_ab1:

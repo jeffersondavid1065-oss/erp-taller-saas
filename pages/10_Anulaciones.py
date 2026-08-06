@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 from queries import obtener_catalogos, obtener_notas_credito_periodo
+import alegra_utils
 
 st.set_page_config(page_title="Anulaciones", layout="wide")
 
@@ -106,11 +107,10 @@ if len(fechas_filtro) == 2:
 
         df_mostrar = df_mostrar[[
             'hoja_id', 'nota_credito_fecha', 'placa', 'cliente', 'nit',
-            'N° Factura', 'N° Nota Crédito', 'total', 'nota_credito_pdf_url', 'nota_credito_xml_url'
+            'N° Factura', 'N° Nota Crédito', 'total'
         ]].rename(columns={
             'hoja_id': 'N° Orden', 'nota_credito_fecha': 'Fecha NC', 'placa': 'Placa',
             'cliente': 'Cliente', 'nit': 'NIT', 'total': 'Total Anulado',
-            'nota_credito_pdf_url': 'PDF', 'nota_credito_xml_url': 'XML',
         })
 
         st.dataframe(
@@ -118,11 +118,28 @@ if len(fechas_filtro) == 2:
             use_container_width=True, hide_index=True,
             column_config={
                 "Total Anulado": st.column_config.NumberColumn(format="$%,d"),
-                "PDF": st.column_config.LinkColumn(display_text="Abrir"),
-                "XML": st.column_config.LinkColumn(display_text="Abrir"),
             }
         )
 
         st.caption(f"Total anulado en el período filtrado: {formato_cop(df_mostrar['Total Anulado'].sum())}")
+
+        st.markdown("---")
+        st.markdown("**Descargar PDF/XML de una nota crédito específica:**")
+        dict_nc = {
+            f"Orden #{r['hoja_id']} — {r['cliente']} (Placa {r['placa']}) — {formato_cop(r['total'])}": i
+            for i, r in df_nc.iterrows()
+        }
+        nc_sel_str = st.selectbox("Selecciona una nota crédito", options=list(dict_nc.keys()))
+        fila_nc = df_nc.loc[dict_nc[nc_sel_str]]
+
+        col_dl1, col_dl2 = st.columns(2)
+        alegra_utils.mostrar_documento(
+            col_dl1, "Descargar PDF", fila_nc['nota_credito_pdf_url'],
+            f"NotaCredito_Orden_{fila_nc['hoja_id']}.pdf", "application/pdf"
+        )
+        alegra_utils.mostrar_documento(
+            col_dl2, "Descargar XML", fila_nc['nota_credito_xml_url'],
+            f"NotaCredito_Orden_{fila_nc['hoja_id']}.xml", "application/xml"
+        )
 else:
     st.warning("Por favor selecciona un rango de fechas válido.")
