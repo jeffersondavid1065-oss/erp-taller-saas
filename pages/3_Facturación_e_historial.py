@@ -216,17 +216,20 @@ if orden_busqueda:
         
         with engine.connect() as conn:
             query_vehiculo = text('''
-                SELECT h.id, h.placa, h.estado, h.fecha_ingreso, e.razon_social, e.nit 
+                SELECT h.id, h.placa, h.estado, h.fecha_ingreso, e.razon_social, e.nit,
+                       h.factura_estado, h.nota_credito_alegra_id, h.factura_prefijo, h.factura_numero
                 FROM Hojas_Trabajo h
                 JOIN Empresas_Clientes e ON h.empresa_id = e.id
                 WHERE h.id = :oid AND h.usuario_id = :uid
             ''')
             vehiculo = conn.execute(query_vehiculo, {"oid": orden_id, "uid": user_id}).fetchone()
-        
+
         if not vehiculo:
             st.warning(f"No se encontró ninguna orden con el número #{orden_id} en tu taller.")
         else:
-            hoja_id, placa, estado_actual, fecha, cliente, nit = vehiculo
+            (hoja_id, placa, estado_actual, fecha, cliente, nit, factura_estado_actual,
+             nota_credito_actual, factura_prefijo_actual, factura_numero_actual) = vehiculo
+            numero_factura_actual = f"{factura_prefijo_actual or ''}{factura_numero_actual or ''}"
             
             st.markdown(f"### Expediente de Orden #{hoja_id} | Placa: {placa}")
             col1, col2, col3 = st.columns(3)
@@ -254,9 +257,24 @@ if orden_busqueda:
                 iva_tipo_default_mano_obra=IVA_TIPO_DEFAULT_MO, iva_tipo_default_repuestos=IVA_TIPO_DEFAULT_REP
             )
 
-            tab_factura, tab_facturar_dian, tab_editar = st.tabs(
-                ["Detalles y Copia de Ítems", "Facturar", "Edición y Gestión"]
-            )
+            # La pestaña "Anular" solo tiene sentido si la orden ya tiene una
+            # factura electrónica emitida y todavía no se le hizo nota crédito -
+            # por eso los tabs se arman dinámicamente en vez de con una lista fija.
+            mostrar_tab_anular = (factura_estado_actual == "emitida") and not nota_credito_actual
+
+            nombres_tabs = ["Detalles y Copia de Ítems", "Facturar"]
+            if mostrar_tab_anular:
+                nombres_tabs.append("Anular")
+            nombres_tabs.append("Edición y Gestión")
+
+            tabs_creados = st.tabs(nombres_tabs)
+            tab_factura = tabs_creados[0]
+            tab_facturar_dian = tabs_creados[1]
+            if mostrar_tab_anular:
+                tab_anular = tabs_creados[2]
+                tab_editar = tabs_creados[3]
+            else:
+                tab_editar = tabs_creados[2]
             
             with tab_factura:
                 if not df_trabajos.empty:
@@ -413,8 +431,8 @@ if orden_busqueda:
                             if xml_mostrar_fe:
                                 col_fxml.link_button("Descargar XML (DIAN)", xml_mostrar_fe, use_container_width=True)
 
-                            st.markdown("---")
                             if orden_fe[4]:
+                                st.markdown("---")
                                 st.warning("Esta factura fue anulada mediante nota crédito.")
                                 pdf_nc_fe, xml_nc_fe = alegra_utils.refrescar_url_nota_credito_orden(user_id, hoja_id)
                                 col_ncpdf, col_ncxml = st.columns(2)
@@ -422,23 +440,26 @@ if orden_busqueda:
                                     col_ncpdf.link_button("Ver PDF de la Nota Crédito", pdf_nc_fe, use_container_width=True)
                                 if xml_nc_fe:
                                     col_ncxml.link_button("Descargar XML (DIAN)", xml_nc_fe, use_container_width=True)
-                            else:
-                                with st.expander("Anular esta factura (nota crédito)"):
-                                    st.caption(
-                                        "Usa esto solo si el trabajo se anuló o devolvió después de facturado. "
-                                        "Genera una nota crédito ante la DIAN que anula esta factura."
-                                    )
-                                    if st.button("Anular factura con nota crédito", use_container_width=True):
-                                        with st.spinner("Emitiendo nota crédito..."):
-                                            ok_nc, msg_nc = alegra_utils.anular_factura_orden(user_id, hoja_id)
-                                        if ok_nc:
-                                            st.success(msg_nc)
-                                        else:
-                                            st.error(msg_nc)
-                                        st.rerun()
 
                         else:
                             st.error(f"Estado de facturación no reconocido: {factura_estado_fe}")
+
+            if mostrar_tab_anular:
+                with tab_anular:
+                    st.subheader("Anular Factura Electrónica")
+                    st.caption(
+                        "Usa esto solo si el trabajo se anuló o devolvió después de facturado. "
+                        "Genera una nota crédito ante la DIAN que anula la factura electrónica de esta orden."
+                    )
+                    st.warning(f"Vas a anular la factura #{numero_factura_actual} de esta orden. Esta acción no se puede deshacer.")
+                    if st.button("Anular factura con nota crédito", type="primary", use_container_width=True):
+                        with st.spinner("Emitiendo nota crédito..."):
+                            ok_nc, msg_nc = alegra_utils.anular_factura_orden(user_id, hoja_id)
+                        if ok_nc:
+                            st.success(msg_nc)
+                        else:
+                            st.error(msg_nc)
+                        st.rerun()
 
             with tab_editar:
                 st.subheader("1. Cambio de Estado Operativo")
