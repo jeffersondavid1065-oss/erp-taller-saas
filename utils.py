@@ -31,7 +31,7 @@ def aplicar_estilos():
             100% { opacity: 1; transform: translateY(0); }
         }
         [data-testid="stAppViewBlockContainer"] {
-            animation: fade-in-up 0.6s ease-out;
+            animation: fade-in-up 0.15s ease-out;
         }
 
         /* Div overlay que bloquea la esquina derecha */

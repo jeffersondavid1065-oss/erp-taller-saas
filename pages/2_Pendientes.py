@@ -28,7 +28,7 @@ st.markdown("""
     }
     
     [data-testid="stAppViewBlockContainer"] {
-        animation: fade-in-up 0.6s ease-out;
+        animation: fade-in-up 0.15s ease-out;
     }
 
     </style>
