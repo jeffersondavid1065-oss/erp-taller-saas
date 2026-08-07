@@ -111,6 +111,15 @@ st.markdown("""
         pointer-events: all !important;
     }
 
+    /* Desactiva cualquier animación/transición nativa de Streamlit al
+       volver a correr el script (ej. tras guardar un formulario), para
+       que el contenido no aparezca con fade/desvanecido. */
+    [data-testid="stAppViewContainer"],
+    [data-testid="stAppViewContainer"] * {
+        animation: none !important;
+        transition: none !important;
+    }
+
     """ + ("" if is_logged else """
     [data-testid="stSidebar"] { display: none !important; }
     [data-testid="stSidebarCollapsedControl"] { display: none !important; }
