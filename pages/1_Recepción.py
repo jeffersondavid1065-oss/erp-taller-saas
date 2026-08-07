@@ -5,8 +5,6 @@ from db import obtener_conexion, init_db, mensaje_error_amigable
 from queries import obtener_catalogos, obtener_inventario_activo, obtener_config_taller, invalidar_cache_ordenes, invalidar_cache_inventario
 from pdf_utils import IVA_OPCIONES
 
-st.set_page_config(page_title="Recepcion de Vehiculos", layout="wide")
-
 init_db()
 
 st.markdown("""

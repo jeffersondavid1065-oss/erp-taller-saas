@@ -3,8 +3,6 @@ import html
 from sqlalchemy import text
 from db import obtener_conexion, mensaje_error_amigable
 
-st.set_page_config(page_title="Tablero de Control", layout="wide")
-
 # ==========================================
 # ESTILOS CSS CON MÁSCARA DERECHA ADAPTABLE Y ANIMACIÓN
 # ==========================================

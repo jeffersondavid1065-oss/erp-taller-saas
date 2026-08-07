@@ -18,8 +18,6 @@ from queries import (
 )
 import alegra_utils
 
-st.set_page_config(page_title="Configuración del Taller", layout="wide")
-
 st.markdown("""
     <style>
     header::after {

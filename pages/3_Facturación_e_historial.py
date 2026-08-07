@@ -13,8 +13,6 @@ from pdf_utils import generar_pdf_orden_profesional, calcular_totales_orden, IVA
 import alegra_utils
 import excel_utils
 
-st.set_page_config(page_title="Facturación e historial", layout="wide")
-
 init_db()
 
 # ==========================================

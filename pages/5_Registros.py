@@ -11,8 +11,6 @@ from queries import (
     obtener_metricas_dashboard,
 )
 
-st.set_page_config(page_title="Registros", layout="wide")
-
 # ==========================================
 # ESTILOS CSS: MÁSCARA DERECHA ADAPTABLE Y ANIMACIONES
 # ==========================================

@@ -5,8 +5,6 @@ from sqlalchemy import text
 from db import obtener_conexion, mensaje_error_amigable
 from queries import establecer_fe_habilitada
 
-st.set_page_config(page_title="Administración - MyTaller", layout="wide")
-
 # ==========================================
 # ESTILOS CSS: MÁSCARA DERECHA Y ANIMACIONES
 # ==========================================

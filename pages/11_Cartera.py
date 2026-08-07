@@ -5,8 +5,6 @@ from db import mensaje_error_amigable
 import alegra_utils
 import excel_utils
 
-st.set_page_config(page_title="Cartera", layout="wide")
-
 st.markdown("""
     <style>
     header::after {

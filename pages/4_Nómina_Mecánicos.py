@@ -5,8 +5,6 @@ from sqlalchemy import text
 from db import obtener_conexion, mensaje_error_amigable
 from queries import obtener_catalogos, invalidar_cache_ordenes
 
-st.set_page_config(page_title="Nómina y Comisiones", layout="wide")
-
 # ==========================================
 # ESTILOS CSS: MÁSCARA DERECHA ADAPTABLE Y ANIMACIONES
 # ==========================================

@@ -2,8 +2,6 @@ import streamlit as st
 from datetime import datetime, timedelta
 from queries import obtener_resumen_financiero_periodo, obtener_iva_por_tasa_periodo, obtener_gastos_por_categoria
 
-st.set_page_config(page_title="Análisis Financiero", layout="wide")
-
 st.markdown("""
     <style>
     header::after {

@@ -8,6 +8,10 @@ from db import obtener_conexion, init_db, mensaje_error_amigable
 from queries import obtener_metricas_dashboard, obtener_metricas_financieras, buscar_ordenes, obtener_creditos_pendientes
 from datetime import datetime, date
 
+# Correo del administrador del sistema (dueño de MyTaller). Controla el
+# acceso al módulo Admin y su visibilidad en el menú lateral.
+CORREO_ADMIN = "jefferson.david1065@gmail.com"
+
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(
     page_title="MyTaller",
@@ -111,13 +115,6 @@ st.markdown("""
     [data-testid="stSidebar"] { display: none !important; }
     [data-testid="stSidebarCollapsedControl"] { display: none !important; }
     """) + """
-
-    [data-testid="stSidebarNav"] ul li:last-child {
-        margin-top: 50px !important;
-        border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
-        padding-top: 10px !important;
-    }
-
     </style>
 """, unsafe_allow_html=True)
 
@@ -131,7 +128,7 @@ def formato_cop(numero):
 # --------------------------------------------------------------------------------
 # 5. PANTALLAS
 # --------------------------------------------------------------------------------
-if not is_logged:
+def pantalla_login():
     # ---------------- Inicio de Sesión ----------------
     col1, col2, col3 = st.columns([1, 2, 1])
 
@@ -332,7 +329,8 @@ if not is_logged:
                     else:
                         st.warning("Completa todos los campos.")
 
-elif st.session_state.auth.get("rol") == "patio":
+
+def panel_patio():
     # ---------------- Panel simplificado para Operario de Patio ----------------
     st.markdown(f"""
         <div style='text-align: center; margin-top: 40px; margin-bottom: 10px;'>
@@ -373,7 +371,8 @@ elif st.session_state.auth.get("rol") == "patio":
                 del st.query_params["token"]
             st.rerun()
 
-else:
+
+def panel_principal():
     # ---------------- Panel Principal (Admin) ----------------
     user_id = st.session_state.auth["user_id"]
 
@@ -500,3 +499,41 @@ else:
             del st.query_params["token"]
 
         st.rerun()
+
+
+# --------------------------------------------------------------------------------
+# 6. NAVEGACIÓN: qué páginas ve cada quién
+# --------------------------------------------------------------------------------
+if not is_logged:
+    pantalla_login()
+elif st.session_state.auth.get("rol") == "patio":
+    # Un operario de patio solo necesita su panel de inicio y Recepción.
+    pages = [
+        st.Page(panel_patio, title="Inicio", icon="🏠", default=True),
+        st.Page("pages/1_Recepción.py", title="Recepción", icon="🚗"),
+    ]
+    pg = st.navigation(pages)
+    pg.run()
+else:
+    pages = [
+        st.Page(panel_principal, title="Panel Principal", icon="🏠", default=True),
+        st.Page("pages/1_Recepción.py", title="Recepción", icon="🚗"),
+        st.Page("pages/2_Pendientes.py", title="Pendientes", icon="📋"),
+        st.Page("pages/3_Facturación_e_historial.py", title="Facturación e Historial", icon="🧾"),
+        st.Page("pages/4_Nómina_Mecánicos.py", title="Nómina Mecánicos", icon="💰"),
+        st.Page("pages/5_Registros.py", title="Registros", icon="📇"),
+        st.Page("pages/6_Control_de_aceites.py", title="Control de Aceites", icon="🛢️"),
+        st.Page("pages/7_Inventario.py", title="Inventario", icon="📦"),
+        st.Page("pages/8_Gastos_y_análisis.py", title="Gastos y Análisis", icon="💸"),
+        st.Page("pages/9_MyTaller.py", title="MyTaller", icon="⚙️"),
+        st.Page("pages/10_Anulaciones.py", title="Anulaciones", icon="🚫"),
+        st.Page("pages/11_Cartera.py", title="Cartera", icon="💳"),
+        st.Page("pages/12_Análisis_Financiero.py", title="Análisis Financiero", icon="📊"),
+    ]
+    # El módulo Admin solo se registra (y por lo tanto solo es visible y
+    # alcanzable) para el correo del administrador del sistema.
+    if st.session_state.auth.get("email") == CORREO_ADMIN:
+        pages.append(st.Page("pages/Admin.py", title="Admin", icon="🔐"))
+
+    pg = st.navigation(pages)
+    pg.run()

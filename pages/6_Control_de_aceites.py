@@ -5,8 +5,6 @@ from sqlalchemy import text
 from db import obtener_conexion, mensaje_error_amigable
 from queries import obtener_catalogos, obtener_mecanicos_activos, invalidar_cache_inventario, obtener_metricas_financieras
 
-st.set_page_config(page_title="Control de Aceites y Flotas", layout="wide")
-
 # Animaciones y estilos
 st.markdown("""
     <style>

@@ -5,7 +5,6 @@ from db import obtener_conexion, init_db, mensaje_error_amigable
 from queries import invalidar_cache_inventario, obtener_config_taller
 from pdf_utils import IVA_OPCIONES
 
-st.set_page_config(page_title="Inventario y Almacén", layout="wide")
 init_db()
 
 st.markdown("""

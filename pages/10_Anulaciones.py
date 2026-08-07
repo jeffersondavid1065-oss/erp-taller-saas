@@ -4,8 +4,6 @@ from datetime import datetime, timedelta
 from queries import obtener_catalogos, obtener_notas_credito_periodo
 import alegra_utils
 
-st.set_page_config(page_title="Anulaciones", layout="wide")
-
 st.markdown("""
     <style>
     header::after {
