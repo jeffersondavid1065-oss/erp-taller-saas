@@ -509,31 +509,31 @@ if not is_logged:
 elif st.session_state.auth.get("rol") == "patio":
     # Un operario de patio solo necesita su panel de inicio y Recepción.
     pages = [
-        st.Page(panel_patio, title="Inicio", icon="🏠", default=True),
-        st.Page("pages/1_Recepción.py", title="Recepción", icon="🚗"),
+        st.Page(panel_patio, title="Inicio", default=True),
+        st.Page("pages/1_Recepción.py", title="Recepción"),
     ]
     pg = st.navigation(pages)
     pg.run()
 else:
     pages = [
-        st.Page(panel_principal, title="Panel Principal", icon="🏠", default=True),
-        st.Page("pages/1_Recepción.py", title="Recepción", icon="🚗"),
-        st.Page("pages/2_Pendientes.py", title="Pendientes", icon="📋"),
-        st.Page("pages/3_Facturación_e_historial.py", title="Facturación e Historial", icon="🧾"),
-        st.Page("pages/4_Nómina_Mecánicos.py", title="Nómina Mecánicos", icon="💰"),
-        st.Page("pages/5_Registros.py", title="Registros", icon="📇"),
-        st.Page("pages/6_Control_de_aceites.py", title="Control de Aceites", icon="🛢️"),
-        st.Page("pages/7_Inventario.py", title="Inventario", icon="📦"),
-        st.Page("pages/8_Gastos_y_análisis.py", title="Gastos y Análisis", icon="💸"),
-        st.Page("pages/9_MyTaller.py", title="MyTaller", icon="⚙️"),
-        st.Page("pages/10_Anulaciones.py", title="Anulaciones", icon="🚫"),
-        st.Page("pages/11_Cartera.py", title="Cartera", icon="💳"),
-        st.Page("pages/12_Análisis_Financiero.py", title="Análisis Financiero", icon="📊"),
+        st.Page(panel_principal, title="Panel Principal", default=True),
+        st.Page("pages/1_Recepción.py", title="Recepción"),
+        st.Page("pages/2_Pendientes.py", title="Pendientes"),
+        st.Page("pages/3_Facturación_e_historial.py", title="Facturación e Historial"),
+        st.Page("pages/4_Nómina_Mecánicos.py", title="Nómina Mecánicos"),
+        st.Page("pages/5_Registros.py", title="Registros"),
+        st.Page("pages/6_Control_de_aceites.py", title="Control de Aceites"),
+        st.Page("pages/7_Inventario.py", title="Inventario"),
+        st.Page("pages/8_Gastos_y_análisis.py", title="Gastos y Análisis"),
+        st.Page("pages/9_MyTaller.py", title="MyTaller"),
+        st.Page("pages/10_Anulaciones.py", title="Anulaciones"),
+        st.Page("pages/11_Cartera.py", title="Cartera"),
+        st.Page("pages/12_Análisis_Financiero.py", title="Análisis Financiero"),
     ]
     # El módulo Admin solo se registra (y por lo tanto solo es visible y
     # alcanzable) para el correo del administrador del sistema.
     if st.session_state.auth.get("email") == CORREO_ADMIN:
-        pages.append(st.Page("pages/Admin.py", title="Admin", icon="🔐"))
+        pages.append(st.Page("pages/Admin.py", title="Admin"))
 
     pg = st.navigation(pages)
     pg.run()
