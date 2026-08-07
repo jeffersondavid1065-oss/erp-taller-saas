@@ -193,7 +193,7 @@ if len(fechas_filtro) == 2:
 
         st.dataframe(
             df_lista.style.format({'Total': lambda x: formato_cop(x)}),
-            use_container_width=True, hide_index=True
+            width='stretch', hide_index=True
         )
 
         # El Excel exporta TODOS los resultados que coinciden con los filtros
@@ -298,7 +298,7 @@ if orden_busqueda:
                     df_mostrar.columns = ['Tipo', 'Descripción', 'Técnico', 'Cobro al Cliente', 'Impuesto (IVA)']
                     st.dataframe(
                         df_mostrar.style.format({'Cobro al Cliente': lambda x: formato_cop(x)}),
-                        use_container_width=True, hide_index=True
+                        width='stretch', hide_index=True
                     )
 
                     if IVA_ACTIVO:
@@ -359,10 +359,10 @@ if orden_busqueda:
                         file_name=f"Orden_{hoja_id}_Placa_{placa}.pdf",
                         mime="application/pdf",
                         type="primary",
-                        use_container_width=True
+                        width='stretch'
                     )
                     
-                    if not cfg:
+                    if not _config_taller:
                         st.caption("💡 Configura el logo y datos en **Configuración del Taller** para que aparezcan en el PDF.")
 
                     st.markdown("---")
@@ -441,7 +441,7 @@ if orden_busqueda:
                                                 "Orden de compra (opcional)", key="orden_compra_facturar",
                                                 help="Número de orden de compra del cliente, si tiene una."
                                             )
-                                        if st.button("Crear factura electrónica", type="primary", use_container_width=True):
+                                        if st.button("Crear factura electrónica", type="primary", width='stretch'):
                                             with st.spinner("Creando factura en Alegra..."):
                                                 ok_f, msg_f = alegra_utils.facturar_orden(
                                                     user_id, hoja_id, tipo_pago_sel, fecha_venc_sel,
@@ -460,7 +460,7 @@ if orden_busqueda:
                                         st, "Ver PDF (borrador)", pdf_mostrar_fe,
                                         f"Factura_Orden_{hoja_id}.pdf", "application/pdf"
                                     )
-                                    if st.button("Emitir a la DIAN", type="primary", use_container_width=True):
+                                    if st.button("Emitir a la DIAN", type="primary", width='stretch'):
                                         with st.spinner("Emitiendo ante la DIAN..."):
                                             ok_e, msg_e = alegra_utils.emitir_factura_dian_orden(user_id, hoja_id)
                                         if ok_e:
@@ -512,7 +512,7 @@ if orden_busqueda:
                     confirmar_anular = st.checkbox(
                         f"Entiendo que anular la factura #{numero_factura_actual} es irreversible y confirmo que quiero hacerlo."
                     )
-                    if st.button("Anular factura con nota crédito", type="primary", use_container_width=True, disabled=not confirmar_anular):
+                    if st.button("Anular factura con nota crédito", type="primary", width='stretch', disabled=not confirmar_anular):
                         with st.spinner("Emitiendo nota crédito..."):
                             ok_nc, msg_nc = alegra_utils.anular_factura_orden(user_id, hoja_id)
                         if ok_nc:
@@ -539,7 +539,7 @@ if orden_busqueda:
                     nuevo_estado = st.selectbox("Selecciona el nuevo estado", estados_disponibles, index=indice_actual)
                 with col_est2:
                     st.write("") 
-                    if st.button("Guardar Cambio de Estado", use_container_width=True):
+                    if st.button("Guardar Cambio de Estado", width='stretch'):
                         try:
                             with engine.begin() as conn_est:
                                 conn_est.execute(
@@ -574,7 +574,7 @@ if orden_busqueda:
                             col_di1, col_di2, col_di3 = st.columns([2, 1, 1])
                             col_di1.warning(f"¿Eliminar **{row['descripcion']}** de esta orden?")
                             with col_di2:
-                                if st.button("Sí, eliminar", key=f"yes_del_item_{row['id']}", type="primary", use_container_width=True):
+                                if st.button("Sí, eliminar", key=f"yes_del_item_{row['id']}", type="primary", width='stretch'):
                                     try:
                                         with engine.begin() as conn_del:
                                             conn_del.execute(
@@ -588,7 +588,7 @@ if orden_busqueda:
                                     except Exception as e:
                                         st.error(mensaje_error_amigable(e, "eliminar el ítem"))
                             with col_di3:
-                                if st.button("Cancelar", key=f"no_del_item_{row['id']}", use_container_width=True):
+                                if st.button("Cancelar", key=f"no_del_item_{row['id']}", width='stretch'):
                                     st.session_state[f"del_confirm_item_{row['id']}"] = False
                                     st.rerun()
 
@@ -646,7 +646,7 @@ if orden_busqueda:
                         venta_mo = st.number_input("Cobro Cliente ($)", min_value=0, step=5000, key="e_venta_mo")
                         sel_iva_mo = st.selectbox("Impuesto (IVA) para este ítem", opciones_iva_nuevo, index=0, key="e_iva_mo",
                                                    help=f"El default configurado para Mano de Obra es: {IVA_TIPO_DEFAULT_MO}")
-                        if st.button("Guardar Trabajo", use_container_width=True):
+                        if st.button("Guardar Trabajo", width='stretch'):
                             if desc_mo and venta_mo > 0 and mec_sel:
                                 iva_tipo_mo = None if sel_iva_mo == "Usar el default de su categoría" else sel_iva_mo
                                 try:
@@ -682,7 +682,7 @@ if orden_busqueda:
                             sel_iva_rep_ext = st.selectbox("Impuesto (IVA) para este ítem", opciones_iva_nuevo, index=0, key="e_iva_rep_ext",
                                                             help=f"El default configurado para Repuestos es: {IVA_TIPO_DEFAULT_REP}")
                             
-                            if st.button("Guardar Repuesto Externo", use_container_width=True):
+                            if st.button("Guardar Repuesto Externo", width='stretch'):
                                 if desc_rep and venta_rep > 0:
                                     iva_tipo_rep_ext = None if sel_iva_rep_ext == "Usar el default de su categoría" else sel_iva_rep_ext
                                     try:
@@ -724,7 +724,7 @@ if orden_busqueda:
                                 iva_tipo_prod = prod_data[5] if prod_data[5] else "Excluido"
                                 st.caption(f"🧾 Impuesto de este producto (configurado en Inventario): **{iva_tipo_prod}**")
 
-                                if st.button("Guardar Repuesto de Almacén", use_container_width=True):
+                                if st.button("Guardar Repuesto de Almacén", width='stretch'):
                                     try:
                                         with engine.begin() as conn_rep_inv:
                                             conn_rep_inv.execute(
