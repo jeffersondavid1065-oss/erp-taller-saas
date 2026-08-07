@@ -25,15 +25,6 @@ def aplicar_estilos():
            pero NO el botón de colapso/expand */
         [data-testid="stSidebarNav"] { display: none !important; }
 
-        /* Animación de entrada */
-        @keyframes fade-in-up {
-            0% { opacity: 0; transform: translateY(20px); }
-            100% { opacity: 1; transform: translateY(0); }
-        }
-        [data-testid="stAppViewBlockContainer"] {
-            animation: fade-in-up 0.15s ease-out;
-        }
-
         /* Div overlay que bloquea la esquina derecha */
         #header-blocker {
             position: fixed;
