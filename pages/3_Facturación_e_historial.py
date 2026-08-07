@@ -65,6 +65,26 @@ def formato_cop(numero):
     return f"${numero:,.0f}".replace(",", ".")
 
 
+@st.cache_data(ttl=30, show_spinner=False)
+def _consultar_historial_cacheado(sql, params):
+    # El historial se volvía a consultar (hasta 5000 filas para el export)
+    # en CADA rerun de esta página, aunque el usuario solo hubiera tocado
+    # algo en otra sección (ej. Expediente). Cacheado por el SQL + filtros
+    # exactos: si no cambiaron, se reusa el resultado.
+    engine_local = obtener_conexion()
+    with engine_local.connect() as conn:
+        return pd.read_sql_query(text(sql), con=conn, params=params)
+
+
+def _invalidar_caches_orden():
+    # invalidar_cache_ordenes() ya limpiaba el resto de vistas compartidas;
+    # el historial de esta página tiene su propio caché local y hay que
+    # limpiarlo también tras cualquier escritura, o mostraría datos viejos
+    # hasta que expire el TTL.
+    invalidar_cache_ordenes()
+    _consultar_historial_cacheado.clear()
+
+
 @st.cache_data(show_spinner=False)
 def _generar_pdf_orden_cacheado(**kwargs):
     # El PDF se regeneraba en CADA rerun de la página (cualquier clic en
@@ -186,8 +206,7 @@ if len(fechas_filtro) == 2:
         params_exp["limit"] = REGISTROS_POR_PAGINA
         params_exp["offset"] = offset
 
-        with engine.connect() as conn:
-            df_lista = pd.read_sql_query(text(sql_final_list), con=conn, params=params_exp)
+        df_lista = _consultar_historial_cacheado(sql_final_list, params_exp)
 
         st.dataframe(
             df_lista.style.format({'Total': lambda x: formato_cop(x)}),
@@ -198,8 +217,7 @@ if len(fechas_filtro) == 2:
         # (no solo la página visible en pantalla) — tope de 5000 filas, más
         # que suficiente para el historial de cualquier taller.
         sql_export = sql_list_select + " " + " ".join(sql_conditions) + " GROUP BY h.id, h.fecha_ingreso, h.placa, e.razon_social, h.estado ORDER BY h.id DESC LIMIT 5000"
-        with engine.connect() as conn:
-            df_export = pd.read_sql_query(text(sql_export), con=conn, params=params_exp)
+        df_export = _consultar_historial_cacheado(sql_export, params_exp)
 
         excel_historial = excel_utils.generar_excel_tabla(
             df_export, "Historial de Órdenes", nombre_taller,
@@ -548,7 +566,7 @@ if orden_busqueda:
                                     text("UPDATE Hojas_Trabajo SET estado = :est WHERE id = :hid"),
                                     {"est": nuevo_estado, "hid": hoja_id}
                                 )
-                            invalidar_cache_ordenes()
+                            _invalidar_caches_orden()
                             st.success("Estado actualizado correctamente.")
                             st.rerun()
                         except Exception as e:
@@ -583,7 +601,7 @@ if orden_busqueda:
                                                 text("DELETE FROM Detalles_Orden WHERE id = :did"),
                                                 {"did": row['id']}
                                             )
-                                        invalidar_cache_ordenes()
+                                        _invalidar_caches_orden()
                                         st.session_state[f"del_confirm_item_{row['id']}"] = False
                                         st.success("Ítem eliminado.")
                                         st.rerun()
@@ -620,7 +638,7 @@ if orden_busqueda:
                                                     {"desc": nueva_desc, "precio": float(nuevo_precio),
                                                      "iva_tipo": nuevo_iva_tipo, "did": row['id']}
                                                 )
-                                            invalidar_cache_ordenes()
+                                            _invalidar_caches_orden()
                                             st.session_state[f"modo_edit_{row['id']}"] = False
                                             st.success("Ítem actualizado y sincronizado en todo el sistema.")
                                             st.rerun()
@@ -661,7 +679,7 @@ if orden_busqueda:
                                             {"hid": hoja_id, "desc": desc_mo, "mid": dict_mecanicos[mec_sel],
                                              "pvp": float(venta_mo), "iva_tipo": iva_tipo_mo}
                                         )
-                                    invalidar_cache_ordenes()
+                                    _invalidar_caches_orden()
                                     st.success("Trabajo agregado con éxito.")
                                     st.rerun()
                                 except Exception as e:
@@ -697,7 +715,7 @@ if orden_busqueda:
                                                 {"hid": hoja_id, "desc": desc_rep, "costo": float(costo_rep),
                                                  "pvp": float(venta_rep), "iva_tipo": iva_tipo_rep_ext}
                                             )
-                                        invalidar_cache_ordenes()
+                                        _invalidar_caches_orden()
                                         st.success("Repuesto agregado con éxito.")
                                         st.rerun()
                                     except Exception as e:
@@ -746,7 +764,7 @@ if orden_busqueda:
                                                 text("UPDATE Inventario SET stock_actual = stock_actual - :cant WHERE id = :inv_id"),
                                                 {"cant": cant_usar_exp, "inv_id": prod_data[0]}
                                             )
-                                        invalidar_cache_ordenes()
+                                        _invalidar_caches_orden()
                                         invalidar_cache_inventario()
                                         st.success("Repuesto asignado y descontado del almacén.")
                                         st.rerun()
