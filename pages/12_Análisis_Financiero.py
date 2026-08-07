@@ -117,7 +117,7 @@ with tab_iva:
     else:
         st.dataframe(
             df_iva,
-            use_container_width=True, hide_index=True,
+            width='stretch', hide_index=True,
             column_config={
                 "Base Gravable": st.column_config.NumberColumn(format="$%,d"),
                 "IVA Generado": st.column_config.NumberColumn(format="$%,d"),

@@ -145,12 +145,12 @@ with tab_empresas:
                     st.markdown(f"**Email:** {empresa_info['email'] or 'No registrado'}")
                 with col_card_btn1:
                     st.markdown("<br>", unsafe_allow_html=True)
-                    if st.button("Editar", key=f"btn_edit_{empresa_info['id']}", use_container_width=True):
+                    if st.button("Editar", key=f"btn_edit_{empresa_info['id']}", width='stretch'):
                         st.session_state[f"edit_emp_mode_{empresa_info['id']}"] = True
                         st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = False
                 with col_card_btn2:
                     st.markdown("<br>", unsafe_allow_html=True)
-                    if st.button("Eliminar", key=f"btn_del_emp_{empresa_info['id']}", use_container_width=True):
+                    if st.button("Eliminar", key=f"btn_del_emp_{empresa_info['id']}", width='stretch'):
                         st.session_state[f"delete_emp_confirm_{empresa_info['id']}"] = True
                         st.session_state[f"edit_emp_mode_{empresa_info['id']}"] = False
 
@@ -313,7 +313,7 @@ with tab_empresas:
                     
                     st.dataframe(df_historial.style.format({
                         columna_suma: lambda x: formato_cop(x)
-                    }), use_container_width=True, hide_index=True)
+                    }), width='stretch', hide_index=True)
                     
                     csv = df_historial.to_csv(index=False).encode('utf-8')
                     st.download_button(
@@ -374,17 +374,17 @@ with tab_mecanicos:
                     
                     col_m1, col_m2 = st.columns(2)
                     with col_m1:
-                        if st.button("Editar", key=f"btn_edit_mec_{row['id']}", use_container_width=True):
+                        if st.button("Editar", key=f"btn_edit_mec_{row['id']}", width='stretch'):
                             st.session_state[f"edit_mode_{row['id']}"] = True
                     with col_m2:
-                        if st.button("Eliminar", key=f"btn_del_mec_{row['id']}", use_container_width=True):
+                        if st.button("Eliminar", key=f"btn_del_mec_{row['id']}", width='stretch'):
                             st.session_state[f"del_confirm_mec_{row['id']}"] = True
 
                     if st.session_state.get(f"del_confirm_mec_{row['id']}", False):
                         st.warning(f"¿Eliminar a **{row['nombre']}** del equipo? Esta acción no se puede deshacer.")
                         col_dc1, col_dc2 = st.columns(2)
                         with col_dc1:
-                            if st.button("Sí, eliminar definitivamente", key=f"yes_del_mec_{row['id']}", type="primary", use_container_width=True):
+                            if st.button("Sí, eliminar definitivamente", key=f"yes_del_mec_{row['id']}", type="primary", width='stretch'):
                                 try:
                                     with engine.begin() as conn_del:
                                         conn_del.execute(
@@ -398,7 +398,7 @@ with tab_mecanicos:
                                 except Exception:
                                     st.error("No se puede eliminar: tiene trabajos asociados en órdenes de servicio.")
                         with col_dc2:
-                            if st.button("Cancelar", key=f"no_del_mec_{row['id']}", use_container_width=True):
+                            if st.button("Cancelar", key=f"no_del_mec_{row['id']}", width='stretch'):
                                 st.session_state[f"del_confirm_mec_{row['id']}"] = False
                                 st.rerun()
 

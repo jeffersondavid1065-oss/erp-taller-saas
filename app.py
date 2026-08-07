@@ -159,7 +159,7 @@ def pantalla_login():
             pass_login = st.text_input("Contraseña", type="password", key="login_pass")
 
             st.markdown("")
-            if st.button("Ingresar", use_container_width=True, type="primary"):
+            if st.button("Ingresar", width='stretch', type="primary"):
                 if email_login and pass_login:
                     try:
                         with engine.connect() as conn:
@@ -247,7 +247,7 @@ def pantalla_login():
             usuario_patio = st.text_input("Usuario", key="login_patio_user")
             pass_patio = st.text_input("Contraseña", type="password", key="login_patio_pass")
 
-            if st.button("Ingresar como Patio", use_container_width=True, key="btn_login_patio"):
+            if st.button("Ingresar como Patio", width='stretch', key="btn_login_patio"):
                 if usuario_patio and pass_patio:
                     try:
                         with engine.connect() as conn_p:
@@ -307,7 +307,7 @@ def pantalla_login():
                 pass_reg = st.text_input("Contraseña", type="password")
 
                 st.markdown("")
-                btn_reg = st.form_submit_button("Crear Cuenta", use_container_width=True)
+                btn_reg = st.form_submit_button("Crear Cuenta", width='stretch')
                 if btn_reg:
                     if taller_reg and dueno_reg and email_reg and pass_reg:
                         pass_hash_reg = bcrypt.hashpw(
@@ -356,14 +356,14 @@ def panel_patio():
             st.write(f"**Taller:** {st.session_state.auth['nombre_taller']}")
             st.write("Tu usuario solo tiene acceso al módulo de **Recepción de Vehículos**.")
             st.markdown("")
-            if st.button("➡️ Ir a Recepción de Vehículos", type="primary", use_container_width=True):
+            if st.button("➡️ Ir a Recepción de Vehículos", type="primary", width='stretch'):
                 try:
                     st.switch_page("pages/1_Recepción.py")
                 except Exception:
                     st.info("Abre el módulo **'Recepción'** desde el menú lateral.")
 
         st.markdown("")
-        if st.button("Cerrar Sesión", use_container_width=True):
+        if st.button("Cerrar Sesión", width='stretch'):
             try:
                 with engine.begin() as conn_out:
                     conn_out.execute(
@@ -399,7 +399,7 @@ def panel_principal():
                 label_visibility="collapsed",
             )
         with col_bg2:
-            buscar_global_click = st.form_submit_button("🔍 Buscar", use_container_width=True)
+            buscar_global_click = st.form_submit_button("🔍 Buscar", width='stretch')
 
     # Los resultados se guardan en session_state (no solo en una variable local)
     # porque al hacer clic en "Ir a esta orden" Streamlit vuelve a correr todo
@@ -424,7 +424,7 @@ def panel_principal():
                 oid_r, placa_r, cliente_r, fecha_r, estado_r = r
                 if st.button(
                     f"Orden #{oid_r} — Placa {placa_r} — {cliente_r} — {fecha_r} — {estado_r}",
-                    key=f"ir_orden_global_{oid_r}", use_container_width=True
+                    key=f"ir_orden_global_{oid_r}", width='stretch'
                 ):
                     st.session_state["orden_busqueda_valor"] = str(oid_r)
                     del st.session_state["resultados_busqueda_global"]

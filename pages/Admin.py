@@ -80,7 +80,7 @@ df_talleres = obtener_talleres()
 if not df_talleres.empty:
     st.subheader("Directorio de Talleres Registrados")
     
-    st.dataframe(df_talleres, use_container_width=True, hide_index=True)
+    st.dataframe(df_talleres, width='stretch', hide_index=True)
     
     st.markdown("---")
     st.subheader("Gestión de Suscripciones y Accesos")
@@ -104,7 +104,7 @@ if not df_talleres.empty:
         with col2:
             st.markdown("### Acciones Disponibles")
             
-            if st.button("Extender 30 días", type="primary", use_container_width=True):
+            if st.button("Extender 30 días", type="primary", width='stretch'):
                 nueva_fecha = date.today() + timedelta(days=30)
                 try:
                     with engine.begin() as conn_upd:
@@ -118,14 +118,14 @@ if not df_talleres.empty:
                 except Exception as e:
                     st.error(mensaje_error_amigable(e, "extender la suscripción"))
 
-            if st.button("Suspender Acceso", use_container_width=True):
+            if st.button("Suspender Acceso", width='stretch'):
                 st.session_state[f"confirmar_suspender_{taller_id_activo}"] = True
 
             if st.session_state.get(f"confirmar_suspender_{taller_id_activo}", False):
                 st.warning(f"¿Suspender el acceso de **{taller_row['nombre_taller']}**? El taller no podrá usar el sistema hasta que le extiendas la suscripción de nuevo.")
                 col_sa1, col_sa2 = st.columns(2)
                 with col_sa1:
-                    if st.button("Sí, suspender", type="primary", use_container_width=True, key=f"yes_susp_{taller_id_activo}"):
+                    if st.button("Sí, suspender", type="primary", width='stretch', key=f"yes_susp_{taller_id_activo}"):
                         fecha_vencida = date.today() - timedelta(days=1)
                         try:
                             with engine.begin() as conn_bloq:
@@ -140,7 +140,7 @@ if not df_talleres.empty:
                         except Exception as e:
                             st.error(mensaje_error_amigable(e, "suspender el acceso"))
                 with col_sa2:
-                    if st.button("Cancelar", use_container_width=True, key=f"no_susp_{taller_id_activo}"):
+                    if st.button("Cancelar", width='stretch', key=f"no_susp_{taller_id_activo}"):
                         st.session_state[f"confirmar_suspender_{taller_id_activo}"] = False
                         st.rerun()
 
@@ -155,13 +155,13 @@ if not df_talleres.empty:
         st.write(f"Estado actual: {'Habilitada' if fe_activa else 'Deshabilitada'}")
         col_fe1, col_fe2 = st.columns(2)
         with col_fe1:
-            if st.button("Habilitar FE", type="primary", use_container_width=True, disabled=fe_activa):
+            if st.button("Habilitar FE", type="primary", width='stretch', disabled=fe_activa):
                 establecer_fe_habilitada(taller_id_activo, True)
                 obtener_talleres.clear()
                 st.success(f"Facturación Electrónica habilitada para '{taller_row['nombre_taller']}'.")
                 st.rerun()
         with col_fe2:
-            if st.button("Deshabilitar FE", use_container_width=True, disabled=not fe_activa):
+            if st.button("Deshabilitar FE", width='stretch', disabled=not fe_activa):
                 establecer_fe_habilitada(taller_id_activo, False)
                 obtener_talleres.clear()
                 st.warning(f"Facturación Electrónica deshabilitada para '{taller_row['nombre_taller']}'.")

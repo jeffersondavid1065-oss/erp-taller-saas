@@ -162,7 +162,7 @@ with tab_logo:
                 st.warning("¿Quitar el logo? Tus próximas facturas saldrán con el placeholder gris hasta que subas uno nuevo.")
                 col_lg1, col_lg2 = st.columns(2)
                 with col_lg1:
-                    if st.button("Sí, quitar logo", type="primary", use_container_width=True):
+                    if st.button("Sí, quitar logo", type="primary", width='stretch'):
                         try:
                             os.remove(logo_path_actual)
                             with engine.begin() as conn:
@@ -177,7 +177,7 @@ with tab_logo:
                         except Exception as e:
                             st.error(mensaje_error_amigable(e, "eliminar el logo"))
                 with col_lg2:
-                    if st.button("Cancelar", use_container_width=True):
+                    if st.button("Cancelar", width='stretch'):
                         st.session_state.confirmar_eliminar_logo = False
                         st.rerun()
         else:
@@ -347,7 +347,7 @@ with tab_operarios:
                     col_btn1, col_btn2 = st.columns(2)
                     with col_btn1:
                         etiqueta_toggle = "Desactivar" if op_activo else "Activar"
-                        if st.button(etiqueta_toggle, key=f"toggle_op_{op_id}", use_container_width=True):
+                        if st.button(etiqueta_toggle, key=f"toggle_op_{op_id}", width='stretch'):
                             try:
                                 with engine.begin() as conn_toggle:
                                     conn_toggle.execute(
@@ -359,7 +359,7 @@ with tab_operarios:
                             except Exception as e:
                                 st.error(mensaje_error_amigable(e, "cambiar el estado del operario"))
                     with col_btn2:
-                        if st.button("Cambiar clave", key=f"reset_op_{op_id}", use_container_width=True):
+                        if st.button("Cambiar clave", key=f"reset_op_{op_id}", width='stretch'):
                             st.session_state[f"mostrar_reset_{op_id}"] = True
 
                 if st.session_state.get(f"mostrar_reset_{op_id}", False):
@@ -415,7 +415,7 @@ with tab_alegra:
 
         col_a1, col_a2 = st.columns(2)
         with col_a1:
-            if st.button("Probar conexión", use_container_width=True):
+            if st.button("Probar conexión", width='stretch'):
                 with st.spinner("Probando..."):
                     ok, msg = alegra_utils.probar_conexion(creds.alegra_email, creds.alegra_token)
                 if ok:
@@ -423,20 +423,20 @@ with tab_alegra:
                 else:
                     st.error(msg)
         with col_a2:
-            if st.button("Desconectar cuenta", use_container_width=True):
+            if st.button("Desconectar cuenta", width='stretch'):
                 st.session_state.confirmar_desconectar_alegra = True
 
         if st.session_state.get("confirmar_desconectar_alegra", False):
             st.warning("¿Desconectar tu cuenta de Alegra? No podrás emitir facturas electrónicas hasta que conectes una cuenta de nuevo.")
             col_da1, col_da2 = st.columns(2)
             with col_da1:
-                if st.button("Sí, desconectar", type="primary", use_container_width=True):
+                if st.button("Sí, desconectar", type="primary", width='stretch'):
                     eliminar_credenciales_alegra(user_id)
                     st.session_state.confirmar_desconectar_alegra = False
                     st.success("Cuenta desconectada.")
                     st.rerun()
             with col_da2:
-                if st.button("Cancelar", use_container_width=True):
+                if st.button("Cancelar", width='stretch'):
                     st.session_state.confirmar_desconectar_alegra = False
                     st.rerun()
 

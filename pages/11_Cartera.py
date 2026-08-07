@@ -99,7 +99,7 @@ else:
     })
     st.dataframe(
         df_mostrar,
-        use_container_width=True, hide_index=True,
+        width='stretch', hide_index=True,
         column_config={
             "Saldo Pendiente": st.column_config.NumberColumn(format="$%,d"),
         }
@@ -149,7 +149,7 @@ else:
     with col_ab2:
         notas_abono = st.text_area("Notas (opcional)", placeholder="Ej: Pago parcial en efectivo en taller")
 
-    if st.button("Registrar Abono", type="primary", use_container_width=True):
+    if st.button("Registrar Abono", type="primary", width='stretch'):
         if monto_abono <= 0:
             st.warning("Escribe cuánto pagó el cliente. El monto debe ser mayor a cero.")
         else:

@@ -160,7 +160,7 @@ if not df_trabajos.empty:
     df_editado = st.data_editor(
         df_para_editar,
         hide_index=True,
-        use_container_width=True,
+        width='stretch',
         disabled=["detalle_id", "orden_nro", "placa", "empresa", "mecanico", "tipo_item"],
         column_config={
             "detalle_id": None, 
@@ -299,7 +299,7 @@ else:
                     'Retención ($)': lambda x: formato_cop(x),
                     'Base para Nómina ($)': lambda x: formato_cop(x),
                     'Comisión del Técnico ($)': lambda x: formato_cop(x)
-                }), use_container_width=True, hide_index=True)
+                }), width='stretch', hide_index=True)
                 
                 csv = df_mostrar.to_csv(index=False).encode('utf-8')
                 st.download_button(

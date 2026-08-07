@@ -142,7 +142,7 @@ if ordenes_sin_precio:
                 nuevos_precios[item_id] = (nuevo_costo, nuevo_pvp)
                 st.markdown("---")
             
-            btn_guardar_precios = st.form_submit_button("Guardar Precios y Actualizar Orden", type="primary", use_container_width=True)
+            btn_guardar_precios = st.form_submit_button("Guardar Precios y Actualizar Orden", type="primary", width='stretch')
             
             if btn_guardar_precios:
                 try:
@@ -218,7 +218,7 @@ dibujar_estado("🟣", "En Reparación", "En reparación")
 dibujar_estado("🟢", "Listo para Facturar", "Listo para facturar")
 
 st.markdown("---")
-if st.button("Actualizar Tablero", use_container_width=True):
+if st.button("Actualizar Tablero", width='stretch'):
     # Igual aquí: solo se limpian las consultas de ESTA página.
     obtener_ordenes_con_items_pendientes.clear()
     obtener_vehiculos.clear()

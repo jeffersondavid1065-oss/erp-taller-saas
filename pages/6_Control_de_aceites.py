@@ -220,7 +220,7 @@ with tab_flota:
                         col_rc1, col_rc2, col_rc3 = st.columns([2, 1, 1])
                         col_rc1.warning(f"¿Quitar **{row['nombre_producto']}** de la lista de este vehículo?")
                         with col_rc2:
-                            if st.button("Sí, quitar", key=f"yes_del_receta_{row['id']}", type="primary", use_container_width=True):
+                            if st.button("Sí, quitar", key=f"yes_del_receta_{row['id']}", type="primary", width='stretch'):
                                 try:
                                     with engine.begin() as conn_del:
                                         conn_del.execute(text("DELETE FROM Recetas_Vehiculo WHERE id = :rid"), {"rid": row['id']})
@@ -231,7 +231,7 @@ with tab_flota:
                                 except Exception as e:
                                     st.error(mensaje_error_amigable(e, "eliminar el insumo"))
                         with col_rc3:
-                            if st.button("Cancelar", key=f"no_del_receta_{row['id']}", use_container_width=True):
+                            if st.button("Cancelar", key=f"no_del_receta_{row['id']}", width='stretch'):
                                 st.session_state[f"del_confirm_receta_{row['id']}"] = False
                                 st.rerun()
             else:
@@ -308,7 +308,7 @@ with tab_flota:
                 gran_total = float(total_insumos) + float(valor_mo)
                 st.markdown(f"### Total Orden: {formato_cop(gran_total)}")
 
-                if st.button("Ejecutar y Crear Orden", type="primary", use_container_width=True):
+                if st.button("Ejecutar y Crear Orden", type="primary", width='stretch'):
                     if not mec_sel:
                         st.error("Registra un mecanico en el Directorio primero.")
                     else:

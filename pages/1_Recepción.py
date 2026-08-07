@@ -140,7 +140,7 @@ with tab1:
         st.caption(f"Descuento estimado: {monto_descontado} | Valor Neto para Nomina: **{monto_neto}**")
 
         st.markdown("")
-        if st.button("Agregar Trabajo", use_container_width=True):
+        if st.button("Agregar Trabajo", width='stretch'):
             if desc_mo and mecanico_sel != "-- Seleccionar Mecanico --":
                 desc_final = f"{desc_mo} (Ret {porcentaje_ret}% aplicada a la nomina)" if porcentaje_ret > 0 else desc_mo
                 st.session_state.carrito_items.append({
@@ -178,7 +178,7 @@ with tab2:
                                             index=IVA_OPCIONES.index(IVA_TIPO_DEFAULT_REP), key="iva_rep_ext")
 
             st.markdown("")
-            if st.button("Agregar Repuesto Externo", use_container_width=True):
+            if st.button("Agregar Repuesto Externo", width='stretch'):
                 if desc_rep:
                     st.session_state.carrito_items.append({
                         'Tipo': 'Repuesto', 'Descripción': desc_rep,
@@ -240,7 +240,7 @@ with tab2:
                         with col_c3:
                             st.write("")
                             st.write("")
-                            if st.button("✅ Agregar", type="primary", use_container_width=True, key="btn_agregar_cod"):
+                            if st.button("✅ Agregar", type="primary", width='stretch', key="btn_agregar_cod"):
                                 st.session_state.carrito_items.append({
                                     'Tipo': 'Repuesto',
                                     'Descripción': f"{p[1]} (x{cant_usar})",
@@ -279,7 +279,7 @@ with tab2:
                                     )
                                 with col_r3:
                                     st.write("")
-                                    if st.button("Agregar", key=f"add_{p[0]}", use_container_width=True):
+                                    if st.button("Agregar", key=f"add_{p[0]}", width='stretch'):
                                         st.session_state.carrito_items.append({
                                             'Tipo': 'Repuesto',
                                             'Descripción': f"{p[1]} (x{cant})",
@@ -319,7 +319,7 @@ with tab2:
                     st.markdown(f"**Total Cobro:** {formato_cop(pvp_unitario * cant_usar)}")
 
                 st.markdown("")
-                if st.button("Agregar del Almacen Propio", use_container_width=True):
+                if st.button("Agregar del Almacen Propio", width='stretch'):
                     st.session_state.carrito_items.append({
                         'Tipo': 'Repuesto',
                         'Descripción': f"{prod_data[1]} (x{cant_usar})",
@@ -365,7 +365,7 @@ if st.session_state.carrito_items:
                 if item.get('Base_Nomina') and item['Base_Nomina'] < item['PVP Cliente']:
                     st.caption(f"Base Nomina: {formato_cop(item['Base_Nomina'])}")
         with col_res4:
-            if st.button("Quitar", key=f"borrar_{i}", use_container_width=True):
+            if st.button("Quitar", key=f"borrar_{i}", width='stretch'):
                 st.session_state.carrito_items.pop(i)
                 st.rerun()
         st.divider()
@@ -377,7 +377,7 @@ if st.session_state.carrito_items:
     with col_tot1:
         st.success(f"Total actual a cobrar al cliente: {formato_cop(total_cobro)}")
     with col_tot2:
-        if st.button("Guardar Orden Completa", type="primary", use_container_width=True):
+        if st.button("Guardar Orden Completa", type="primary", width='stretch'):
             if not placa:
                 st.error("Falta ingresar la placa del vehiculo.")
             elif empresa_sel == "-- Seleccionar Empresa --":

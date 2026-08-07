@@ -367,7 +367,7 @@ with tab_historial:
 
             st.dataframe(
                 df_mostrar.style.format({'Monto ($)': lambda x: formato_cop(x)}),
-                use_container_width=True,
+                width='stretch',
                 hide_index=True
             )
 
@@ -386,7 +386,7 @@ with tab_historial:
                     data=excel_buffer,
                     file_name=f"Gastos_{fecha_ini}_{fecha_fin}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
+                    width='stretch'
                 )
             
             with col_resumen:
@@ -501,7 +501,7 @@ with tab_analisis:
             data=excel_reporte,
             file_name=f"Reporte_Financiero_{mes_sel:02d}_{año_sel}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
+            width='stretch'
         )
     
     with col_desc2:

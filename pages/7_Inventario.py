@@ -165,7 +165,7 @@ with tab_stock:
             df_editado = st.data_editor(
                 df_show,
                 hide_index=True,
-                use_container_width=True,
+                width='stretch',
                 disabled=["id", "precio_con_iva", "ganancia", "pct_ganancia"],
                 column_config={
                     "id": None,
@@ -336,13 +336,13 @@ with tab_entradas:
         )
         if factura_img:
             if factura_img.type != "application/pdf":
-                st.image(factura_img, use_container_width=True)
+                st.image(factura_img, width='stretch')
             else:
                 st.success(f"📄 {factura_img.name}")
 
         if factura_img and gemini_ok:
             if st.button("🤖 Analizar Factura con IA", type="primary",
-                         use_container_width=True, key="btn_ia_taller"):
+                         width='stretch', key="btn_ia_taller"):
                 with st.spinner("Gemini está leyendo la factura..."):
                     try:
                         from gemini_utils import leer_factura_imagen, leer_factura_pdf
@@ -383,27 +383,27 @@ with tab_entradas:
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
         if st.button("➕ Agregar repuesto manualmente",
-                     use_container_width=True, key="btn_add_taller"):
+                     width='stretch', key="btn_add_taller"):
             st.session_state.items_entrada_taller.append(
                 {"nombre": "", "cantidad": 1.0, "costo": 0.0, "subtotal": 0.0}
             )
             st.rerun()
     with col_btn2:
-        if st.button("🗑️ Limpiar todo", use_container_width=True, key="btn_clear_taller"):
+        if st.button("🗑️ Limpiar todo", width='stretch', key="btn_clear_taller"):
             st.session_state.confirmar_limpiar_taller = True
 
     if st.session_state.get("confirmar_limpiar_taller", False):
         st.warning("¿Quitar todos los repuestos de esta entrada? Se perderá lo detectado por la IA y lo agregado manualmente.")
         col_cl1, col_cl2 = st.columns(2)
         with col_cl1:
-            if st.button("Sí, limpiar todo", type="primary", use_container_width=True, key="btn_clear_confirm_taller"):
+            if st.button("Sí, limpiar todo", type="primary", width='stretch', key="btn_clear_confirm_taller"):
                 st.session_state.items_entrada_taller = []
                 if "nf_taller" in st.session_state:
                     del st.session_state.nf_taller
                 st.session_state.confirmar_limpiar_taller = False
                 st.rerun()
         with col_cl2:
-            if st.button("Cancelar", use_container_width=True, key="btn_clear_cancel_taller"):
+            if st.button("Cancelar", width='stretch', key="btn_clear_cancel_taller"):
                 st.session_state.confirmar_limpiar_taller = False
                 st.rerun()
 
@@ -523,7 +523,7 @@ with tab_entradas:
 
         if st.session_state.items_entrada_taller and st.button(
             "✅ Registrar Entrada", type="primary",
-            use_container_width=True, key="btn_reg_taller"
+            width='stretch', key="btn_reg_taller"
         ):
             items_validos = [i for i in st.session_state.items_entrada_taller
                              if i.get("nombre") and i.get("cantidad", 0) > 0]

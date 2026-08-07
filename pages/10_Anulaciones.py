@@ -108,7 +108,7 @@ if len(fechas_filtro) == 2:
 
         st.dataframe(
             df_mostrar,
-            use_container_width=True, hide_index=True,
+            width='stretch', hide_index=True,
             column_config={
                 "Total Anulado": st.column_config.NumberColumn(format="$%,d"),
             }

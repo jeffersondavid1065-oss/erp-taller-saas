@@ -700,10 +700,10 @@ def mostrar_documento(contenedor, etiqueta, url, nombre_archivo, mime_type):
     if contenido:
         contenedor.download_button(
             etiqueta, data=contenido, file_name=nombre_archivo,
-            mime=mime_type, use_container_width=True,
+            mime=mime_type, width='stretch',
         )
     else:
-        contenedor.link_button(etiqueta, url, use_container_width=True)
+        contenedor.link_button(etiqueta, url, width='stretch')
 
 
 def refrescar_url_factura_orden(uid, hoja_id):
