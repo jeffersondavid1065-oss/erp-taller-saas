@@ -271,6 +271,21 @@ def crear_nota_credito(email, token, factura_alegra_id, cliente_id, items, total
     Crea una nota crédito en Alegra que anula (total o parcialmente) una
     factura ya emitida. Devuelve el JSON de la nota crédito creada, o None si falla.
     """
+    # Facturas pagadas de contado quedan con saldo $0 en Alegra apenas se
+    # crean (solo las de crédito conservan el total como saldo pendiente).
+    # Si se le pide aplicar la nota crédito por el total completo contra una
+    # factura que ya no tiene saldo pendiente, Alegra la rechaza con
+    # "el saldo por cobrar... es menor al monto aplicado". Se consulta el
+    # saldo real antes de armar la nota y nunca se aplica más que eso.
+    monto_aplicar = float(total)
+    factura_actual = obtener_factura(email, token, factura_alegra_id)
+    if factura_actual:
+        saldo_alegra = factura_actual.get("balance")
+        if saldo_alegra is None:
+            saldo_alegra = factura_actual.get("amountDue")
+        if saldo_alegra is not None:
+            monto_aplicar = min(monto_aplicar, float(saldo_alegra))
+
     payload = {
         "date": date.today().isoformat(),
         "client": {"id": cliente_id},
@@ -278,7 +293,7 @@ def crear_nota_credito(email, token, factura_alegra_id, cliente_id, items, total
         # 'invoiceCreditAllocations' es el campo específico de Colombia para
         # ligar la nota crédito a la factura electrónica que anula (necesario
         # para que quede asociada ante la DIAN, no solo como nota suelta).
-        "invoiceCreditAllocations": [{"id": factura_alegra_id, "amount": float(total)}],
+        "invoiceCreditAllocations": [{"id": factura_alegra_id, "amount": monto_aplicar}],
         "type": "VOID_ELECTRONIC_INVOICE",
         # Igual que en la factura: sin esto Alegra crea la nota crédito pero
         # nunca la emite ante la DIAN.
