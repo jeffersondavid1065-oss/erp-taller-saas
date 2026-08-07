@@ -590,6 +590,17 @@ def anular_factura_orden(uid, hoja_id):
         return True, "Esta orden no tenía factura electrónica emitida, no se requiere nota crédito."
     if orden.nota_credito_alegra_id:
         return False, "Esta orden ya tiene una nota crédito emitida."
+    if orden.tipo_pago != "Credito":
+        # Alegra marca de una vez con saldo $0 las facturas pagadas de
+        # contado, y sus validaciones de creación (monto <= saldo) y de
+        # timbrado (monto > 0) de la nota crédito se contradicen entre sí
+        # para ese caso (error 9036) — cada intento deja una nota crédito
+        # huérfana sin timbrar. Bloqueado hasta confirmar con soporte de
+        # Alegra el payload correcto.
+        return False, (
+            "Anular facturas pagadas de contado (Efectivo/Transferencia/Mixto) está deshabilitado "
+            "temporalmente por un conflicto con Alegra. Contacta al administrador."
+        )
 
     email, token = obtener_credenciales(uid)
     if not email or not token:
