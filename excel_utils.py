@@ -6,6 +6,7 @@ resaltada), centralizado acá para reutilizarlo en otras páginas.
 """
 from datetime import datetime
 from io import BytesIO
+import streamlit as st
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -22,6 +23,7 @@ _BORDER = Border(
 )
 
 
+@st.cache_data(ttl=60, show_spinner=False)
 def generar_excel_tabla(df, titulo_reporte, nombre_taller, columnas_moneda=None,
                          nombre_hoja="Datos", columna_total=None):
     """

@@ -64,6 +64,15 @@ nombre_taller = st.session_state.auth["nombre_taller"]
 def formato_cop(numero):
     return f"${numero:,.0f}".replace(",", ".")
 
+
+@st.cache_data(show_spinner=False)
+def _generar_pdf_orden_cacheado(**kwargs):
+    # El PDF se regeneraba en CADA rerun de la página (cualquier clic en
+    # este módulo la vuelve a correr entera), aunque nada de la orden
+    # hubiera cambiado. Cacheado por los mismos datos que recibe: si la
+    # orden sigue igual, se reusa el PDF ya generado en vez de rehacerlo.
+    return generar_pdf_orden_profesional(**kwargs)
+
 # --------------------------------------------------------------------------------
 # CONFIGURACIÓN DE IVA DEL TALLER (config global, definida en Configuración)
 # --------------------------------------------------------------------------------
@@ -323,7 +332,7 @@ if orden_busqueda:
                             "Complétalo en Configuración > Datos del Taller."
                         )
 
-                    pdf_bytes = generar_pdf_orden_profesional(
+                    pdf_bytes = _generar_pdf_orden_cacheado(
                         taller_nombre=nombre_taller,
                         taller_nit=taller_nit,
                         taller_telefono=taller_telefono,

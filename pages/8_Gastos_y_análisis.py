@@ -52,6 +52,7 @@ def formato_cop(numero):
     return f"${float(numero):,.0f}".replace(",", ".")
 
 
+@st.cache_data(ttl=60, show_spinner=False)
 def generar_excel_gastos(df_gastos, titulo_reporte, nombre_archivo):
     """Genera un archivo Excel formateado profesionalmente para reportes de gastos."""
     wb = Workbook()
@@ -145,10 +146,11 @@ def generar_excel_gastos(df_gastos, titulo_reporte, nombre_archivo):
     excel_buffer = BytesIO()
     wb.save(excel_buffer)
     excel_buffer.seek(0)
-    
-    return excel_buffer
+
+    return excel_buffer.getvalue()
 
 
+@st.cache_data(ttl=60, show_spinner=False)
 def generar_excel_analisis_mensual(ingresos, gastos, margen, df_gastos_mes, año, mes, taller_nombre):
     """Genera un reporte financiero mensual completo en Excel."""
     wb = Workbook()
@@ -246,8 +248,8 @@ def generar_excel_analisis_mensual(ingresos, gastos, margen, df_gastos_mes, año
     excel_buffer = BytesIO()
     wb.save(excel_buffer)
     excel_buffer.seek(0)
-    
-    return excel_buffer
+
+    return excel_buffer.getvalue()
 
 st.title("Gastos y Análisis Financiero")
 st.markdown(f"Control de gastos operacionales para: **{nombre_taller}**")
