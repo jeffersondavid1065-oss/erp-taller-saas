@@ -529,17 +529,24 @@ if orden_busqueda:
                         "Genera una nota crédito ante la DIAN que anula la factura electrónica de esta orden."
                     )
                     st.warning(f"Vas a anular la factura #{numero_factura_actual} de esta orden. Esta acción no se puede deshacer.")
-                    confirmar_anular = st.checkbox(
-                        f"Entiendo que anular la factura #{numero_factura_actual} es irreversible y confirmo que quiero hacerlo."
-                    )
-                    if st.button("Anular factura con nota crédito", type="primary", width='stretch', disabled=not confirmar_anular):
-                        with st.spinner("Emitiendo nota crédito..."):
-                            ok_nc, msg_nc = alegra_utils.anular_factura_orden(user_id, hoja_id)
-                        if ok_nc:
-                            st.success(msg_nc)
+                    with st.form("form_anular_factura"):
+                        confirmar_anular = st.checkbox(
+                            f"Entiendo que anular la factura #{numero_factura_actual} es irreversible y confirmo que quiero hacerlo."
+                        )
+                        anular_click = st.form_submit_button(
+                            "Anular factura con nota crédito", type="primary", width='stretch'
+                        )
+                    if anular_click:
+                        if not confirmar_anular:
+                            st.warning("Marca la casilla de confirmación antes de anular la factura.")
                         else:
-                            st.error(msg_nc)
-                        st.rerun()
+                            with st.spinner("Emitiendo nota crédito..."):
+                                ok_nc, msg_nc = alegra_utils.anular_factura_orden(user_id, hoja_id)
+                            if ok_nc:
+                                st.success(msg_nc)
+                            else:
+                                st.error(msg_nc)
+                            st.rerun()
 
             with tab_editar:
                 if factura_estado_actual:
