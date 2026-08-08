@@ -90,6 +90,20 @@ def _invalidar_caches_orden():
     # hasta que expire el TTL.
     invalidar_cache_ordenes()
     _consultar_historial_cacheado.clear()
+    _generar_excel_historial_cacheado.clear()
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def _generar_excel_historial_cacheado(sql, params, nombre_taller):
+    # El Excel (hasta 5000 filas, con estilos por celda) se reconstruía en
+    # CADA rerun de esta página aunque el usuario solo hubiera tocado algo
+    # en otra sección (ej. Expediente). Se cachea junto con la consulta
+    # para que solo se regenere cuando cambian los filtros o vence el TTL.
+    df_export = _consultar_historial_cacheado(sql, params)
+    return df_export, excel_utils.generar_excel_tabla(
+        df_export, "Historial de Órdenes", nombre_taller,
+        columnas_moneda=["Total"], nombre_hoja="Órdenes", columna_total="Total"
+    )
 
 
 @st.cache_data(show_spinner=False)
@@ -224,12 +238,8 @@ if len(fechas_filtro) == 2:
         # (no solo la página visible en pantalla) — tope de 5000 filas, más
         # que suficiente para el historial de cualquier taller.
         sql_export = sql_list_select + " " + " ".join(sql_conditions) + " GROUP BY h.id, h.fecha_ingreso, h.placa, e.razon_social, h.estado ORDER BY h.id DESC LIMIT 5000"
-        df_export = _consultar_historial_cacheado(sql_export, params_exp)
+        _df_export, excel_historial = _generar_excel_historial_cacheado(sql_export, params_exp, nombre_taller)
 
-        excel_historial = excel_utils.generar_excel_tabla(
-            df_export, "Historial de Órdenes", nombre_taller,
-            columnas_moneda=["Total"], nombre_hoja="Órdenes", columna_total="Total"
-        )
         st.download_button(
             f"📥 Descargar Excel ({total_registros} orden(es) que coinciden con los filtros)",
             data=excel_historial,
