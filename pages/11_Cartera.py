@@ -18,6 +18,13 @@ st.markdown("""
         z-index: 9999999 !important;
         pointer-events: all !important;
     }
+
+    @keyframes fade-in-up {
+        0% { opacity: 0; transform: translateY(20px); }
+        100% { opacity: 1; transform: translateY(0); }
+    }
+    [data-testid="stAppViewBlockContainer"] { animation: fade-in-up 0.6s ease-out !important; }
+    div[data-testid="stVerticalBlock"] > div { animation: fade-in-up 0.5s ease-out !important; }
     </style>
 """, unsafe_allow_html=True)
 
