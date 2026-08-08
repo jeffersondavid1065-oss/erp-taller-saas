@@ -306,24 +306,14 @@ if orden_busqueda:
                 iva_tipo_default_mano_obra=IVA_TIPO_DEFAULT_MO, iva_tipo_default_repuestos=IVA_TIPO_DEFAULT_REP
             )
 
-            # La pestaña "Anular" solo tiene sentido si la orden ya tiene una
-            # factura electrónica emitida y todavía no se le hizo nota crédito -
-            # por eso los tabs se arman dinámicamente en vez de con una lista fija.
-            mostrar_tab_anular = (factura_estado_actual == "emitida") and not nota_credito_actual
-
-            nombres_tabs = ["Detalles y Copia de Ítems", "Facturar"]
-            if mostrar_tab_anular:
-                nombres_tabs.append("Anular")
-            nombres_tabs.append("Edición y Gestión")
-
+            # Anular una factura ya emitida solo se puede hacer desde la
+            # página Anulaciones (no desde aquí), para que quede centralizado
+            # en un único lugar del sistema.
+            nombres_tabs = ["Detalles y Copia de Ítems", "Facturar", "Edición y Gestión"]
             tabs_creados = st.tabs(nombres_tabs)
             tab_factura = tabs_creados[0]
             tab_facturar_dian = tabs_creados[1]
-            if mostrar_tab_anular:
-                tab_anular = tabs_creados[2]
-                tab_editar = tabs_creados[3]
-            else:
-                tab_editar = tabs_creados[2]
+            tab_editar = tabs_creados[2]
             
             with tab_factura:
                 if not df_trabajos.empty:
@@ -533,61 +523,24 @@ if orden_busqueda:
                                             col_ncxml, "Descargar XML (DIAN)", xml_nc_fe,
                                             f"NotaCredito_Orden_{hoja_id}.xml", "application/xml"
                                         )
+                                    else:
+                                        st.caption(
+                                            "¿Necesitas anular esta factura? Hazlo desde la página "
+                                            "**Anulaciones**, buscando esta misma orden."
+                                        )
 
                                 else:
                                     st.error(f"Estado de facturación no reconocido: {factura_estado_fe}")
 
                         _dibujar_estado_factura()
 
-            if mostrar_tab_anular:
-                with tab_anular:
-                    st.subheader("Anular Factura Electrónica")
-                    st.caption(
-                        "Usa esto solo si el trabajo se anuló o devolvió después de facturado. "
-                        "Genera una nota crédito ante la DIAN que anula la factura electrónica de esta orden."
-                    )
-                    if tipo_pago_actual != "Credito":
-                        # Alegra marca las facturas pagadas de contado con saldo
-                        # $0 apenas se crean. Al anularlas, sus validaciones de
-                        # creación (monto <= saldo) y de timbrado (monto > 0)
-                        # se contradicen entre sí (código 9036), y cada intento
-                        # deja una nota crédito huérfana sin timbrar en Alegra.
-                        # Bloqueado temporalmente hasta confirmar con soporte de
-                        # Alegra el payload correcto para este caso.
-                        st.error(
-                            "⚠️ Anular facturas pagadas de contado (Efectivo/Transferencia/Mixto) está "
-                            "deshabilitado temporalmente: Alegra rechaza la nota crédito para facturas "
-                            "ya cobradas y cada intento deja un documento sin timbrar en tu cuenta. "
-                            "Contacta al administrador si necesitas anular esta factura."
-                        )
-                    else:
-                        st.warning(f"Vas a anular la factura #{numero_factura_actual} de esta orden. Esta acción no se puede deshacer.")
-                        with st.form("form_anular_factura"):
-                            confirmar_anular = st.checkbox(
-                                f"Entiendo que anular la factura #{numero_factura_actual} es irreversible y confirmo que quiero hacerlo."
-                            )
-                            anular_click = st.form_submit_button(
-                                "Anular factura con nota crédito", type="primary", width='stretch'
-                            )
-                        if anular_click:
-                            if not confirmar_anular:
-                                st.warning("Marca la casilla de confirmación antes de anular la factura.")
-                            else:
-                                with st.spinner("Emitiendo nota crédito..."):
-                                    ok_nc, msg_nc = alegra_utils.anular_factura_orden(user_id, hoja_id)
-                                if ok_nc:
-                                    st.success(msg_nc)
-                                else:
-                                    st.error(msg_nc)
-                                st.rerun()
-
             with tab_editar:
                 if factura_estado_actual:
                     st.warning(
                         "Esta orden ya tiene una factura electrónica creada en Alegra y no se puede "
                         "editar (ítems, precios ni estado): cambiar algo acá ya no coincidiría con lo "
-                        "que quedó facturado. Si necesitas corregirla, anula la factura primero en la "
-                        "pestaña \"Anular\"."
+                        "que quedó facturado. Si necesitas corregirla, anula la factura primero desde "
+                        "la página **Anulaciones**."
                     )
                     st.stop()
 

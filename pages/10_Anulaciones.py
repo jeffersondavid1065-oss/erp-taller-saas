@@ -1,7 +1,9 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
-from queries import obtener_catalogos, obtener_notas_credito_periodo
+from sqlalchemy import text
+from db import obtener_conexion
+from queries import obtener_catalogos, obtener_notas_credito_periodo, invalidar_cache_ordenes
 import alegra_utils
 
 st.markdown("""
@@ -50,6 +52,82 @@ def formato_cop(numero):
 
 st.title("Anulaciones")
 st.markdown(f"Notas crédito (facturas anuladas) para: **{nombre_taller}**")
+st.markdown("---")
+
+# ==========================================
+# ANULAR UNA FACTURA
+# ==========================================
+st.subheader("Anular una Factura")
+st.caption(
+    "Usa esto solo si el trabajo se anuló o devolvió después de facturado. "
+    "Genera una nota crédito ante la DIAN que anula la factura electrónica de esa orden."
+)
+
+orden_anular_busqueda = st.text_input("Número de Orden a anular", key="orden_anular_valor").strip()
+
+if orden_anular_busqueda:
+    if not orden_anular_busqueda.isdigit():
+        st.warning("Ingresa solo el número de la orden (sin letras ni símbolos).")
+    else:
+        orden_anular_id = int(orden_anular_busqueda)
+        engine = obtener_conexion()
+        with engine.connect() as conn:
+            orden_anular = conn.execute(text('''
+                SELECT h.id, h.placa, e.razon_social, h.factura_estado,
+                       h.nota_credito_alegra_id, h.factura_prefijo, h.factura_numero, h.tipo_pago
+                FROM Hojas_Trabajo h
+                JOIN Empresas_Clientes e ON h.empresa_id = e.id
+                WHERE h.id = :oid AND h.usuario_id = :uid
+            '''), {"oid": orden_anular_id, "uid": user_id}).fetchone()
+
+        if not orden_anular:
+            st.warning(f"No se encontró ninguna orden con el número #{orden_anular_id} en tu taller.")
+        else:
+            (hoja_id_anular, placa_anular, cliente_anular, factura_estado_anular,
+             nota_credito_anular, prefijo_anular, numero_anular, tipo_pago_anular) = orden_anular
+            numero_factura_anular = f"{prefijo_anular or ''}{numero_anular or ''}"
+
+            st.markdown(f"**Orden #{hoja_id_anular}** — Placa {placa_anular} — {cliente_anular}")
+
+            if factura_estado_anular != "emitida":
+                st.info("Esta orden no tiene una factura electrónica emitida ante la DIAN para anular.")
+            elif nota_credito_anular:
+                st.info("Esta factura ya fue anulada previamente mediante nota crédito. Búscala más abajo en el historial.")
+            elif tipo_pago_anular != "Credito":
+                # Alegra marca las facturas pagadas de contado con saldo $0 apenas
+                # se crean. Al anularlas, sus validaciones de creación (monto <=
+                # saldo) y de timbrado (monto > 0) se contradicen entre sí
+                # (código 9036), y cada intento deja un documento sin timbrar en
+                # Alegra. Bloqueado temporalmente hasta confirmar con soporte de
+                # Alegra el payload correcto para este caso.
+                st.error(
+                    "⚠️ Anular facturas pagadas de contado (Efectivo/Transferencia/Mixto) está "
+                    "deshabilitado temporalmente: Alegra rechaza la nota crédito para facturas "
+                    "ya cobradas y cada intento deja un documento sin timbrar en tu cuenta. "
+                    "Contacta al administrador si necesitas anular esta factura."
+                )
+            else:
+                st.warning(f"Vas a anular la factura #{numero_factura_anular} de esta orden. Esta acción no se puede deshacer.")
+                with st.form("form_anular_factura"):
+                    confirmar_anular = st.checkbox(
+                        f"Entiendo que anular la factura #{numero_factura_anular} es irreversible y confirmo que quiero hacerlo."
+                    )
+                    anular_click = st.form_submit_button(
+                        "Anular factura con nota crédito", type="primary", width='stretch'
+                    )
+                if anular_click:
+                    if not confirmar_anular:
+                        st.warning("Marca la casilla de confirmación antes de anular la factura.")
+                    else:
+                        with st.spinner("Emitiendo nota crédito..."):
+                            ok_nc, msg_nc = alegra_utils.anular_factura_orden(user_id, hoja_id_anular)
+                        if ok_nc:
+                            st.success(msg_nc)
+                            invalidar_cache_ordenes()
+                        else:
+                            st.error(msg_nc)
+                        st.rerun()
+
 st.markdown("---")
 
 # ==========================================
