@@ -74,7 +74,8 @@ if orden_anular_busqueda:
         with engine.connect() as conn:
             orden_anular = conn.execute(text('''
                 SELECT h.id, h.placa, e.razon_social, h.factura_estado,
-                       h.nota_credito_alegra_id, h.factura_prefijo, h.factura_numero, h.tipo_pago
+                       h.nota_credito_alegra_id, h.factura_prefijo, h.factura_numero, h.tipo_pago,
+                       h.saldo_pendiente
                 FROM Hojas_Trabajo h
                 JOIN Empresas_Clientes e ON h.empresa_id = e.id
                 WHERE h.numero_orden = :nro AND h.usuario_id = :uid
@@ -84,8 +85,12 @@ if orden_anular_busqueda:
             st.warning(f"No se encontró ninguna orden con el número #{numero_orden_anular} en tu taller.")
         else:
             (hoja_id_anular, placa_anular, cliente_anular, factura_estado_anular,
-             nota_credito_anular, prefijo_anular, numero_anular, tipo_pago_anular) = orden_anular
+             nota_credito_anular, prefijo_anular, numero_anular, tipo_pago_anular,
+             saldo_pendiente_anular) = orden_anular
             numero_factura_anular = f"{prefijo_anular or ''}{numero_anular or ''}"
+            ya_pagada_por_completo_anular = (
+                tipo_pago_anular == "Credito" and saldo_pendiente_anular is not None and float(saldo_pendiente_anular) <= 0
+            )
 
             st.markdown(f"**Orden #{numero_orden_anular}** — Placa {placa_anular} — {cliente_anular}")
 
@@ -105,6 +110,17 @@ if orden_anular_busqueda:
                     "deshabilitado temporalmente: Alegra rechaza la nota crédito para facturas "
                     "ya cobradas y cada intento deja un documento sin timbrar en tu cuenta. "
                     "Contacta al administrador si necesitas anular esta factura."
+                )
+            elif ya_pagada_por_completo_anular:
+                # Mismo conflicto de Alegra (código 9036) que las facturas de
+                # contado: una orden a crédito que ya se terminó de abonar
+                # también queda con saldo $0 en Alegra, y la nota crédito se
+                # rechaza igual.
+                st.error(
+                    "⚠️ Esta orden a crédito ya fue pagada por completo (saldo $0). Anular una "
+                    "factura ya saldada está deshabilitado temporalmente por el mismo conflicto "
+                    "con Alegra que las facturas de contado. Contacta al administrador si "
+                    "necesitas anular esta factura."
                 )
             else:
                 st.warning(f"Vas a anular la factura #{numero_factura_anular} de esta orden. Esta acción no se puede deshacer.")

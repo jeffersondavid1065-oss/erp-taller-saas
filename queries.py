@@ -570,7 +570,7 @@ def obtener_orden_para_facturar(uid, hoja_id):
     engine = obtener_conexion()
     with engine.connect() as conn:
         return conn.execute(text("""
-            SELECT id, empresa_id, tipo_pago, fecha_vencimiento_credito,
+            SELECT id, empresa_id, tipo_pago, fecha_vencimiento_credito, saldo_pendiente,
                    factura_alegra_id, factura_estado, factura_cufe,
                    factura_pdf_url, factura_xml_url,
                    nota_credito_alegra_id, nota_credito_pdf_url, nota_credito_xml_url
