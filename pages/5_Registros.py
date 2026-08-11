@@ -10,6 +10,10 @@ from queries import (
     invalidar_cache_ordenes,
     obtener_metricas_dashboard,
 )
+from gemini_utils import leer_rut_pdf
+
+REGIMEN_LABELS = {"Responsable de IVA": "COMMON_REGIME", "No responsable de IVA": "SIMPLIFIED_REGIME"}
+REGIMEN_POR_VALOR = {v: k for k, v in REGIMEN_LABELS.items()}
 
 # ==========================================
 # ESTILOS CSS: MÁSCARA DERECHA ADAPTABLE Y ANIMACIONES
@@ -71,16 +75,43 @@ tab_empresas, tab_mecanicos = st.tabs(["Empresas y Flotas", "Equipo de Mecánico
 with tab_empresas:
     
     with st.expander("Registrar una nueva empresa o cliente", expanded=False):
+        rut_pdf = st.file_uploader(
+            "Subir RUT en PDF (opcional, autocompleta los datos)",
+            type=["pdf"], key="rut_uploader_empresa",
+            help="Se lee con IA para llenar razón social, documento, dígito de verificación y régimen. Puedes corregir cualquier campo antes de guardar."
+        )
+        if rut_pdf is not None:
+            if st.session_state.get("rut_datos_empresa_file_id") != rut_pdf.file_id:
+                with st.spinner("Leyendo el RUT..."):
+                    datos_rut = leer_rut_pdf(rut_pdf.getvalue())
+                if datos_rut:
+                    st.session_state["rut_datos_empresa"] = datos_rut
+                    st.session_state["rut_datos_empresa_file_id"] = rut_pdf.file_id
+                    st.success("Datos leídos del RUT. Revísalos y ajusta lo necesario antes de guardar.")
+        else:
+            st.session_state.pop("rut_datos_empresa", None)
+            st.session_state.pop("rut_datos_empresa_file_id", None)
+
+        datos_rut = st.session_state.get("rut_datos_empresa", {})
+
         with st.form("form_nueva_empresa", clear_on_submit=True):
             col1, col2 = st.columns(2)
             with col1:
-                razon_social = st.text_input("Razón Social o Nombre del Cliente")
-                tipo_doc = st.radio("Tipo de documento", ["NIT", "CC"], horizontal=True,
-                                     help="NIT para empresas, CC (cédula) para personas naturales. Se usa al facturar electrónicamente.")
-                nit = st.text_input("NIT o Cédula (Sin puntos)")
+                razon_social = st.text_input("Razón Social o Nombre del Cliente", value=datos_rut.get("razon_social") or "")
+                tipo_doc = st.radio(
+                    "Tipo de documento", ["NIT", "CC"], horizontal=True,
+                    index=["NIT", "CC"].index(datos_rut["tipo_documento"]) if datos_rut.get("tipo_documento") in ["NIT", "CC"] else 0,
+                    help="NIT para empresas, CC (cédula) para personas naturales. Se usa al facturar electrónicamente.")
+                nit = st.text_input("NIT o Cédula (Sin puntos)", value=datos_rut.get("numero_documento") or "")
+                dv = st.text_input("Dígito de Verificación (DV)", value=datos_rut.get("digito_verificacion") or "",
+                                    help="Solo aplica para NIT. Aparece en la casilla DV del RUT.")
             with col2:
                 telefono = st.text_input("Teléfono de Contacto")
                 email = st.text_input("Correo Electrónico")
+                regimen_label = st.selectbox(
+                    "Régimen tributario (IVA)", list(REGIMEN_LABELS.keys()),
+                    index=list(REGIMEN_LABELS.keys()).index(REGIMEN_POR_VALOR.get(datos_rut.get("regimen"), "No responsable de IVA")),
+                    help="Se toma de las responsabilidades tributarias del RUT. Se usa al crear el contacto en Alegra para facturar electrónicamente.")
 
             submit_empresa = st.form_submit_button("Guardar Empresa", type="primary")
 
@@ -90,8 +121,9 @@ with tab_empresas:
                         with engine.begin() as conn:
                             conn.execute(
                                 text('''
-                                    INSERT INTO Empresas_Clientes (usuario_id, razon_social, nit, telefono, email, tipo_documento)
-                                    VALUES (:uid, :razon, :nit, :tel, :email, :tipo_doc)
+                                    INSERT INTO Empresas_Clientes
+                                        (usuario_id, razon_social, nit, telefono, email, tipo_documento, digito_verificacion, regimen)
+                                    VALUES (:uid, :razon, :nit, :tel, :email, :tipo_doc, :dv, :regimen)
                                 '''),
                                 {
                                     "uid": user_id,
@@ -100,12 +132,16 @@ with tab_empresas:
                                     "tel": telefono,
                                     "email": email,
                                     "tipo_doc": tipo_doc,
+                                    "dv": dv or None,
+                                    "regimen": REGIMEN_LABELS[regimen_label],
                                 }
                             )
                         # Nueva empresa: refresca directorio/catálogos y el
                         # contador "Empresas Registradas" del dashboard.
                         invalidar_cache_directorio()
                         obtener_metricas_dashboard.clear()
+                        st.session_state.pop("rut_datos_empresa", None)
+                        st.session_state.pop("rut_datos_empresa_file_id", None)
                         st.success(f"La empresa {razon_social} fue registrada con éxito en el sistema.")
                         st.rerun()
                     except Exception as e:

@@ -78,15 +78,20 @@ def probar_conexion(email, token):
 
 
 def crear_contacto(email, token, nombre, identificacion, tipo_identificacion="NIT", email_cliente=None,
-                    kind_of_person="BUSINESS_ENTITY", regimen="SIMPLIFIED_REGIME"):
+                    kind_of_person="BUSINESS_ENTITY", regimen="SIMPLIFIED_REGIME", dv=None):
     """
     Crea un contacto/cliente en Alegra y devuelve su id, o None si falla.
     kind_of_person: 'PERSON_ENTITY' (persona natural) o 'BUSINESS_ENTITY' (empresa/NIT).
     regimen: 'SIMPLIFIED_REGIME' (régimen simplificado) o 'COMMON_REGIME' (régimen común).
+    dv: dígito de verificación del NIT (casilla DV del RUT), si aplica.
     """
     partes = nombre.strip().split(" ", 1)
     first_name = partes[0]
     last_name = partes[1] if len(partes) > 1 else ""
+
+    identification_object = {"type": tipo_identificacion, "number": identificacion}
+    if dv:
+        identification_object["dv"] = dv
 
     payload = {
         "name": nombre,
@@ -95,7 +100,7 @@ def crear_contacto(email, token, nombre, identificacion, tipo_identificacion="NI
         "type": "client",
         "kindOfPerson": kind_of_person,
         "regime": regimen,
-        "identificationObject": {"type": tipo_identificacion, "number": identificacion},
+        "identificationObject": identification_object,
     }
     if email_cliente:
         payload["email"] = email_cliente
@@ -396,6 +401,8 @@ def obtener_o_crear_contacto_empresa(uid, empresa_id, email, token):
         tipo_identificacion=tipo_doc,
         email_cliente=empresa.email,
         kind_of_person="BUSINESS_ENTITY" if tipo_doc == "NIT" else "PERSON_ENTITY",
+        regimen=empresa.regimen or "SIMPLIFIED_REGIME",
+        dv=empresa.digito_verificacion,
     )
     if alegra_id:
         queries.guardar_alegra_contact_id(empresa_id, alegra_id)

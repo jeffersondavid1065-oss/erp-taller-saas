@@ -75,7 +75,11 @@ def init_db():
                     razon_social TEXT NOT NULL,
                     nit TEXT NOT NULL,
                     telefono TEXT,
-                    email TEXT
+                    email TEXT,
+                    tipo_documento TEXT DEFAULT 'NIT',
+                    alegra_contact_id TEXT,
+                    digito_verificacion TEXT,
+                    regimen TEXT DEFAULT 'SIMPLIFIED_REGIME'
                 )
             '''))
             conn.execute(text('''
@@ -221,7 +225,11 @@ def init_db():
                     razon_social TEXT NOT NULL,
                     nit TEXT NOT NULL,
                     telefono TEXT,
-                    email TEXT
+                    email TEXT,
+                    tipo_documento VARCHAR(10) DEFAULT 'NIT',
+                    alegra_contact_id TEXT,
+                    digito_verificacion VARCHAR(5),
+                    regimen VARCHAR(20) DEFAULT 'SIMPLIFIED_REGIME'
                 )
             '''))
             conn.execute(text('''
@@ -433,6 +441,11 @@ def init_db():
                     conn.execute(text("ALTER TABLE Empresas_Clientes ADD COLUMN tipo_documento TEXT DEFAULT 'NIT'"))
                 if 'alegra_contact_id' not in cols_ec:
                     conn.execute(text("ALTER TABLE Empresas_Clientes ADD COLUMN alegra_contact_id TEXT"))
+                # --- NUEVO: datos del RUT usados para facturar electrónicamente ---
+                if 'digito_verificacion' not in cols_ec:
+                    conn.execute(text("ALTER TABLE Empresas_Clientes ADD COLUMN digito_verificacion TEXT"))
+                if 'regimen' not in cols_ec:
+                    conn.execute(text("ALTER TABLE Empresas_Clientes ADD COLUMN regimen TEXT DEFAULT 'SIMPLIFIED_REGIME'"))
                 # --- NUEVO: facturación electrónica y método de pago, por orden ---
                 if 'tipo_pago' not in cols_ht:
                     conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN tipo_pago TEXT"))
@@ -523,6 +536,9 @@ def init_db():
                 # --- NUEVO: tipo de documento e id de contacto en Alegra, por cliente ---
                 conn.execute(text("ALTER TABLE Empresas_Clientes ADD COLUMN IF NOT EXISTS tipo_documento VARCHAR(10) DEFAULT 'NIT'"))
                 conn.execute(text("ALTER TABLE Empresas_Clientes ADD COLUMN IF NOT EXISTS alegra_contact_id TEXT"))
+                # --- NUEVO: datos del RUT usados para facturar electrónicamente ---
+                conn.execute(text("ALTER TABLE Empresas_Clientes ADD COLUMN IF NOT EXISTS digito_verificacion VARCHAR(5)"))
+                conn.execute(text("ALTER TABLE Empresas_Clientes ADD COLUMN IF NOT EXISTS regimen VARCHAR(20) DEFAULT 'SIMPLIFIED_REGIME'"))
                 # --- NUEVO: facturación electrónica y método de pago, por orden ---
                 conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS tipo_pago VARCHAR(20)"))
                 conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS fecha_vencimiento_credito DATE"))

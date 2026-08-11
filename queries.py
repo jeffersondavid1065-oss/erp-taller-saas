@@ -548,7 +548,8 @@ def obtener_datos_facturacion_empresa(uid, empresa_id):
     engine = obtener_conexion()
     with engine.connect() as conn:
         return conn.execute(text("""
-            SELECT id, razon_social, nit, tipo_documento, email, alegra_contact_id
+            SELECT id, razon_social, nit, tipo_documento, email, alegra_contact_id,
+                   COALESCE(regimen, 'SIMPLIFIED_REGIME') as regimen, digito_verificacion
             FROM Empresas_Clientes
             WHERE usuario_id = :uid AND id = :eid
         """), {"uid": uid, "eid": empresa_id}).fetchone()
