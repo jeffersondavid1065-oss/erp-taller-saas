@@ -2,7 +2,7 @@ from datetime import datetime
 import streamlit as st
 from queries import obtener_creditos_pendientes, obtener_abonos_orden, registrar_abono
 from db import mensaje_error_amigable
-import alegra_utils
+import factus_utils
 import excel_utils
 
 st.markdown("""
@@ -137,7 +137,7 @@ else:
     saldo_actual = float(fila_credito_sel['saldo_pendiente'])
     numero_orden_sel = fila_credito_sel['numero_orden']
 
-    alegra_utils.mostrar_documento(
+    factus_utils.mostrar_documento(
         st, "Descargar factura de esta orden", fila_credito_sel['factura_pdf_url'],
         f"Factura_Orden_{numero_orden_sel}.pdf", "application/pdf"
     )
@@ -162,15 +162,10 @@ else:
             st.warning("Escribe cuánto pagó el cliente. El monto debe ser mayor a cero.")
         else:
             try:
+                nota_completa = f"[{metodo_abono}] {notas_abono}".strip() if notas_abono else f"[{metodo_abono}]"
                 with st.spinner("Registrando abono..."):
-                    ok_sync, msg_sync = alegra_utils.registrar_abono_orden(user_id, hoja_id_sel, monto_abono, metodo_abono)
-                registrar_abono(user_id, hoja_id_sel, monto_abono, notas_abono or None)
-                if ok_sync:
-                    st.success(f"Abono de {formato_cop(monto_abono)} registrado.")
-                else:
-                    st.warning(
-                        f"Abono guardado en MyTaller, pero no se pudo sincronizar con Alegra: {msg_sync}"
-                    )
+                    registrar_abono(user_id, hoja_id_sel, monto_abono, nota_completa)
+                st.success(f"Abono de {formato_cop(monto_abono)} registrado.")
                 st.rerun()
             except Exception as e:
                 st.error(mensaje_error_amigable(e, "registrar el abono"))

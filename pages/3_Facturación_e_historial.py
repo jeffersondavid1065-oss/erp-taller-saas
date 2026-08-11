@@ -6,11 +6,11 @@ from sqlalchemy import text
 from db import obtener_conexion, init_db, mensaje_error_amigable
 from queries import (
     obtener_catalogos, obtener_config_taller, invalidar_cache_ordenes, invalidar_cache_inventario,
-    tiene_fe_habilitada, obtener_credenciales_alegra,
+    tiene_fe_habilitada, obtener_credenciales_factus,
 )
 from io import BytesIO
 from pdf_utils import generar_pdf_orden_profesional, calcular_totales_orden, IVA_OPCIONES
-import alegra_utils
+import factus_utils
 import excel_utils
 
 init_db()
@@ -265,7 +265,7 @@ if orden_busqueda:
         with engine.connect() as conn:
             query_vehiculo = text('''
                 SELECT h.id, h.numero_orden, h.placa, h.estado, h.fecha_ingreso, e.razon_social, e.nit,
-                       h.factura_estado, h.nota_credito_alegra_id, h.factura_prefijo, h.factura_numero,
+                       h.factura_estado, h.nota_credito_reference_code, h.factura_prefijo, h.factura_numero,
                        h.tipo_pago
                 FROM Hojas_Trabajo h
                 JOIN Empresas_Clientes e ON h.empresa_id = e.id
@@ -410,10 +410,10 @@ if orden_busqueda:
                         "Contacta al administrador para activarla."
                     )
                 else:
-                    creds_fe = obtener_credenciales_alegra(user_id)
-                    if not (creds_fe and creds_fe.alegra_email and creds_fe.alegra_token):
+                    creds_fe = obtener_credenciales_factus(user_id)
+                    if not (creds_fe and creds_fe.factus_client_id and creds_fe.factus_client_secret):
                         st.warning(
-                            "Todavía no conectaste tu cuenta de Alegra. Ve a "
+                            "Todavía no conectaste tu cuenta de Factus. Ve a "
                             "**Configuración del Taller → Facturación Electrónica** para conectarla."
                         )
                     else:
@@ -422,9 +422,9 @@ if orden_busqueda:
                         def _dibujar_estado_factura():
                             # Vuelve a consultar y dibujar esta pestaña con el
                             # estado más reciente, en la MISMA ejecución del
-                            # script (se llama a sí misma tras crear/emitir con
+                            # script (se llama a sí misma tras facturar con
                             # éxito) - así se evita un st.rerun() de página
-                            # completa después de una llamada a Alegra que ya
+                            # completa después de una llamada a Factus que ya
                             # de por sí tarda unos segundos. placeholder_fe ya
                             # reemplaza su contenido anterior solo al volver a
                             # dibujar adentro, así que no queda el formulario
@@ -432,8 +432,8 @@ if orden_busqueda:
                             with placeholder_fe.container():
                                 with engine.connect() as conn_fe:
                                     orden_fe = conn_fe.execute(text("""
-                                        SELECT factura_estado, factura_alegra_id, factura_prefijo, factura_numero,
-                                               nota_credito_alegra_id
+                                        SELECT factura_estado, factura_reference_code, factura_prefijo, factura_numero,
+                                               nota_credito_reference_code
                                         FROM Hojas_Trabajo WHERE id = :hid
                                     """), {"hid": hoja_id}).fetchone()
 
@@ -441,7 +441,7 @@ if orden_busqueda:
                                 numero_factura_fe = f"{orden_fe[2] or ''}{orden_fe[3] or ''}" if orden_fe else ""
 
                                 if not factura_estado_fe:
-                                    st.markdown("Completa el método de pago para crear la factura electrónica de esta orden.")
+                                    st.markdown("Completa el método de pago para facturar y emitir esta orden ante la DIAN.")
                                     if df_trabajos.empty:
                                         st.warning("Esta orden no tiene ítems. Agrega al menos uno en 'Edición y Gestión' antes de facturar.")
                                     else:
@@ -467,11 +467,11 @@ if orden_busqueda:
                                                     help="Número de orden de compra del cliente, si tiene una."
                                                 )
                                             crear_factura_click = st.form_submit_button(
-                                                "Crear factura electrónica", type="primary", width='stretch'
+                                                "Facturar y Emitir a la DIAN", type="primary", width='stretch'
                                             )
                                         if crear_factura_click:
-                                            with st.spinner("Creando factura en Alegra..."):
-                                                ok_f, msg_f = alegra_utils.facturar_orden(
+                                            with st.spinner("Facturando y timbrando ante la DIAN..."):
+                                                ok_f, msg_f = factus_utils.facturar_orden(
                                                     user_id, hoja_id, tipo_pago_sel, fecha_venc_sel,
                                                     notas=notas_sel or None, orden_compra=orden_compra_sel or None,
                                                 )
@@ -481,31 +481,15 @@ if orden_busqueda:
                                             else:
                                                 st.error(msg_f)
 
-                                elif factura_estado_fe == "abierta":
-                                    st.info(f"Factura creada (#{numero_factura_fe}) — todavía no se ha emitido ante la DIAN.")
-                                    pdf_mostrar_fe, _ = alegra_utils.refrescar_url_factura_orden(user_id, hoja_id)
-                                    alegra_utils.mostrar_documento(
-                                        st, "Ver PDF (borrador)", pdf_mostrar_fe,
-                                        f"Factura_Orden_{numero_orden_actual}.pdf", "application/pdf"
-                                    )
-                                    if st.button("Emitir a la DIAN", type="primary", width='stretch'):
-                                        with st.spinner("Emitiendo ante la DIAN..."):
-                                            ok_e, msg_e = alegra_utils.emitir_factura_dian_orden(user_id, hoja_id)
-                                        if ok_e:
-                                            st.success(msg_e)
-                                            _dibujar_estado_factura()
-                                        else:
-                                            st.error(msg_e)
-
                                 elif factura_estado_fe == "emitida":
                                     st.success(f"Factura electrónica emitida ante la DIAN (#{numero_factura_fe}).")
-                                    pdf_mostrar_fe, xml_mostrar_fe = alegra_utils.refrescar_url_factura_orden(user_id, hoja_id)
+                                    pdf_mostrar_fe, xml_mostrar_fe = factus_utils.refrescar_url_factura_orden(user_id, hoja_id)
                                     col_fpdf, col_fxml = st.columns(2)
-                                    alegra_utils.mostrar_documento(
+                                    factus_utils.mostrar_documento(
                                         col_fpdf, "Ver PDF de la factura", pdf_mostrar_fe,
                                         f"Factura_Orden_{numero_orden_actual}.pdf", "application/pdf"
                                     )
-                                    alegra_utils.mostrar_documento(
+                                    factus_utils.mostrar_documento(
                                         col_fxml, "Descargar XML (DIAN)", xml_mostrar_fe,
                                         f"Factura_Orden_{numero_orden_actual}.xml", "application/xml"
                                     )
@@ -513,13 +497,13 @@ if orden_busqueda:
                                     if orden_fe[4]:
                                         st.markdown("---")
                                         st.warning("Esta factura fue anulada mediante nota crédito.")
-                                        pdf_nc_fe, xml_nc_fe = alegra_utils.refrescar_url_nota_credito_orden(user_id, hoja_id)
+                                        pdf_nc_fe, xml_nc_fe = factus_utils.refrescar_url_nota_credito_orden(user_id, hoja_id)
                                         col_ncpdf, col_ncxml = st.columns(2)
-                                        alegra_utils.mostrar_documento(
+                                        factus_utils.mostrar_documento(
                                             col_ncpdf, "Ver PDF de la Nota Crédito", pdf_nc_fe,
                                             f"NotaCredito_Orden_{numero_orden_actual}.pdf", "application/pdf"
                                         )
-                                        alegra_utils.mostrar_documento(
+                                        factus_utils.mostrar_documento(
                                             col_ncxml, "Descargar XML (DIAN)", xml_nc_fe,
                                             f"NotaCredito_Orden_{numero_orden_actual}.xml", "application/xml"
                                         )
@@ -537,7 +521,7 @@ if orden_busqueda:
             with tab_editar:
                 if factura_estado_actual:
                     st.warning(
-                        "Esta orden ya tiene una factura electrónica creada en Alegra y no se puede "
+                        "Esta orden ya tiene una factura electrónica creada en Factus y no se puede "
                         "editar (ítems, precios ni estado): cambiar algo acá ya no coincidiría con lo "
                         "que quedó facturado. Si necesitas corregirla, anula la factura primero desde "
                         "la página **Anulaciones**."

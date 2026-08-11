@@ -57,7 +57,7 @@ def formato_cop(numero):
 @st.cache_data(ttl=15)
 def obtener_ordenes_con_items_pendientes(uid):
     with engine.connect() as conn:
-        # h.factura_estado IS NULL: una orden con factura ya creada en Alegra
+        # h.factura_estado IS NULL: una orden con factura ya creada en Factus
         # (aunque todavía no se haya emitido a la DIAN) no debe poder editarse
         # acá - cambiar el precio dejaría a MyTaller desincronizado de lo que
         # ya quedó facturado.

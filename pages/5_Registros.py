@@ -111,7 +111,7 @@ with tab_empresas:
                 regimen_label = st.selectbox(
                     "Régimen tributario (IVA)", list(REGIMEN_LABELS.keys()),
                     index=list(REGIMEN_LABELS.keys()).index(REGIMEN_POR_VALOR.get(datos_rut.get("regimen"), "No responsable de IVA")),
-                    help="Se toma de las responsabilidades tributarias del RUT. Se usa al crear el contacto en Alegra para facturar electrónicamente.")
+                    help="Se toma de las responsabilidades tributarias del RUT. Se usa al facturar electrónicamente con Factus.")
 
             submit_empresa = st.form_submit_button("Guardar Empresa", type="primary")
 

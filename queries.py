@@ -490,40 +490,49 @@ def invalidar_cache_operarios():
 
 
 # ==========================================
-# FACTURACIÓN ELECTRÓNICA (ALEGRA)
+# FACTURACIÓN ELECTRÓNICA (FACTUS)
 # ==========================================
-def obtener_credenciales_alegra(uid):
-    """Credenciales de Alegra configuradas por este taller (o None si no ha configurado nada)."""
+def obtener_credenciales_factus(uid):
+    """Credenciales de Factus configuradas por este taller (o None si no ha configurado nada)."""
     engine = obtener_conexion()
     with engine.connect() as conn:
         return conn.execute(text("""
-            SELECT alegra_email, alegra_token
+            SELECT factus_client_id, factus_client_secret, factus_username, factus_password
             FROM Usuarios WHERE id = :uid
         """), {"uid": uid}).fetchone()
 
 
-def guardar_credenciales_alegra(uid, email, token):
-    """Guarda (o actualiza) las credenciales de Alegra de este taller."""
+def guardar_credenciales_factus(uid, client_id, client_secret, username, password):
+    """Guarda (o actualiza) las credenciales de Factus de este taller."""
     engine = obtener_conexion()
     with engine.begin() as conn:
         conn.execute(text("""
-            UPDATE Usuarios SET alegra_email = :email, alegra_token = :token WHERE id = :uid
-        """), {"email": email, "token": token, "uid": uid})
+            UPDATE Usuarios
+            SET factus_client_id = :client_id, factus_client_secret = :client_secret,
+                factus_username = :username, factus_password = :password
+            WHERE id = :uid
+        """), {
+            "client_id": client_id, "client_secret": client_secret,
+            "username": username, "password": password, "uid": uid,
+        })
 
 
-def eliminar_credenciales_alegra(uid):
-    """Desconecta la cuenta de Alegra de este taller."""
+def eliminar_credenciales_factus(uid):
+    """Desconecta la cuenta de Factus de este taller."""
     engine = obtener_conexion()
     with engine.begin() as conn:
         conn.execute(text("""
-            UPDATE Usuarios SET alegra_email = NULL, alegra_token = NULL WHERE id = :uid
+            UPDATE Usuarios
+            SET factus_client_id = NULL, factus_client_secret = NULL,
+                factus_username = NULL, factus_password = NULL
+            WHERE id = :uid
         """), {"uid": uid})
 
 
 @st.cache_data(ttl=60)
 def tiene_fe_habilitada(uid):
     """Indica si el administrador habilitó la Facturación Electrónica para este
-    taller. Controla el acceso a toda la funcionalidad de Alegra/DIAN."""
+    taller. Controla el acceso a toda la funcionalidad de Factus/DIAN."""
     engine = obtener_conexion()
     with engine.connect() as conn:
         valor = conn.execute(
@@ -548,21 +557,11 @@ def obtener_datos_facturacion_empresa(uid, empresa_id):
     engine = obtener_conexion()
     with engine.connect() as conn:
         return conn.execute(text("""
-            SELECT id, razon_social, nit, tipo_documento, email, alegra_contact_id,
+            SELECT id, razon_social, nit, tipo_documento, email,
                    COALESCE(regimen, 'SIMPLIFIED_REGIME') as regimen, digito_verificacion
             FROM Empresas_Clientes
             WHERE usuario_id = :uid AND id = :eid
         """), {"uid": uid, "eid": empresa_id}).fetchone()
-
-
-def guardar_alegra_contact_id(empresa_id, alegra_contact_id):
-    """Guarda el id de contacto en Alegra la primera vez que se crea, para reutilizarlo después."""
-    engine = obtener_conexion()
-    with engine.begin() as conn:
-        conn.execute(text("""
-            UPDATE Empresas_Clientes SET alegra_contact_id = :alegra_id WHERE id = :eid
-        """), {"alegra_id": alegra_contact_id, "eid": empresa_id})
-    invalidar_cache_directorio()
 
 
 def obtener_orden_para_facturar(uid, hoja_id):
@@ -571,9 +570,9 @@ def obtener_orden_para_facturar(uid, hoja_id):
     with engine.connect() as conn:
         return conn.execute(text("""
             SELECT id, empresa_id, tipo_pago, fecha_vencimiento_credito, saldo_pendiente,
-                   factura_alegra_id, factura_estado, factura_cufe,
+                   factura_reference_code, factura_estado, factura_cufe, factura_numero,
                    factura_pdf_url, factura_xml_url,
-                   nota_credito_alegra_id, nota_credito_pdf_url, nota_credito_xml_url
+                   nota_credito_reference_code, nota_credito_pdf_url, nota_credito_xml_url
             FROM Hojas_Trabajo
             WHERE id = :hid AND usuario_id = :uid
         """), {"hid": hoja_id, "uid": uid}).fetchone()
@@ -589,18 +588,17 @@ def obtener_items_orden(hoja_id):
         """), {"hid": hoja_id}).fetchall()
 
 
-def guardar_resultado_factura(hoja_id, alegra_id=None, cufe=None, pdf_url=None, xml_url=None,
+def guardar_resultado_factura(hoja_id, reference_code=None, cufe=None, pdf_url=None, xml_url=None,
                                estado="emitida", prefijo=None, numero=None,
                                tipo_pago=None, fecha_vencimiento=None, saldo_pendiente=None):
-    """Guarda el resultado de crear (o intentar emitir) la factura electrónica de una orden.
-    saldo_pendiente solo se pasa (y se guarda) al crear la factura por primera
-    vez si es a crédito - en llamadas posteriores (emitir a la DIAN) se omite
-    y COALESCE conserva el que ya haya, para no borrar abonos ya registrados."""
+    """Guarda el resultado de crear y timbrar la factura electrónica de una orden
+    (en Factus ambos pasos ocurren juntos). saldo_pendiente solo se pasa (y se
+    guarda) al crear la factura por primera vez si es a crédito."""
     engine = obtener_conexion()
     with engine.begin() as conn:
         conn.execute(text("""
             UPDATE Hojas_Trabajo
-            SET factura_alegra_id = :alegra_id, factura_cufe = :cufe,
+            SET factura_reference_code = :reference_code, factura_cufe = :cufe,
                 factura_pdf_url = :pdf_url, factura_xml_url = :xml_url, factura_estado = :estado,
                 factura_prefijo = :prefijo, factura_numero = :numero,
                 tipo_pago = COALESCE(:tipo_pago, tipo_pago),
@@ -608,7 +606,7 @@ def guardar_resultado_factura(hoja_id, alegra_id=None, cufe=None, pdf_url=None, 
                 saldo_pendiente = COALESCE(:saldo_pendiente, saldo_pendiente)
             WHERE id = :hid
         """), {
-            "alegra_id": alegra_id, "cufe": cufe, "pdf_url": pdf_url, "xml_url": xml_url,
+            "reference_code": reference_code, "cufe": cufe, "pdf_url": pdf_url, "xml_url": xml_url,
             "estado": estado, "prefijo": prefijo, "numero": numero, "hid": hoja_id,
             "tipo_pago": tipo_pago, "fecha_vencimiento": fecha_vencimiento,
             "saldo_pendiente": saldo_pendiente,
@@ -617,57 +615,18 @@ def guardar_resultado_factura(hoja_id, alegra_id=None, cufe=None, pdf_url=None, 
     invalidar_cache_cartera()
 
 
-def actualizar_datos_factura(hoja_id, cufe=None, pdf_url=None, xml_url=None, prefijo=None, numero=None):
-    """Completa CUFE/PDF/XML/prefijo/número de una factura ya emitida sin pisar lo que ya
-    estaba guardado. Se usa al refrescar el enlace de una factura antigua."""
+def guardar_nota_credito(hoja_id, reference_code, pdf_url=None, xml_url=None, prefijo=None, numero=None):
+    """Guarda el reference_code, número, fecha y PDF/XML de la nota crédito
+    emitida en Factus para una orden anulada."""
     engine = obtener_conexion()
     with engine.begin() as conn:
         conn.execute(text("""
-            UPDATE Hojas_Trabajo
-            SET factura_cufe = COALESCE(:cufe, factura_cufe),
-                factura_pdf_url = COALESCE(:pdf_url, factura_pdf_url),
-                factura_xml_url = COALESCE(:xml_url, factura_xml_url),
-                factura_prefijo = COALESCE(:prefijo, factura_prefijo),
-                factura_numero = COALESCE(:numero, factura_numero)
-            WHERE id = :hid
-        """), {
-            "cufe": cufe, "pdf_url": pdf_url, "xml_url": xml_url,
-            "prefijo": prefijo, "numero": numero, "hid": hoja_id
-        })
-    invalidar_cache_ordenes()
-
-
-def guardar_nota_credito(hoja_id, nota_credito_alegra_id, pdf_url=None, xml_url=None, prefijo=None, numero=None):
-    """Guarda el id, número (prefijo+consecutivo), fecha y PDF/XML de la nota
-    crédito emitida en Alegra para una orden anulada."""
-    engine = obtener_conexion()
-    with engine.begin() as conn:
-        conn.execute(text("""
-            UPDATE Hojas_Trabajo SET nota_credito_alegra_id = :ncid, nota_credito_pdf_url = :pdf_url,
+            UPDATE Hojas_Trabajo SET nota_credito_reference_code = :reference_code, nota_credito_pdf_url = :pdf_url,
                    nota_credito_xml_url = :xml_url, nota_credito_prefijo = :prefijo,
                    nota_credito_numero = :numero, nota_credito_fecha = CURRENT_TIMESTAMP
             WHERE id = :hid
         """), {
-            "ncid": nota_credito_alegra_id, "pdf_url": pdf_url, "xml_url": xml_url,
-            "prefijo": prefijo, "numero": numero, "hid": hoja_id
-        })
-    invalidar_cache_ordenes()
-
-
-def actualizar_pdf_nota_credito(hoja_id, pdf_url, xml_url=None, prefijo=None, numero=None):
-    """Completa PDF/XML/número de una nota crédito ya emitida, cuando no llegaron
-    en la respuesta de creación, o al refrescar un enlace antiguo."""
-    engine = obtener_conexion()
-    with engine.begin() as conn:
-        conn.execute(text("""
-            UPDATE Hojas_Trabajo
-            SET nota_credito_pdf_url = COALESCE(:pdf_url, nota_credito_pdf_url),
-                nota_credito_xml_url = COALESCE(:xml_url, nota_credito_xml_url),
-                nota_credito_prefijo = COALESCE(:prefijo, nota_credito_prefijo),
-                nota_credito_numero = COALESCE(:numero, nota_credito_numero)
-            WHERE id = :hid
-        """), {
-            "pdf_url": pdf_url, "xml_url": xml_url,
+            "reference_code": reference_code, "pdf_url": pdf_url, "xml_url": xml_url,
             "prefijo": prefijo, "numero": numero, "hid": hoja_id
         })
     invalidar_cache_ordenes()
@@ -699,7 +658,7 @@ def obtener_notas_credito_periodo(uid, fecha_inicio, fecha_fin):
             FROM Hojas_Trabajo h
             JOIN Empresas_Clientes e ON h.empresa_id = e.id
             LEFT JOIN Detalles_Orden d ON h.id = d.hoja_id
-            WHERE h.usuario_id = :uid AND h.nota_credito_alegra_id IS NOT NULL
+            WHERE h.usuario_id = :uid AND h.nota_credito_reference_code IS NOT NULL
               AND h.nota_credito_fecha >= :f_ini AND h.nota_credito_fecha < :f_fin
             GROUP BY h.id, h.numero_orden, h.placa, e.razon_social, e.nit, h.factura_prefijo, h.factura_numero,
                      h.nota_credito_prefijo, h.nota_credito_numero, h.nota_credito_fecha,

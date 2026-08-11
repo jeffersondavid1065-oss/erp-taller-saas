@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import text
 from db import obtener_conexion
 from queries import obtener_catalogos, obtener_notas_credito_periodo, invalidar_cache_ordenes
-import alegra_utils
+import factus_utils
 
 st.markdown("""
     <style>
@@ -74,8 +74,7 @@ if orden_anular_busqueda:
         with engine.connect() as conn:
             orden_anular = conn.execute(text('''
                 SELECT h.id, h.placa, e.razon_social, h.factura_estado,
-                       h.nota_credito_alegra_id, h.factura_prefijo, h.factura_numero, h.tipo_pago,
-                       h.saldo_pendiente
+                       h.nota_credito_reference_code, h.factura_prefijo, h.factura_numero, h.tipo_pago
                 FROM Hojas_Trabajo h
                 JOIN Empresas_Clientes e ON h.empresa_id = e.id
                 WHERE h.numero_orden = :nro AND h.usuario_id = :uid
@@ -85,12 +84,8 @@ if orden_anular_busqueda:
             st.warning(f"No se encontró ninguna orden con el número #{numero_orden_anular} en tu taller.")
         else:
             (hoja_id_anular, placa_anular, cliente_anular, factura_estado_anular,
-             nota_credito_anular, prefijo_anular, numero_anular, tipo_pago_anular,
-             saldo_pendiente_anular) = orden_anular
+             nota_credito_anular, prefijo_anular, numero_anular, tipo_pago_anular) = orden_anular
             numero_factura_anular = f"{prefijo_anular or ''}{numero_anular or ''}"
-            ya_pagada_por_completo_anular = (
-                tipo_pago_anular == "Credito" and saldo_pendiente_anular is not None and float(saldo_pendiente_anular) <= 0
-            )
 
             st.markdown(f"**Orden #{numero_orden_anular}** — Placa {placa_anular} — {cliente_anular}")
 
@@ -98,30 +93,6 @@ if orden_anular_busqueda:
                 st.info("Esta orden no tiene una factura electrónica emitida ante la DIAN para anular.")
             elif nota_credito_anular:
                 st.info("Esta factura ya fue anulada previamente mediante nota crédito. Búscala más abajo en el historial.")
-            elif tipo_pago_anular != "Credito":
-                # Alegra marca las facturas pagadas de contado con saldo $0 apenas
-                # se crean. Al anularlas, sus validaciones de creación (monto <=
-                # saldo) y de timbrado (monto > 0) se contradicen entre sí
-                # (código 9036), y cada intento deja un documento sin timbrar en
-                # Alegra. Bloqueado temporalmente hasta confirmar con soporte de
-                # Alegra el payload correcto para este caso.
-                st.error(
-                    "⚠️ Anular facturas pagadas de contado (Efectivo/Transferencia/Mixto) está "
-                    "deshabilitado temporalmente: Alegra rechaza la nota crédito para facturas "
-                    "ya cobradas y cada intento deja un documento sin timbrar en tu cuenta. "
-                    "Contacta al administrador si necesitas anular esta factura."
-                )
-            elif ya_pagada_por_completo_anular:
-                # Mismo conflicto de Alegra (código 9036) que las facturas de
-                # contado: una orden a crédito que ya se terminó de abonar
-                # también queda con saldo $0 en Alegra, y la nota crédito se
-                # rechaza igual.
-                st.error(
-                    "⚠️ Esta orden a crédito ya fue pagada por completo (saldo $0). Anular una "
-                    "factura ya saldada está deshabilitado temporalmente por el mismo conflicto "
-                    "con Alegra que las facturas de contado. Contacta al administrador si "
-                    "necesitas anular esta factura."
-                )
             else:
                 st.warning(f"Vas a anular la factura #{numero_factura_anular} de esta orden. Esta acción no se puede deshacer.")
                 with st.form("form_anular_factura"):
@@ -136,7 +107,7 @@ if orden_anular_busqueda:
                         st.warning("Marca la casilla de confirmación antes de anular la factura.")
                     else:
                         with st.spinner("Emitiendo nota crédito..."):
-                            ok_nc, msg_nc = alegra_utils.anular_factura_orden(user_id, hoja_id_anular)
+                            ok_nc, msg_nc = factus_utils.anular_factura_orden(user_id, hoja_id_anular)
                         if ok_nc:
                             st.success(msg_nc)
                             invalidar_cache_ordenes()
@@ -227,11 +198,11 @@ if len(fechas_filtro) == 2:
         fila_nc = df_nc.loc[dict_nc[nc_sel_str]]
 
         col_dl1, col_dl2 = st.columns(2)
-        alegra_utils.mostrar_documento(
+        factus_utils.mostrar_documento(
             col_dl1, "Descargar PDF", fila_nc['nota_credito_pdf_url'],
             f"NotaCredito_Orden_{fila_nc['numero_orden']}.pdf", "application/pdf"
         )
-        alegra_utils.mostrar_documento(
+        factus_utils.mostrar_documento(
             col_dl2, "Descargar XML", fila_nc['nota_credito_xml_url'],
             f"NotaCredito_Orden_{fila_nc['numero_orden']}.xml", "application/xml"
         )

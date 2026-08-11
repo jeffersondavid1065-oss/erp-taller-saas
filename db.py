@@ -77,7 +77,6 @@ def init_db():
                     telefono TEXT,
                     email TEXT,
                     tipo_documento TEXT DEFAULT 'NIT',
-                    alegra_contact_id TEXT,
                     digito_verificacion TEXT,
                     regimen TEXT DEFAULT 'SIMPLIFIED_REGIME'
                 )
@@ -235,7 +234,6 @@ def init_db():
                     telefono TEXT,
                     email TEXT,
                     tipo_documento VARCHAR(10) DEFAULT 'NIT',
-                    alegra_contact_id TEXT,
                     digito_verificacion VARCHAR(5),
                     regimen VARCHAR(20) DEFAULT 'SIMPLIFIED_REGIME'
                 )
@@ -445,18 +443,20 @@ def init_db():
                 # stock_actual a REAL para soportar decimales (kg, metros, etc)
                 # SQLite no soporta ALTER COLUMN, pero REAL ya acepta decimales
 
-                # --- NUEVO: facturación electrónica (Alegra), por taller ---
-                if 'alegra_email' not in cols_u:
-                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN alegra_email TEXT"))
-                if 'alegra_token' not in cols_u:
-                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN alegra_token TEXT"))
+                # --- NUEVO: facturación electrónica (Factus), por taller ---
+                if 'factus_client_id' not in cols_u:
+                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN factus_client_id TEXT"))
+                if 'factus_client_secret' not in cols_u:
+                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN factus_client_secret TEXT"))
+                if 'factus_username' not in cols_u:
+                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN factus_username TEXT"))
+                if 'factus_password' not in cols_u:
+                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN factus_password TEXT"))
                 if 'fe_habilitada' not in cols_u:
                     conn.execute(text("ALTER TABLE Usuarios ADD COLUMN fe_habilitada BOOLEAN DEFAULT 0"))
-                # --- NUEVO: tipo de documento e id de contacto en Alegra, por cliente ---
+                # --- NUEVO: tipo de documento del cliente, para facturar electrónicamente ---
                 if 'tipo_documento' not in cols_ec:
                     conn.execute(text("ALTER TABLE Empresas_Clientes ADD COLUMN tipo_documento TEXT DEFAULT 'NIT'"))
-                if 'alegra_contact_id' not in cols_ec:
-                    conn.execute(text("ALTER TABLE Empresas_Clientes ADD COLUMN alegra_contact_id TEXT"))
                 # --- NUEVO: datos del RUT usados para facturar electrónicamente ---
                 if 'digito_verificacion' not in cols_ec:
                     conn.execute(text("ALTER TABLE Empresas_Clientes ADD COLUMN digito_verificacion TEXT"))
@@ -467,8 +467,8 @@ def init_db():
                     conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN tipo_pago TEXT"))
                 if 'fecha_vencimiento_credito' not in cols_ht:
                     conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN fecha_vencimiento_credito DATE"))
-                if 'factura_alegra_id' not in cols_ht:
-                    conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN factura_alegra_id TEXT"))
+                if 'factura_reference_code' not in cols_ht:
+                    conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN factura_reference_code TEXT"))
                 if 'factura_cufe' not in cols_ht:
                     conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN factura_cufe TEXT"))
                 if 'factura_pdf_url' not in cols_ht:
@@ -481,8 +481,8 @@ def init_db():
                     conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN factura_prefijo TEXT"))
                 if 'factura_numero' not in cols_ht:
                     conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN factura_numero TEXT"))
-                if 'nota_credito_alegra_id' not in cols_ht:
-                    conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN nota_credito_alegra_id TEXT"))
+                if 'nota_credito_reference_code' not in cols_ht:
+                    conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN nota_credito_reference_code TEXT"))
                 if 'nota_credito_pdf_url' not in cols_ht:
                     conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN nota_credito_pdf_url TEXT"))
                 if 'nota_credito_xml_url' not in cols_ht:
@@ -571,27 +571,28 @@ def init_db():
                 # --- NUEVO: trazabilidad de quién recepcionó (operario de patio) ---
                 conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS creado_por_operario_id INTEGER"))
 
-                # --- NUEVO: facturación electrónica (Alegra), por taller ---
-                conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS alegra_email TEXT"))
-                conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS alegra_token TEXT"))
+                # --- NUEVO: facturación electrónica (Factus), por taller ---
+                conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS factus_client_id TEXT"))
+                conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS factus_client_secret TEXT"))
+                conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS factus_username TEXT"))
+                conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS factus_password TEXT"))
                 conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS fe_habilitada BOOLEAN DEFAULT FALSE"))
-                # --- NUEVO: tipo de documento e id de contacto en Alegra, por cliente ---
+                # --- NUEVO: tipo de documento del cliente, para facturar electrónicamente ---
                 conn.execute(text("ALTER TABLE Empresas_Clientes ADD COLUMN IF NOT EXISTS tipo_documento VARCHAR(10) DEFAULT 'NIT'"))
-                conn.execute(text("ALTER TABLE Empresas_Clientes ADD COLUMN IF NOT EXISTS alegra_contact_id TEXT"))
                 # --- NUEVO: datos del RUT usados para facturar electrónicamente ---
                 conn.execute(text("ALTER TABLE Empresas_Clientes ADD COLUMN IF NOT EXISTS digito_verificacion VARCHAR(5)"))
                 conn.execute(text("ALTER TABLE Empresas_Clientes ADD COLUMN IF NOT EXISTS regimen VARCHAR(20) DEFAULT 'SIMPLIFIED_REGIME'"))
                 # --- NUEVO: facturación electrónica y método de pago, por orden ---
                 conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS tipo_pago VARCHAR(20)"))
                 conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS fecha_vencimiento_credito DATE"))
-                conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS factura_alegra_id TEXT"))
+                conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS factura_reference_code TEXT"))
                 conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS factura_cufe TEXT"))
                 conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS factura_pdf_url TEXT"))
                 conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS factura_xml_url TEXT"))
                 conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS factura_estado TEXT"))
                 conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS factura_prefijo TEXT"))
                 conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS factura_numero TEXT"))
-                conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS nota_credito_alegra_id TEXT"))
+                conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS nota_credito_reference_code TEXT"))
                 conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS nota_credito_pdf_url TEXT"))
                 conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS nota_credito_xml_url TEXT"))
                 conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS nota_credito_prefijo TEXT"))

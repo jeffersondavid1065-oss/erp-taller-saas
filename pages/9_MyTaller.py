@@ -11,12 +11,12 @@ from queries import (
     guardar_datos_taller,
     obtener_operarios_patio,
     invalidar_cache_operarios,
-    obtener_credenciales_alegra,
-    guardar_credenciales_alegra,
-    eliminar_credenciales_alegra,
+    obtener_credenciales_factus,
+    guardar_credenciales_factus,
+    eliminar_credenciales_factus,
     tiene_fe_habilitada,
 )
-import alegra_utils
+import factus_utils
 
 st.markdown("""
     <style>
@@ -82,7 +82,7 @@ ciudad_actual          = datos[11] if datos and datos[11] else ""
 LOGOS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logos")
 os.makedirs(LOGOS_DIR, exist_ok=True)
 
-tab_datos, tab_logo, tab_iva, tab_operarios, tab_alegra = st.tabs([
+tab_datos, tab_logo, tab_iva, tab_operarios, tab_factus = st.tabs([
     "Datos del Taller", "Logotipo", "IVA (Colombia)", "Operarios de Patio", "Facturación Electrónica"
 ])
 
@@ -398,7 +398,7 @@ with tab_operarios:
 # ==========================================
 # TAB 5: FACTURACIÓN ELECTRÓNICA
 # ==========================================
-with tab_alegra:
+with tab_factus:
     st.subheader("Facturación Electrónica")
 
     if not tiene_fe_habilitada(user_id):
@@ -409,63 +409,71 @@ with tab_alegra:
         st.stop()
 
     st.caption(
-        "Conecta tu propia cuenta del proveedor de facturación electrónica para poder "
-        "emitir facturas desde tus órdenes. Cada taller usa su propia cuenta — la "
-        "factura sale a nombre de tu NIT, no del nuestro."
+        "Conecta tu propia cuenta de Factus para poder emitir facturas desde tus "
+        "órdenes. Cada taller usa su propia cuenta — la factura sale a nombre de "
+        "tu NIT, no del nuestro."
     )
 
-    creds = obtener_credenciales_alegra(user_id)
-    conectado = bool(creds and creds.alegra_email and creds.alegra_token)
+    creds = obtener_credenciales_factus(user_id)
+    conectado = bool(creds and creds.factus_client_id and creds.factus_client_secret)
 
     if conectado:
-        st.success(f"Cuenta conectada: **{creds.alegra_email}**")
+        st.success(f"Cuenta conectada: **{creds.factus_username}**")
 
         col_a1, col_a2 = st.columns(2)
         with col_a1:
             if st.button("Probar conexión", width='stretch'):
                 with st.spinner("Probando..."):
-                    ok, msg = alegra_utils.probar_conexion(creds.alegra_email, creds.alegra_token)
+                    ok, msg = factus_utils.probar_conexion(
+                        creds.factus_client_id, creds.factus_client_secret,
+                        creds.factus_username, creds.factus_password,
+                    )
                 if ok:
                     st.success(msg)
                 else:
                     st.error(msg)
         with col_a2:
             if st.button("Desconectar cuenta", width='stretch'):
-                st.session_state.confirmar_desconectar_alegra = True
+                st.session_state.confirmar_desconectar_factus = True
 
-        if st.session_state.get("confirmar_desconectar_alegra", False):
-            st.warning("¿Desconectar tu cuenta de Alegra? No podrás emitir facturas electrónicas hasta que conectes una cuenta de nuevo.")
+        if st.session_state.get("confirmar_desconectar_factus", False):
+            st.warning("¿Desconectar tu cuenta de Factus? No podrás emitir facturas electrónicas hasta que conectes una cuenta de nuevo.")
             col_da1, col_da2 = st.columns(2)
             with col_da1:
                 if st.button("Sí, desconectar", type="primary", width='stretch'):
-                    eliminar_credenciales_alegra(user_id)
-                    st.session_state.confirmar_desconectar_alegra = False
+                    eliminar_credenciales_factus(user_id)
+                    st.session_state.confirmar_desconectar_factus = False
                     st.success("Cuenta desconectada.")
                     st.rerun()
             with col_da2:
                 if st.button("Cancelar", width='stretch'):
-                    st.session_state.confirmar_desconectar_alegra = False
+                    st.session_state.confirmar_desconectar_factus = False
                     st.rerun()
 
         st.markdown("---")
         st.markdown("**Cambiar de cuenta:**")
 
-    with st.form("form_alegra"):
+    with st.form("form_factus"):
         st.caption(
-            "Consigue estos datos en tu cuenta de Alegra: "
-            "Configuración → \"API - Integraciones con otros sistemas\"."
+            "Consigue estos datos en tu cuenta de Factus: Configuración → API. "
+            "Mientras pruebas, usa las credenciales de tu cuenta sandbox "
+            "(gratis e ilimitada) en developers.factus.com.co."
         )
-        email_alegra_input = st.text_input("Email de tu cuenta Alegra", placeholder="tucorreo@ejemplo.com")
-        token_alegra_input = st.text_input("Token de Alegra", type="password")
+        client_id_input = st.text_input("Client ID")
+        client_secret_input = st.text_input("Client Secret", type="password")
+        username_input = st.text_input("Usuario (correo)", placeholder="tucorreo@ejemplo.com")
+        password_input = st.text_input("Contraseña", type="password")
 
         if st.form_submit_button("Guardar y probar conexión", type="primary"):
-            if not email_alegra_input or not token_alegra_input:
-                st.warning("Completa ambos campos.")
+            if not client_id_input or not client_secret_input or not username_input or not password_input:
+                st.warning("Completa los cuatro campos.")
             else:
                 with st.spinner("Validando credenciales..."):
-                    ok, msg = alegra_utils.probar_conexion(email_alegra_input, token_alegra_input)
+                    ok, msg = factus_utils.probar_conexion(
+                        client_id_input, client_secret_input, username_input, password_input
+                    )
                 if ok:
-                    guardar_credenciales_alegra(user_id, email_alegra_input, token_alegra_input)
+                    guardar_credenciales_factus(user_id, client_id_input, client_secret_input, username_input, password_input)
                     st.success("Credenciales válidas y guardadas. Ya puedes facturar electrónicamente.")
                     st.rerun()
                 else:
