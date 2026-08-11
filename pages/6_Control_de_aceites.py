@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from sqlalchemy import text
 from db import obtener_conexion, mensaje_error_amigable
-from queries import obtener_catalogos, obtener_mecanicos_activos, invalidar_cache_inventario, obtener_metricas_financieras
+from queries import obtener_catalogos, obtener_mecanicos_activos, invalidar_cache_inventario, obtener_metricas_financieras, obtener_siguiente_numero_orden
 
 # Animaciones y estilos
 st.markdown("""
@@ -322,12 +322,13 @@ with tab_flota:
                         try:
                             with engine.begin() as conn_gen:
                                 is_sqlite = "sqlite" in str(conn_gen.engine.url)
+                                numero_orden = obtener_siguiente_numero_orden(conn_gen, user_id)
 
                                 if is_sqlite:
-                                    cur = conn_gen.execute(text("INSERT INTO Hojas_Trabajo (usuario_id, placa, empresa_id, estado) VALUES (:uid, :placa, :eid, 'Facturado')"), {"uid": user_id, "placa": veh_info[3], "eid": veh_info[2]})
+                                    cur = conn_gen.execute(text("INSERT INTO Hojas_Trabajo (usuario_id, numero_orden, placa, empresa_id, estado) VALUES (:uid, :numero_orden, :placa, :eid, 'Facturado')"), {"uid": user_id, "numero_orden": numero_orden, "placa": veh_info[3], "eid": veh_info[2]})
                                     nueva_hoja_id = cur.lastrowid
                                 else:
-                                    res = conn_gen.execute(text("INSERT INTO Hojas_Trabajo (usuario_id, placa, empresa_id, estado) VALUES (:uid, :placa, :eid, 'Facturado') RETURNING id"), {"uid": user_id, "placa": veh_info[3], "eid": veh_info[2]})
+                                    res = conn_gen.execute(text("INSERT INTO Hojas_Trabajo (usuario_id, numero_orden, placa, empresa_id, estado) VALUES (:uid, :numero_orden, :placa, :eid, 'Facturado') RETURNING id"), {"uid": user_id, "numero_orden": numero_orden, "placa": veh_info[3], "eid": veh_info[2]})
                                     nueva_hoja_id = res.scalar()
 
                                 for _, r in recetas_actuales.iterrows():
@@ -358,7 +359,7 @@ with tab_flota:
                             invalidar_cache_inventario()
                             invalidar_cache_flota()
                             obtener_metricas_financieras.clear()
-                            st.success(f"Orden #{nueva_hoja_id} creada. Repuestos descontados y mano de obra sumada a {mec_sel}.")
+                            st.success(f"Orden #{numero_orden} creada. Repuestos descontados y mano de obra sumada a {mec_sel}.")
                             st.rerun()
                         except Exception as e:
                             st.error(mensaje_error_amigable(e, "crear la orden"))

@@ -173,8 +173,8 @@ if len(fechas_filtro) == 2:
     ]
     
     sql_list_select = '''
-        SELECT h.id as "N° Orden", date(h.fecha_ingreso) as "Fecha", 
-               h.placa as "Placa", e.razon_social as "Empresa", 
+        SELECT h.numero_orden as "N° Orden", date(h.fecha_ingreso) as "Fecha",
+               h.placa as "Placa", e.razon_social as "Empresa",
                COALESCE(SUM(d.precio_venta), 0) as "Total",
                h.estado as "Estado"
         FROM Hojas_Trabajo h
@@ -223,7 +223,7 @@ if len(fechas_filtro) == 2:
         
         offset = (pagina_actual - 1) * REGISTROS_POR_PAGINA
         
-        sql_final_list = sql_list_select + " " + " ".join(sql_conditions) + " GROUP BY h.id, h.fecha_ingreso, h.placa, e.razon_social, h.estado ORDER BY h.id DESC LIMIT :limit OFFSET :offset"
+        sql_final_list = sql_list_select + " " + " ".join(sql_conditions) + " GROUP BY h.id, h.numero_orden, h.fecha_ingreso, h.placa, e.razon_social, h.estado ORDER BY h.id DESC LIMIT :limit OFFSET :offset"
         params_exp["limit"] = REGISTROS_POR_PAGINA
         params_exp["offset"] = offset
 
@@ -237,7 +237,7 @@ if len(fechas_filtro) == 2:
         # El Excel exporta TODOS los resultados que coinciden con los filtros
         # (no solo la página visible en pantalla) — tope de 5000 filas, más
         # que suficiente para el historial de cualquier taller.
-        sql_export = sql_list_select + " " + " ".join(sql_conditions) + " GROUP BY h.id, h.fecha_ingreso, h.placa, e.razon_social, h.estado ORDER BY h.id DESC LIMIT 5000"
+        sql_export = sql_list_select + " " + " ".join(sql_conditions) + " GROUP BY h.id, h.numero_orden, h.fecha_ingreso, h.placa, e.razon_social, h.estado ORDER BY h.id DESC LIMIT 5000"
         _df_export, excel_historial = _generar_excel_historial_cacheado(sql_export, params_exp, nombre_taller)
 
         st.download_button(
@@ -259,28 +259,28 @@ st.markdown("Ingresa el número de orden para consultar detalles, auditar o modi
 orden_busqueda = st.text_input("Número de Orden", key="orden_busqueda_valor")
 
 if orden_busqueda:
-    if orden_busqueda.isdigit(): 
-        orden_id = int(orden_busqueda)
-        
+    if orden_busqueda.isdigit():
+        numero_orden_buscado = int(orden_busqueda)
+
         with engine.connect() as conn:
             query_vehiculo = text('''
-                SELECT h.id, h.placa, h.estado, h.fecha_ingreso, e.razon_social, e.nit,
+                SELECT h.id, h.numero_orden, h.placa, h.estado, h.fecha_ingreso, e.razon_social, e.nit,
                        h.factura_estado, h.nota_credito_alegra_id, h.factura_prefijo, h.factura_numero,
                        h.tipo_pago
                 FROM Hojas_Trabajo h
                 JOIN Empresas_Clientes e ON h.empresa_id = e.id
-                WHERE h.id = :oid AND h.usuario_id = :uid
+                WHERE h.numero_orden = :nro AND h.usuario_id = :uid
             ''')
-            vehiculo = conn.execute(query_vehiculo, {"oid": orden_id, "uid": user_id}).fetchone()
+            vehiculo = conn.execute(query_vehiculo, {"nro": numero_orden_buscado, "uid": user_id}).fetchone()
 
         if not vehiculo:
-            st.warning(f"No se encontró ninguna orden con el número #{orden_id} en tu taller.")
+            st.warning(f"No se encontró ninguna orden con el número #{numero_orden_buscado} en tu taller.")
         else:
-            (hoja_id, placa, estado_actual, fecha, cliente, nit, factura_estado_actual,
+            (hoja_id, numero_orden_actual, placa, estado_actual, fecha, cliente, nit, factura_estado_actual,
              nota_credito_actual, factura_prefijo_actual, factura_numero_actual, tipo_pago_actual) = vehiculo
             numero_factura_actual = f"{factura_prefijo_actual or ''}{factura_numero_actual or ''}"
-            
-            st.markdown(f"### Expediente de Orden #{hoja_id} | Placa: {placa}")
+
+            st.markdown(f"### Expediente de Orden #{numero_orden_actual} | Placa: {placa}")
             col1, col2, col3 = st.columns(3)
             col1.metric("Cliente", cliente)
             col2.metric("NIT", nit)
@@ -365,7 +365,7 @@ if orden_busqueda:
                         taller_direccion=taller_direccion,
                         taller_email=taller_email,
                         taller_logo_path=logo_path,
-                        hoja_id=hoja_id,
+                        hoja_id=numero_orden_actual,
                         fecha=fecha,
                         cliente=cliente,
                         cliente_nit=nit,
@@ -380,7 +380,7 @@ if orden_busqueda:
                     st.download_button(
                         label="📄 Descargar Factura / Cotización en PDF",
                         data=pdf_bytes,
-                        file_name=f"Orden_{hoja_id}_Placa_{placa}.pdf",
+                        file_name=f"Orden_{numero_orden_actual}_Placa_{placa}.pdf",
                         mime="application/pdf",
                         type="primary",
                         width='stretch'
@@ -486,7 +486,7 @@ if orden_busqueda:
                                     pdf_mostrar_fe, _ = alegra_utils.refrescar_url_factura_orden(user_id, hoja_id)
                                     alegra_utils.mostrar_documento(
                                         st, "Ver PDF (borrador)", pdf_mostrar_fe,
-                                        f"Factura_Orden_{hoja_id}.pdf", "application/pdf"
+                                        f"Factura_Orden_{numero_orden_actual}.pdf", "application/pdf"
                                     )
                                     if st.button("Emitir a la DIAN", type="primary", width='stretch'):
                                         with st.spinner("Emitiendo ante la DIAN..."):
@@ -503,11 +503,11 @@ if orden_busqueda:
                                     col_fpdf, col_fxml = st.columns(2)
                                     alegra_utils.mostrar_documento(
                                         col_fpdf, "Ver PDF de la factura", pdf_mostrar_fe,
-                                        f"Factura_Orden_{hoja_id}.pdf", "application/pdf"
+                                        f"Factura_Orden_{numero_orden_actual}.pdf", "application/pdf"
                                     )
                                     alegra_utils.mostrar_documento(
                                         col_fxml, "Descargar XML (DIAN)", xml_mostrar_fe,
-                                        f"Factura_Orden_{hoja_id}.xml", "application/xml"
+                                        f"Factura_Orden_{numero_orden_actual}.xml", "application/xml"
                                     )
 
                                     if orden_fe[4]:
@@ -517,11 +517,11 @@ if orden_busqueda:
                                         col_ncpdf, col_ncxml = st.columns(2)
                                         alegra_utils.mostrar_documento(
                                             col_ncpdf, "Ver PDF de la Nota Crédito", pdf_nc_fe,
-                                            f"NotaCredito_Orden_{hoja_id}.pdf", "application/pdf"
+                                            f"NotaCredito_Orden_{numero_orden_actual}.pdf", "application/pdf"
                                         )
                                         alegra_utils.mostrar_documento(
                                             col_ncxml, "Descargar XML (DIAN)", xml_nc_fe,
-                                            f"NotaCredito_Orden_{hoja_id}.xml", "application/xml"
+                                            f"NotaCredito_Orden_{numero_orden_actual}.xml", "application/xml"
                                         )
                                     else:
                                         st.caption(

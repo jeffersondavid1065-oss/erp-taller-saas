@@ -72,7 +72,7 @@ else:
         st.error(f"**{len(vencidos)} orden(es) con crédito vencido:**")
         for _, v in vencidos.iterrows():
             st.write(
-                f"• Orden **#{v['hoja_id']}** — {v['cliente']} (Placa {v['placa']}) — "
+                f"• Orden **#{v['numero_orden']}** — {v['cliente']} (Placa {v['placa']}) — "
                 f"Saldo: {formato_cop(v['saldo_pendiente'])} — Venció: {v['fecha_vencimiento_credito']}"
             )
         st.markdown("---")
@@ -89,7 +89,7 @@ else:
         df_mostrar = df_mostrar[
             df_mostrar['cliente'].astype(str).str.lower().str.contains(termino, na=False)
             | df_mostrar['placa'].astype(str).str.lower().str.contains(termino, na=False)
-            | df_mostrar['hoja_id'].astype(str).str.contains(termino, na=False)
+            | df_mostrar['numero_orden'].astype(str).str.contains(termino, na=False)
         ]
     df_mostrar['numero_factura_texto'] = (
         df_mostrar['factura_prefijo'].fillna('').astype(str) + df_mostrar['factura_numero'].fillna('').astype(str)
@@ -97,10 +97,10 @@ else:
     if df_mostrar.empty:
         st.info("Ninguna orden coincide con la búsqueda.")
     df_mostrar = df_mostrar[[
-        'hoja_id', 'placa', 'cliente', 'telefono', 'saldo_pendiente',
+        'numero_orden', 'placa', 'cliente', 'telefono', 'saldo_pendiente',
         'fecha_vencimiento_credito', 'vencido', 'numero_factura_texto'
     ]].rename(columns={
-        'hoja_id': 'N° Orden', 'placa': 'Placa', 'cliente': 'Cliente', 'telefono': 'Teléfono',
+        'numero_orden': 'N° Orden', 'placa': 'Placa', 'cliente': 'Cliente', 'telefono': 'Teléfono',
         'saldo_pendiente': 'Saldo Pendiente', 'fecha_vencimiento_credito': 'Fecha Vencimiento',
         'vencido': 'Vencido', 'numero_factura_texto': 'N° Factura',
     })
@@ -128,17 +128,18 @@ else:
     st.subheader("Registrar Abono")
 
     dict_ordenes_credito = {
-        f"Orden #{r['hoja_id']} — {r['cliente']} (Placa {r['placa']}) — Saldo: {formato_cop(r['saldo_pendiente'])}": r['hoja_id']
+        f"Orden #{r['numero_orden']} — {r['cliente']} (Placa {r['placa']}) — Saldo: {formato_cop(r['saldo_pendiente'])}": r['hoja_id']
         for _, r in df_creditos.iterrows()
     }
     orden_sel_str = st.selectbox("Selecciona la orden a abonar", options=list(dict_ordenes_credito.keys()))
     hoja_id_sel = dict_ordenes_credito[orden_sel_str]
     fila_credito_sel = df_creditos[df_creditos['hoja_id'] == hoja_id_sel].iloc[0]
     saldo_actual = float(fila_credito_sel['saldo_pendiente'])
+    numero_orden_sel = fila_credito_sel['numero_orden']
 
     alegra_utils.mostrar_documento(
         st, "Descargar factura de esta orden", fila_credito_sel['factura_pdf_url'],
-        f"Factura_Orden_{hoja_id_sel}.pdf", "application/pdf"
+        f"Factura_Orden_{numero_orden_sel}.pdf", "application/pdf"
     )
 
     st.caption(f"Saldo pendiente de esta orden: **{formato_cop(saldo_actual)}**")
@@ -174,7 +175,7 @@ else:
             except Exception as e:
                 st.error(mensaje_error_amigable(e, "registrar el abono"))
 
-    with st.expander(f"Historial de abonos de la Orden #{hoja_id_sel}"):
+    with st.expander(f"Historial de abonos de la Orden #{numero_orden_sel}"):
         abonos = obtener_abonos_orden(hoja_id_sel)
         if not abonos:
             st.caption("Todavía no se ha registrado ningún abono para esta orden.")

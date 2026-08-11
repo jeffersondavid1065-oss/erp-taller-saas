@@ -95,10 +95,18 @@ def init_db():
                 CREATE TABLE IF NOT EXISTS Hojas_Trabajo (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     usuario_id INTEGER,
+                    numero_orden INTEGER,
                     placa TEXT NOT NULL,
                     empresa_id INTEGER,
                     fecha_ingreso TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     estado TEXT NOT NULL
+                )
+            '''))
+            # --- NUEVO: contador de número de orden independiente por taller ---
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS Contadores_Orden (
+                    usuario_id INTEGER PRIMARY KEY,
+                    ultimo_numero INTEGER NOT NULL DEFAULT 0
                 )
             '''))
             conn.execute(text('''
@@ -245,10 +253,18 @@ def init_db():
                 CREATE TABLE IF NOT EXISTS Hojas_Trabajo (
                     id SERIAL PRIMARY KEY,
                     usuario_id INTEGER,
+                    numero_orden INTEGER,
                     placa TEXT NOT NULL,
                     empresa_id INTEGER,
                     fecha_ingreso TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     estado TEXT NOT NULL
+                )
+            '''))
+            # --- NUEVO: contador de número de orden independiente por taller ---
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS Contadores_Orden (
+                    usuario_id INTEGER PRIMARY KEY,
+                    ultimo_numero INTEGER NOT NULL DEFAULT 0
                 )
             '''))
             conn.execute(text('''
@@ -480,6 +496,32 @@ def init_db():
                 # --- NUEVO: Cartera (saldo pendiente de órdenes facturadas a crédito) ---
                 if 'saldo_pendiente' not in cols_ht:
                     conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN saldo_pendiente REAL"))
+                # --- NUEVO: numeración de orden independiente por taller (antes se
+                # mostraba el id autoincremental global, compartido entre todas las
+                # cuentas). Al agregar la columna, se numeran retroactivamente las
+                # órdenes ya existentes (1, 2, 3... por taller, en el orden en que
+                # se crearon) y se deja el contador de cada taller listo para seguir
+                # desde ahí con las órdenes nuevas.
+                if 'numero_orden' not in cols_ht:
+                    conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN numero_orden INTEGER"))
+                    conn.execute(text('''
+                        UPDATE Hojas_Trabajo
+                        SET numero_orden = (
+                            SELECT rn FROM (
+                                SELECT id, ROW_NUMBER() OVER (PARTITION BY usuario_id ORDER BY id) as rn
+                                FROM Hojas_Trabajo
+                            ) sub
+                            WHERE sub.id = Hojas_Trabajo.id
+                        )
+                        WHERE numero_orden IS NULL
+                    '''))
+                    conn.execute(text('''
+                        INSERT INTO Contadores_Orden (usuario_id, ultimo_numero)
+                        SELECT usuario_id, MAX(numero_orden) FROM Hojas_Trabajo
+                        WHERE usuario_id IS NOT NULL
+                        GROUP BY usuario_id
+                        ON CONFLICT(usuario_id) DO UPDATE SET ultimo_numero = excluded.ultimo_numero
+                    '''))
                 # --- NUEVO: datos fiscales/contacto del taller, para que aparezcan en las
                 # facturas en PDF sin depender de session_state (se perdían al recargar) ---
                 if 'nit_taller' not in cols_u:
@@ -557,6 +599,33 @@ def init_db():
                 conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS nota_credito_fecha TIMESTAMP"))
                 # --- NUEVO: Cartera (saldo pendiente de órdenes facturadas a crédito) ---
                 conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS saldo_pendiente NUMERIC(12,2)"))
+                # --- NUEVO: numeración de orden independiente por taller (antes se
+                # mostraba el id autoincremental global, compartido entre todas las
+                # cuentas). Solo se hace el backfill una vez, la primera vez que la
+                # columna no existe todavía, numerando retroactivamente las órdenes
+                # existentes (1, 2, 3... por taller, en el orden en que se crearon)
+                # y dejando el contador de cada taller listo para las órdenes nuevas.
+                cols_ht_pg = [c[0] for c in conn.execute(text(
+                    "SELECT column_name FROM information_schema.columns WHERE table_name = 'hojas_trabajo'"
+                )).fetchall()]
+                if 'numero_orden' not in cols_ht_pg:
+                    conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN numero_orden INTEGER"))
+                    conn.execute(text('''
+                        UPDATE Hojas_Trabajo h
+                        SET numero_orden = sub.rn
+                        FROM (
+                            SELECT id, ROW_NUMBER() OVER (PARTITION BY usuario_id ORDER BY id) as rn
+                            FROM Hojas_Trabajo
+                        ) sub
+                        WHERE h.id = sub.id AND h.numero_orden IS NULL
+                    '''))
+                    conn.execute(text('''
+                        INSERT INTO Contadores_Orden (usuario_id, ultimo_numero)
+                        SELECT usuario_id, MAX(numero_orden) FROM Hojas_Trabajo
+                        WHERE usuario_id IS NOT NULL
+                        GROUP BY usuario_id
+                        ON CONFLICT (usuario_id) DO UPDATE SET ultimo_numero = excluded.ultimo_numero
+                    '''))
                 # --- NUEVO: datos fiscales/contacto del taller, para que aparezcan en las
                 # facturas en PDF sin depender de session_state (se perdían al recargar) ---
                 conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS nit_taller TEXT"))

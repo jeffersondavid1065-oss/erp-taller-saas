@@ -69,7 +69,7 @@ if orden_anular_busqueda:
     if not orden_anular_busqueda.isdigit():
         st.warning("Ingresa solo el número de la orden (sin letras ni símbolos).")
     else:
-        orden_anular_id = int(orden_anular_busqueda)
+        numero_orden_anular = int(orden_anular_busqueda)
         engine = obtener_conexion()
         with engine.connect() as conn:
             orden_anular = conn.execute(text('''
@@ -77,17 +77,17 @@ if orden_anular_busqueda:
                        h.nota_credito_alegra_id, h.factura_prefijo, h.factura_numero, h.tipo_pago
                 FROM Hojas_Trabajo h
                 JOIN Empresas_Clientes e ON h.empresa_id = e.id
-                WHERE h.id = :oid AND h.usuario_id = :uid
-            '''), {"oid": orden_anular_id, "uid": user_id}).fetchone()
+                WHERE h.numero_orden = :nro AND h.usuario_id = :uid
+            '''), {"nro": numero_orden_anular, "uid": user_id}).fetchone()
 
         if not orden_anular:
-            st.warning(f"No se encontró ninguna orden con el número #{orden_anular_id} en tu taller.")
+            st.warning(f"No se encontró ninguna orden con el número #{numero_orden_anular} en tu taller.")
         else:
             (hoja_id_anular, placa_anular, cliente_anular, factura_estado_anular,
              nota_credito_anular, prefijo_anular, numero_anular, tipo_pago_anular) = orden_anular
             numero_factura_anular = f"{prefijo_anular or ''}{numero_anular or ''}"
 
-            st.markdown(f"**Orden #{hoja_id_anular}** — Placa {placa_anular} — {cliente_anular}")
+            st.markdown(f"**Orden #{numero_orden_anular}** — Placa {placa_anular} — {cliente_anular}")
 
             if factura_estado_anular != "emitida":
                 st.info("Esta orden no tiene una factura electrónica emitida ante la DIAN para anular.")
@@ -159,7 +159,7 @@ if len(fechas_filtro) == 2:
 
     if not df_nc.empty:
         if filtro_orden:
-            df_nc = df_nc[df_nc['hoja_id'].astype(str).str.contains(filtro_orden, case=False, na=False)]
+            df_nc = df_nc[df_nc['numero_orden'].astype(str).str.contains(filtro_orden, case=False, na=False)]
         if filtro_factura:
             df_nc['numero_factura_texto'] = (
                 df_nc['factura_prefijo'].fillna('').astype(str) + df_nc['factura_numero'].fillna('').astype(str)
@@ -184,10 +184,10 @@ if len(fechas_filtro) == 2:
         )
 
         df_mostrar = df_mostrar[[
-            'hoja_id', 'nota_credito_fecha', 'placa', 'cliente', 'nit',
+            'numero_orden', 'nota_credito_fecha', 'placa', 'cliente', 'nit',
             'N° Factura', 'N° Nota Crédito', 'total'
         ]].rename(columns={
-            'hoja_id': 'N° Orden', 'nota_credito_fecha': 'Fecha NC', 'placa': 'Placa',
+            'numero_orden': 'N° Orden', 'nota_credito_fecha': 'Fecha NC', 'placa': 'Placa',
             'cliente': 'Cliente', 'nit': 'NIT', 'total': 'Total Anulado',
         })
 
@@ -204,7 +204,7 @@ if len(fechas_filtro) == 2:
         st.markdown("---")
         st.markdown("**Descargar PDF/XML de una nota crédito específica:**")
         dict_nc = {
-            f"Orden #{r['hoja_id']} — {r['cliente']} (Placa {r['placa']}) — {formato_cop(r['total'])}": i
+            f"Orden #{r['numero_orden']} — {r['cliente']} (Placa {r['placa']}) — {formato_cop(r['total'])}": i
             for i, r in df_nc.iterrows()
         }
         nc_sel_str = st.selectbox("Selecciona una nota crédito", options=list(dict_nc.keys()))
@@ -213,11 +213,11 @@ if len(fechas_filtro) == 2:
         col_dl1, col_dl2 = st.columns(2)
         alegra_utils.mostrar_documento(
             col_dl1, "Descargar PDF", fila_nc['nota_credito_pdf_url'],
-            f"NotaCredito_Orden_{fila_nc['hoja_id']}.pdf", "application/pdf"
+            f"NotaCredito_Orden_{fila_nc['numero_orden']}.pdf", "application/pdf"
         )
         alegra_utils.mostrar_documento(
             col_dl2, "Descargar XML", fila_nc['nota_credito_xml_url'],
-            f"NotaCredito_Orden_{fila_nc['hoja_id']}.xml", "application/xml"
+            f"NotaCredito_Orden_{fila_nc['numero_orden']}.xml", "application/xml"
         )
 else:
     st.warning("Por favor selecciona un rango de fechas válido.")

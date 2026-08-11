@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import text
 from db import obtener_conexion, init_db, mensaje_error_amigable
-from queries import obtener_catalogos, obtener_inventario_activo, obtener_config_taller, invalidar_cache_ordenes, invalidar_cache_inventario
+from queries import obtener_catalogos, obtener_inventario_activo, obtener_config_taller, invalidar_cache_ordenes, invalidar_cache_inventario, obtener_siguiente_numero_orden
 from pdf_utils import IVA_OPCIONES
 
 init_db()
@@ -396,17 +396,18 @@ if st.session_state.carrito_items:
                     engine = obtener_conexion()
                     with engine.begin() as conn:
                         is_sqlite = "sqlite" in str(engine.url)
+                        numero_orden = obtener_siguiente_numero_orden(conn, user_id)
 
                         if is_sqlite:
                             cursor = conn.execute(
-                                text("INSERT INTO Hojas_Trabajo (usuario_id, placa, empresa_id, estado, creado_por_operario_id) VALUES (:uid, :placa, :empresa_id, :estado, :oid)"),
-                                {"uid": user_id, "placa": placa, "empresa_id": empresa_id, "estado": estado, "oid": operario_id}
+                                text("INSERT INTO Hojas_Trabajo (usuario_id, numero_orden, placa, empresa_id, estado, creado_por_operario_id) VALUES (:uid, :numero_orden, :placa, :empresa_id, :estado, :oid)"),
+                                {"uid": user_id, "numero_orden": numero_orden, "placa": placa, "empresa_id": empresa_id, "estado": estado, "oid": operario_id}
                             )
                             hoja_id = cursor.lastrowid
                         else:
                             resultado_hoja = conn.execute(
-                                text("INSERT INTO Hojas_Trabajo (usuario_id, placa, empresa_id, estado, creado_por_operario_id) VALUES (:uid, :placa, :empresa_id, :estado, :oid) RETURNING id"),
-                                {"uid": user_id, "placa": placa, "empresa_id": empresa_id, "estado": estado, "oid": operario_id}
+                                text("INSERT INTO Hojas_Trabajo (usuario_id, numero_orden, placa, empresa_id, estado, creado_por_operario_id) VALUES (:uid, :numero_orden, :placa, :empresa_id, :estado, :oid) RETURNING id"),
+                                {"uid": user_id, "numero_orden": numero_orden, "placa": placa, "empresa_id": empresa_id, "estado": estado, "oid": operario_id}
                             )
                             hoja_id = resultado_hoja.scalar()
 
@@ -432,7 +433,7 @@ if st.session_state.carrito_items:
                     if hay_items_de_almacen:
                         invalidar_cache_inventario()
 
-                    st.success(f"Orden #{hoja_id} guardada con exito para el vehiculo {placa}.")
+                    st.success(f"Orden #{numero_orden} guardada con exito para el vehiculo {placa}.")
                     st.rerun()
                 except Exception as e:
                     st.error(mensaje_error_amigable(e, "guardar la orden"))

@@ -321,23 +321,23 @@ with tab_empresas:
 
                 if "Resumida" in tipo_vista:
                     query_historial = f'''
-                        SELECT h.id as "N° Orden", date(h.fecha_ingreso) as "Fecha", h.placa as "Placa", 
+                        SELECT h.numero_orden as "N° Orden", date(h.fecha_ingreso) as "Fecha", h.placa as "Placa",
                                SUM(d.precio_venta) as "Total Cobrado", h.estado as "Estado"
                         FROM Hojas_Trabajo h
                         JOIN Detalles_Orden d ON h.id = d.hoja_id
-                        WHERE h.empresa_id = :eid AND h.usuario_id = :uid 
+                        WHERE h.empresa_id = :eid AND h.usuario_id = :uid
                         AND h.fecha_ingreso >= :f_ini AND h.fecha_ingreso < :f_fin {condicion_placa}
-                        GROUP BY h.id, h.fecha_ingreso, h.placa, h.estado
+                        GROUP BY h.id, h.numero_orden, h.fecha_ingreso, h.placa, h.estado
                         ORDER BY h.id DESC
                     '''
                 else:
                     query_historial = f'''
-                        SELECT h.id as "N° Orden", date(h.fecha_ingreso) as "Fecha", h.placa as "Placa", 
-                               d.tipo_item as "Tipo", d.descripcion as "Detalle", 
+                        SELECT h.numero_orden as "N° Orden", date(h.fecha_ingreso) as "Fecha", h.placa as "Placa",
+                               d.tipo_item as "Tipo", d.descripcion as "Detalle",
                                d.precio_venta as "Cobrado", h.estado as "Estado"
                         FROM Hojas_Trabajo h
                         JOIN Detalles_Orden d ON h.id = d.hoja_id
-                        WHERE h.empresa_id = :eid AND h.usuario_id = :uid 
+                        WHERE h.empresa_id = :eid AND h.usuario_id = :uid
                         AND h.fecha_ingreso >= :f_ini AND h.fecha_ingreso < :f_fin {condicion_placa}
                         ORDER BY h.id DESC
                     '''

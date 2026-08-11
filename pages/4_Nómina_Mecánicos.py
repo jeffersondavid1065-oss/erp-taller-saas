@@ -99,8 +99,8 @@ with st.expander("Filtros de Búsqueda Avanzada (Opcional)", expanded=False):
 query_base_sql = [
     '''
     SELECT 
-        d.id as detalle_id, 
-        h.id as orden_nro,
+        d.id as detalle_id,
+        h.numero_orden as orden_nro,
         h.placa, 
         e.razon_social as empresa,
         m.nombre as mecanico, 
@@ -119,7 +119,7 @@ query_base_sql = [
 params_auditoria = {"uid": user_id}
 
 if filtro_nro_orden.isdigit():
-    query_base_sql.append("AND h.id = :nro_orden")
+    query_base_sql.append("AND h.numero_orden = :nro_orden")
     params_auditoria["nro_orden"] = int(filtro_nro_orden)
 
 if filtro_placa:
@@ -245,7 +245,7 @@ else:
             mecanico_id = dict_mecanicos[mecanico_sel]
             
             query_nomina = text('''
-                SELECT h.id as orden_id, h.placa, e.razon_social as empresa, date(h.fecha_ingreso) as fecha, 
+                SELECT h.numero_orden as orden_id, h.placa, e.razon_social as empresa, date(h.fecha_ingreso) as fecha,
                        d.descripcion as descripcion_trabajo, 
                        d.precio_venta as cobro_cliente,
                        COALESCE(d.costo_compra, 0) as retencion_aplicada

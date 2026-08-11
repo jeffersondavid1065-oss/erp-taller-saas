@@ -73,10 +73,10 @@ def buscar_ordenes(uid, termino):
     condiciones = ["h.placa LIKE :placa"]
     params = {"uid": uid, "placa": f"%{termino.upper()}%"}
     if termino.isdigit():
-        condiciones.append("h.id = :oid")
+        condiciones.append("h.numero_orden = :oid")
         params["oid"] = int(termino)
     sql = f'''
-        SELECT h.id, h.placa, e.razon_social, date(h.fecha_ingreso), h.estado
+        SELECT h.numero_orden, h.placa, e.razon_social, date(h.fecha_ingreso), h.estado
         FROM Hojas_Trabajo h
         JOIN Empresas_Clientes e ON h.empresa_id = e.id
         WHERE h.usuario_id = :uid AND ({" OR ".join(condiciones)})
@@ -691,7 +691,7 @@ def obtener_notas_credito_periodo(uid, fecha_inicio, fecha_fin):
     engine = obtener_conexion()
     with engine.connect() as conn:
         return pd.read_sql_query(text("""
-            SELECT h.id as hoja_id, h.placa, e.razon_social as cliente, e.nit,
+            SELECT h.id as hoja_id, h.numero_orden, h.placa, e.razon_social as cliente, e.nit,
                    h.factura_prefijo, h.factura_numero,
                    h.nota_credito_prefijo, h.nota_credito_numero, h.nota_credito_fecha,
                    h.nota_credito_pdf_url, h.nota_credito_xml_url,
@@ -701,7 +701,7 @@ def obtener_notas_credito_periodo(uid, fecha_inicio, fecha_fin):
             LEFT JOIN Detalles_Orden d ON h.id = d.hoja_id
             WHERE h.usuario_id = :uid AND h.nota_credito_alegra_id IS NOT NULL
               AND h.nota_credito_fecha >= :f_ini AND h.nota_credito_fecha < :f_fin
-            GROUP BY h.id, h.placa, e.razon_social, e.nit, h.factura_prefijo, h.factura_numero,
+            GROUP BY h.id, h.numero_orden, h.placa, e.razon_social, e.nit, h.factura_prefijo, h.factura_numero,
                      h.nota_credito_prefijo, h.nota_credito_numero, h.nota_credito_fecha,
                      h.nota_credito_pdf_url, h.nota_credito_xml_url
             ORDER BY h.nota_credito_fecha DESC
@@ -722,7 +722,7 @@ def obtener_creditos_pendientes(uid):
     engine = obtener_conexion()
     with engine.connect() as conn:
         return pd.read_sql_query(text("""
-            SELECT h.id as hoja_id, h.placa, e.razon_social as cliente, e.telefono,
+            SELECT h.id as hoja_id, h.numero_orden, h.placa, e.razon_social as cliente, e.telefono,
                    h.saldo_pendiente, h.fecha_vencimiento_credito,
                    h.factura_prefijo, h.factura_numero, h.factura_pdf_url,
                    CASE WHEN h.fecha_vencimiento_credito < :hoy THEN TRUE ELSE FALSE END as vencido
@@ -764,3 +764,30 @@ def registrar_abono(uid, hoja_id, monto, notas=None):
 def invalidar_cache_cartera():
     """Llamar tras registrar un abono, crear una factura a crédito o emitirla."""
     obtener_creditos_pendientes.clear()
+
+
+def obtener_siguiente_numero_orden(conn, uid):
+    """Incrementa de forma atómica el contador de órdenes del taller 'uid' y
+    devuelve el nuevo número. Cada taller lleva su propia secuencia (1, 2,
+    3...) en vez de compartir el id autoincremental global de Hojas_Trabajo.
+    Debe llamarse con la conexión de la MISMA transacción (engine.begin())
+    que inserta la Hoja_Trabajo, para que el número quede ligado a esa orden
+    de forma atómica (si la transacción se revierte, el contador también)."""
+    conn.execute(text('''
+        INSERT INTO Contadores_Orden (usuario_id, ultimo_numero) VALUES (:uid, 1)
+        ON CONFLICT (usuario_id) DO UPDATE SET ultimo_numero = Contadores_Orden.ultimo_numero + 1
+    '''), {"uid": uid})
+    return conn.execute(
+        text("SELECT ultimo_numero FROM Contadores_Orden WHERE usuario_id = :uid"), {"uid": uid}
+    ).scalar()
+
+
+def resolver_id_por_numero_orden(uid, numero_orden):
+    """Traduce el número de orden que ve/escribe el usuario (propio de su
+    taller) al id interno real de Hojas_Trabajo, para búsquedas. Devuelve
+    None si ese taller no tiene ninguna orden con ese número."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        return conn.execute(text('''
+            SELECT id FROM Hojas_Trabajo WHERE usuario_id = :uid AND numero_orden = :num
+        '''), {"uid": uid, "num": numero_orden}).scalar()

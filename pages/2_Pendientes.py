@@ -62,7 +62,7 @@ def obtener_ordenes_con_items_pendientes(uid):
         # acá - cambiar el precio dejaría a MyTaller desincronizado de lo que
         # ya quedó facturado.
         query = text('''
-            SELECT DISTINCT h.id, h.placa, e.razon_social
+            SELECT DISTINCT h.id, h.numero_orden, h.placa, e.razon_social
             FROM Hojas_Trabajo h
             JOIN Empresas_Clientes e ON h.empresa_id = e.id
             JOIN Detalles_Orden d ON d.hoja_id = h.id
@@ -79,13 +79,13 @@ def obtener_vehiculos(uid):
         # así que no tiene sentido traerlas de la base ni mantenerlas en memoria.
         # Esto evita que la consulta crezca indefinidamente con el historial.
         query = text('''
-            SELECT h.id, h.placa, e.razon_social, h.estado,
+            SELECT h.id, h.numero_orden, h.placa, e.razon_social, h.estado,
                    SUM(CASE WHEN d.precio_venta = 0 OR d.precio_venta IS NULL THEN 1 ELSE 0 END) as items_sin_precio
             FROM Hojas_Trabajo h
             JOIN Empresas_Clientes e ON h.empresa_id = e.id
             LEFT JOIN Detalles_Orden d ON d.hoja_id = h.id
             WHERE h.usuario_id = :uid AND h.estado != 'Facturado'
-            GROUP BY h.id, h.placa, e.razon_social, h.estado
+            GROUP BY h.id, h.numero_orden, h.placa, e.razon_social, h.estado
         ''')
         return conn.execute(query, {"uid": uid}).fetchall()
 
@@ -100,10 +100,12 @@ ordenes_sin_precio = obtener_ordenes_con_items_pendientes(user_id)
 
 if ordenes_sin_precio:
     with st.expander(f"Atención: Hay {len(ordenes_sin_precio)} orden(es) con trabajos sin precio asignado", expanded=True):
-        dict_pendientes = {f"Orden #{o[0]} - Placa: {o[1]} ({o[2]})": o[0] for o in ordenes_sin_precio}
-        
+        dict_pendientes = {f"Orden #{o[1]} - Placa: {o[2]} ({o[3]})": o[0] for o in ordenes_sin_precio}
+        dict_numero_por_id = {o[0]: o[1] for o in ordenes_sin_precio}
+
         orden_sel_key = st.selectbox("Selecciona la orden para asignar o editar precios:", options=list(dict_pendientes.keys()))
         orden_id_sel = dict_pendientes[orden_sel_key]
+        numero_orden_sel = dict_numero_por_id[orden_id_sel]
         
         # Consultar ítems de esa orden
         with engine.connect() as conn:
@@ -115,7 +117,7 @@ if ordenes_sin_precio:
             ''')
             items_orden = conn.execute(q_items, {"hid": orden_id_sel}).fetchall()
             
-        st.markdown(f"#### Editando Precios para Orden #{orden_id_sel}")
+        st.markdown(f"#### Editando Precios para Orden #{numero_orden_sel}")
         
         with st.form(key=f"form_precios_{orden_id_sel}"):
             nuevos_precios = {}
@@ -189,7 +191,7 @@ def dibujar_estado(icono, titulo, estado_filtro):
     # todo de una vez saturaba la pantalla. Las tarjetas siguen siendo puro
     # texto de solo lectura armado como un solo bloque HTML (más liviano de
     # volver a dibujar en cada clic que un st.container(border=True) por orden).
-    ordenes_estado = [v for v in vehiculos if v[3] == estado_filtro]
+    ordenes_estado = [v for v in vehiculos if v[4] == estado_filtro]
 
     with st.expander(f"{icono} {titulo} ({len(ordenes_estado)})", expanded=False):
         if not ordenes_estado:
@@ -198,7 +200,7 @@ def dibujar_estado(icono, titulo, estado_filtro):
 
         tarjetas_html = []
         for v in ordenes_estado:
-            orden_id, placa, empresa, estado_actual, sin_precio = v
+            orden_id, numero_orden, placa, empresa, estado_actual, sin_precio = v
             placa_segura = html.escape(str(placa))
             empresa_segura = html.escape(str(empresa))
             aviso_pendiente = (
@@ -208,7 +210,7 @@ def dibujar_estado(icono, titulo, estado_filtro):
             tarjetas_html.append(f"""
                 <div style="border:1px solid rgba(49,51,63,0.15); border-radius:8px;
                             padding:10px 12px; margin-bottom:8px;">
-                    <div style="font-weight:600;">Orden #{orden_id}</div>
+                    <div style="font-weight:600;">Orden #{numero_orden}</div>
                     <div>Placa: <strong>{placa_segura}</strong></div>
                     <div style="font-size:0.85rem; color:#555;">Empresa: {empresa_segura}</div>
                     {aviso_pendiente}
