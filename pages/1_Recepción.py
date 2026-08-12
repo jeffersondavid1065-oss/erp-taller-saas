@@ -126,6 +126,8 @@ with tab1:
             mecanico_sel = st.selectbox("Mecánico responsable", options=opciones_mecanicos, key="mec_mo")
         with col_mo2:
             venta_mo = st.number_input("Cobro Bruto al Cliente ($0 si pdte)", min_value=0.0, step=5000.0, key="venta_mo")
+            if venta_mo > 0:
+                st.caption(f"Cobro: {formato_cop(venta_mo)}")
         with col_mo3:
             porcentaje_ret = st.number_input(
                 "Retención Fiscal (%)", min_value=0.0, max_value=100.0, step=1.0, key="ret_mo",
