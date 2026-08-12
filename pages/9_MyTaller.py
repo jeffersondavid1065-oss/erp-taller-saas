@@ -436,6 +436,17 @@ with tab_factus:
             if st.button("Desconectar cuenta", width='stretch'):
                 st.session_state.confirmar_desconectar_factus = True
 
+        if st.button("Diagnóstico: ver rangos de numeración", width='stretch'):
+            with st.spinner("Consultando..."):
+                ok, resultado = factus_utils.listar_rangos_numeracion(
+                    creds.factus_client_id, creds.factus_client_secret,
+                    creds.factus_username, creds.factus_password,
+                )
+            if ok:
+                st.json(resultado)
+            else:
+                st.error(resultado)
+
         if st.session_state.get("confirmar_desconectar_factus", False):
             st.warning("¿Desconectar tu cuenta de Factus? No podrás emitir facturas electrónicas hasta que conectes una cuenta de nuevo.")
             col_da1, col_da2 = st.columns(2)

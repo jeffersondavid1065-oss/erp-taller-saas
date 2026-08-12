@@ -87,6 +87,22 @@ def probar_conexion(client_id, client_secret, username, password):
         return False, f"Error de conexión: {e}"
 
 
+def listar_rangos_numeracion(client_id, client_secret, username, password):
+    """Diagnóstico: consulta los rangos de numeración (autorización DIAN) que
+    tiene activos esta cuenta de Factus. Sin un rango activo, /v2/bills/validate
+    rechaza cualquier factura con un 422 genérico sin detalle de campo."""
+    try:
+        token, error = _obtener_token(client_id, client_secret, username, password)
+        if not token:
+            return False, f"No se pudo autenticar con Factus: {error}"
+        resp = requests.get(f"{BASE_URL}/v2/numbering-ranges", headers=_headers(token), timeout=15)
+        if resp.status_code not in (200, 201):
+            return False, f"Error consultando rangos ({resp.status_code}): {_mensaje_error(resp)}"
+        return True, resp.json()
+    except requests.RequestException as e:
+        return False, f"Error de conexión: {e}"
+
+
 def obtener_credenciales(uid):
     """Devuelve (client_id, client_secret, username, password) configurados
     por este taller, o (None, None, None, None) si no ha configurado nada."""
