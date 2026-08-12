@@ -718,7 +718,10 @@ def registrar_abono(uid, hoja_id, monto, notas=None):
         """), {"uid": uid, "hid": hoja_id, "monto": float(monto), "notas": notas})
         conn.execute(text("""
             UPDATE Hojas_Trabajo
-            SET saldo_pendiente = MAX(0, COALESCE(saldo_pendiente, 0) - :monto)
+            SET saldo_pendiente = CASE
+                WHEN COALESCE(saldo_pendiente, 0) - :monto < 0 THEN 0
+                ELSE COALESCE(saldo_pendiente, 0) - :monto
+            END
             WHERE id = :hid AND usuario_id = :uid
         """), {"monto": float(monto), "hid": hoja_id, "uid": uid})
     invalidar_cache_cartera()
