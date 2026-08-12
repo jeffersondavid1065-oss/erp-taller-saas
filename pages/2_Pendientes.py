@@ -2,6 +2,7 @@ import streamlit as st
 import html
 from sqlalchemy import text
 from db import obtener_conexion, mensaje_error_amigable
+from queries import obtener_listos_sin_entregar, marcar_entrega
 
 # ==========================================
 # ESTILOS CSS CON MÁSCARA DERECHA ADAPTABLE Y ANIMACIÓN
@@ -177,7 +178,27 @@ if ordenes_sin_precio:
     st.markdown("---")
 
 # ==========================================
-# 2. TABLERO KANBAN DE PENDIENTES
+# 2. VEHÍCULOS LISTOS SIN ENTREGAR
+# ==========================================
+listos_sin_entregar = obtener_listos_sin_entregar(user_id)
+
+if listos_sin_entregar:
+    with st.expander(f"🚗 {len(listos_sin_entregar)} vehículo(s) listo(s) esperando que el cliente pase a recogerlos", expanded=False):
+        for orden_id_le, numero_orden_le, placa_le, empresa_le, estado_le in listos_sin_entregar:
+            col_le1, col_le2 = st.columns([3, 1])
+            with col_le1:
+                st.markdown(f"**Orden #{numero_orden_le}** — Placa {placa_le} — {empresa_le}")
+                st.caption(f"Estado: {estado_le}")
+            with col_le2:
+                if st.button("Marcar Entregado", key=f"entregar_{orden_id_le}", width='stretch'):
+                    marcar_entrega(user_id, orden_id_le, True)
+                    st.rerun()
+            st.divider()
+
+    st.markdown("---")
+
+# ==========================================
+# 3. TABLERO KANBAN DE PENDIENTES
 # ==========================================
 try:
     vehiculos = obtener_vehiculos(user_id)

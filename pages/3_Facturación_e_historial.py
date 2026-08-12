@@ -6,7 +6,7 @@ from sqlalchemy import text
 from db import obtener_conexion, init_db, mensaje_error_amigable
 from queries import (
     obtener_catalogos, obtener_config_taller, invalidar_cache_ordenes, invalidar_cache_inventario,
-    tiene_fe_habilitada, obtener_credenciales_factus,
+    tiene_fe_habilitada, obtener_credenciales_factus, marcar_entrega,
 )
 from io import BytesIO
 from pdf_utils import generar_pdf_orden_profesional, calcular_totales_orden, IVA_OPCIONES
@@ -266,7 +266,7 @@ if orden_busqueda:
             query_vehiculo = text('''
                 SELECT h.id, h.numero_orden, h.placa, h.estado, h.fecha_ingreso, e.razon_social, e.nit,
                        h.factura_estado, h.nota_credito_reference_code, h.factura_prefijo, h.factura_numero,
-                       h.tipo_pago
+                       h.tipo_pago, h.fecha_entrega
                 FROM Hojas_Trabajo h
                 JOIN Empresas_Clientes e ON h.empresa_id = e.id
                 WHERE h.numero_orden = :nro AND h.usuario_id = :uid
@@ -277,7 +277,8 @@ if orden_busqueda:
             st.warning(f"No se encontró ninguna orden con el número #{numero_orden_buscado} en tu taller.")
         else:
             (hoja_id, numero_orden_actual, placa, estado_actual, fecha, cliente, nit, factura_estado_actual,
-             nota_credito_actual, factura_prefijo_actual, factura_numero_actual, tipo_pago_actual) = vehiculo
+             nota_credito_actual, factura_prefijo_actual, factura_numero_actual, tipo_pago_actual,
+             fecha_entrega_actual) = vehiculo
             numero_factura_actual = f"{factura_prefijo_actual or ''}{factura_numero_actual or ''}"
 
             st.markdown(f"### Expediente de Orden #{numero_orden_actual} | Placa: {placa}")
@@ -285,7 +286,23 @@ if orden_busqueda:
             col1.metric("Cliente", cliente)
             col2.metric("NIT", nit)
             col3.metric("Estado Actual", estado_actual)
-            
+
+            col_ent1, col_ent2 = st.columns([3, 1])
+            with col_ent1:
+                if fecha_entrega_actual:
+                    st.success(f"🚗 Vehículo entregado el {fecha_entrega_actual}.")
+                else:
+                    st.info("🅿️ Vehículo todavía no se ha marcado como entregado.")
+            with col_ent2:
+                if fecha_entrega_actual:
+                    if st.button("Deshacer entrega", width='stretch'):
+                        marcar_entrega(user_id, hoja_id, False)
+                        st.rerun()
+                else:
+                    if st.button("Marcar como Entregado", type="primary", width='stretch'):
+                        marcar_entrega(user_id, hoja_id, True)
+                        st.rerun()
+
             with engine.connect() as conn:
                 df_trabajos = pd.read_sql_query(
                     text('''

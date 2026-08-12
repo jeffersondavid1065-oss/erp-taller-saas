@@ -496,6 +496,13 @@ def init_db():
                 # --- NUEVO: Cartera (saldo pendiente de órdenes facturadas a crédito) ---
                 if 'saldo_pendiente' not in cols_ht:
                     conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN saldo_pendiente REAL"))
+                # --- NUEVO: fecha de entrega del vehículo al cliente. Independiente de
+                # 'estado' y de la factura a propósito: un carro puede salir del taller
+                # antes o después de facturarse (ej. crédito), así que no encaja como un
+                # valor más del enum de estado ni debe quedar bloqueado por el candado de
+                # "no editar después de facturado" que aplica a ítems/precios/estado.
+                if 'fecha_entrega' not in cols_ht:
+                    conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN fecha_entrega TEXT"))
                 # --- NUEVO: numeración de orden independiente por taller (antes se
                 # mostraba el id autoincremental global, compartido entre todas las
                 # cuentas). Al agregar la columna, se numeran retroactivamente las
@@ -602,6 +609,9 @@ def init_db():
                 conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS nota_credito_fecha TIMESTAMP"))
                 # --- NUEVO: Cartera (saldo pendiente de órdenes facturadas a crédito) ---
                 conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS saldo_pendiente NUMERIC(12,2)"))
+                # --- NUEVO: fecha de entrega del vehículo al cliente (ver nota en el
+                # bloque sqlite de arriba sobre por qué es independiente de 'estado') ---
+                conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS fecha_entrega TEXT"))
                 # --- NUEVO: numeración de orden independiente por taller (antes se
                 # mostraba el id autoincremental global, compartido entre todas las
                 # cuentas). Solo se hace el backfill una vez, la primera vez que la

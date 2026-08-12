@@ -415,6 +415,7 @@ def invalidar_cache_ordenes():
     obtener_metricas_dashboard.clear()
     obtener_ordenes_con_items_pendientes.clear()
     obtener_vehiculos.clear()
+    obtener_listos_sin_entregar.clear()
     invalidar_cache_financiero()
 
 
@@ -645,6 +646,44 @@ def marcar_orden_facturada(hoja_id):
     with engine.begin() as conn:
         conn.execute(text("UPDATE Hojas_Trabajo SET estado = 'Facturado' WHERE id = :hid"), {"hid": hoja_id})
     invalidar_cache_ordenes()
+
+
+def marcar_entrega(uid, hoja_id, entregado):
+    """Registra (o revierte, si el usuario se equivocó) la fecha en que el
+    vehículo salió del taller. Es un campo aparte de 'estado' a propósito:
+    un vehículo puede entregarse antes o después de facturarse (ej. crédito),
+    así que no tiene sentido forzarlo dentro del enum de estado ni bloquearlo
+    por el candado de "no editar después de facturado"."""
+    engine = obtener_conexion()
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+                UPDATE Hojas_Trabajo
+                SET fecha_entrega = :fecha
+                WHERE id = :hid AND usuario_id = :uid
+            """),
+            {"fecha": date.today().isoformat() if entregado else None, "hid": hoja_id, "uid": uid}
+        )
+    invalidar_cache_ordenes()
+
+
+@st.cache_data(ttl=20)
+def obtener_listos_sin_entregar(uid):
+    """Órdenes que ya terminaron el trabajo (Listo para facturar o Facturado)
+    pero cuyo vehículo todavía no se ha marcado como entregado — la cola de
+    'carros listos, esperando que el cliente pase a recogerlos'."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        query = text('''
+            SELECT h.id, h.numero_orden, h.placa, e.razon_social, h.estado
+            FROM Hojas_Trabajo h
+            JOIN Empresas_Clientes e ON h.empresa_id = e.id
+            WHERE h.usuario_id = :uid
+              AND h.estado IN ('Listo para facturar', 'Facturado')
+              AND h.fecha_entrega IS NULL
+            ORDER BY h.id DESC
+        ''')
+        return conn.execute(query, {"uid": uid}).fetchall()
 
 
 def obtener_notas_credito_periodo(uid, fecha_inicio, fecha_fin):
