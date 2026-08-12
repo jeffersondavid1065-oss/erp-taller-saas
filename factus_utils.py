@@ -60,15 +60,18 @@ def _obtener_token(client_id, client_secret, username, password):
 
 
 def _mensaje_error(resp):
-    """Extrae el mensaje legible de una respuesta de error de Factus (suele
-    devolver JSON tipo {"message": "...", "errors": {...}}); si no se puede
-    parsear, cae al texto crudo para no ocultar información."""
+    """Extrae el mensaje legible de una respuesta de error de Factus. Suele
+    devolver {"message": "...", "data": {"errors": {...}}} — los errores de
+    validación por campo van anidados dentro de "data", no al nivel raíz —
+    pero a veces vienen al nivel raíz directamente, así que se revisan ambos.
+    Si no se puede parsear, cae al texto crudo para no ocultar información."""
     try:
         data = resp.json()
         if isinstance(data, dict):
             partes = [str(data[k]) for k in ("message", "error", "error_description") if data.get(k)]
-            if data.get("errors"):
-                partes.append(str(data["errors"]))
+            errores = data.get("errors") or (data.get("data") or {}).get("errors")
+            if errores:
+                partes.append(str(errores))
             if partes:
                 return " — ".join(partes)
     except ValueError:
@@ -118,9 +121,13 @@ def _headers(token):
     return {"Authorization": f"Bearer {token}", "Accept": "application/json", "Content-Type": "application/json"}
 
 
-def _construir_customer(empresa):
+def _construir_customer(empresa, municipio_code=None):
     """Arma el objeto 'customer' embebido en la factura/nota crédito a partir
-    de una Empresa_Cliente de MyTaller."""
+    de una Empresa_Cliente de MyTaller.
+    municipio_code: código DIVIPOLA. La documentación de Factus lo marca como
+    opcional, pero algunas cuentas (validado en sandbox) lo exigen igual —
+    MyTaller no rastrea ciudad por cliente, así que se usa el municipio
+    configurado para el taller como aproximación para todos sus clientes."""
     tipo_doc = empresa.tipo_documento or "NIT"
     customer = {
         "identification_document_code": TIPO_DOC_FACTUS.get(tipo_doc, "31"),
@@ -138,6 +145,8 @@ def _construir_customer(empresa):
         customer["names"] = empresa.razon_social
     if empresa.email:
         customer["email"] = empresa.email
+    if municipio_code:
+        customer["municipality_code"] = municipio_code
     return customer
 
 
@@ -246,6 +255,7 @@ def facturar_orden(uid, hoja_id, tipo_pago, fecha_vencimiento=None, notas=None, 
     iva_incluido = bool(config[5]) if config and config[5] is not None else False
     iva_tipo_default_mo = config[6] if config and config[6] else "Excluido"
     iva_tipo_default_rep = config[7] if config and config[7] else "Excluido"
+    municipio_code = config[12] if config and len(config) > 12 else None
 
     items_payload = []
     for i, r in enumerate(renglones, start=1):
@@ -280,7 +290,7 @@ def facturar_orden(uid, hoja_id, tipo_pago, fecha_vencimiento=None, notas=None, 
         "reference_code": f"MYT-{uid}-{hoja_id}",
         "document": "01",
         "payment_details": _construir_payment_details(tipo_pago, gran_total, fecha_vencimiento),
-        "customer": _construir_customer(empresa),
+        "customer": _construir_customer(empresa, municipio_code),
         "items": items_payload,
     }
     if observacion:
@@ -367,6 +377,7 @@ def anular_factura_orden(uid, hoja_id):
     iva_incluido = bool(config[5]) if config and config[5] is not None else False
     iva_tipo_default_mo = config[6] if config and config[6] else "Excluido"
     iva_tipo_default_rep = config[7] if config and config[7] else "Excluido"
+    municipio_code = config[12] if config and len(config) > 12 else None
 
     items_payload = []
     total_orden = 0.0
@@ -393,7 +404,7 @@ def anular_factura_orden(uid, hoja_id):
         "correction_concept_code": "2",  # Anulación de factura electrónica
         "bill_number": orden.factura_numero,
         "payment_details": _construir_payment_details(orden.tipo_pago or "Efectivo", total_orden),
-        "customer": _construir_customer(empresa),
+        "customer": _construir_customer(empresa, municipio_code),
         "items": items_payload,
     }
 

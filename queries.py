@@ -437,7 +437,8 @@ def obtener_config_taller(uid):
                 SELECT nombre_taller, nombre_dueno, email, logo_path,
                        iva_activo, iva_incluido,
                        iva_tipo_default_mano_obra, iva_tipo_default_repuestos,
-                       nit_taller, telefono_taller, direccion_taller, ciudad_taller
+                       nit_taller, telefono_taller, direccion_taller, ciudad_taller,
+                       municipio_code_taller
                 FROM Usuarios WHERE id = :uid
             """),
             {"uid": uid}
@@ -445,20 +446,24 @@ def obtener_config_taller(uid):
     return tuple(row) if row else None
 
 
-def guardar_datos_taller(uid, nit, telefono, direccion, ciudad):
+def guardar_datos_taller(uid, nit, telefono, direccion, ciudad, municipio_code=None):
     """Persiste los datos fiscales/contacto del taller en BD (antes solo
     vivían en session_state y se perdían al cerrar el navegador o recargar,
-    dejando facturas sin NIT/dirección sin ningún aviso)."""
+    dejando facturas sin NIT/dirección sin ningún aviso).
+    municipio_code: código DIVIPOLA (Factus lo exige para el cliente de la
+    factura; MyTaller no rastrea ciudad por cliente, así que se usa el
+    municipio del taller para todos)."""
     engine = obtener_conexion()
     with engine.begin() as conn:
         conn.execute(
             text("""
                 UPDATE Usuarios
                 SET nit_taller = :nit, telefono_taller = :tel,
-                    direccion_taller = :dir, ciudad_taller = :ciu
+                    direccion_taller = :dir, ciudad_taller = :ciu,
+                    municipio_code_taller = :mun
                 WHERE id = :uid
             """),
-            {"nit": nit, "tel": telefono, "dir": direccion, "ciu": ciudad, "uid": uid}
+            {"nit": nit, "tel": telefono, "dir": direccion, "ciu": ciudad, "mun": municipio_code, "uid": uid}
         )
     invalidar_cache_config_taller()
 

@@ -532,6 +532,8 @@ def init_db():
                     conn.execute(text("ALTER TABLE Usuarios ADD COLUMN direccion_taller TEXT"))
                 if 'ciudad_taller' not in cols_u:
                     conn.execute(text("ALTER TABLE Usuarios ADD COLUMN ciudad_taller TEXT"))
+                if 'municipio_code_taller' not in cols_u:
+                    conn.execute(text("ALTER TABLE Usuarios ADD COLUMN municipio_code_taller TEXT"))
                 # --- FIX: Recepción guardaba 'En revision'/'En reparacion' (sin tilde)
                 # mientras que el Tablero de Pendientes y Facturación e historial
                 # esperan 'En revisión'/'En reparación' (con tilde) - las órdenes en
@@ -633,6 +635,7 @@ def init_db():
                 conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS telefono_taller TEXT"))
                 conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS direccion_taller TEXT"))
                 conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS ciudad_taller TEXT"))
+                conn.execute(text("ALTER TABLE Usuarios ADD COLUMN IF NOT EXISTS municipio_code_taller TEXT"))
                 # --- FIX: Recepción guardaba 'En revision'/'En reparacion' (sin tilde)
                 # mientras que el Tablero de Pendientes y Facturación e historial
                 # esperan 'En revisión'/'En reparación' (con tilde) - las órdenes en

@@ -77,6 +77,7 @@ nit_actual             = datos[8] if datos and datos[8] else ""
 telefono_actual        = datos[9] if datos and datos[9] else ""
 direccion_actual       = datos[10] if datos and datos[10] else ""
 ciudad_actual          = datos[11] if datos and datos[11] else ""
+municipio_code_actual  = datos[12] if datos and len(datos) > 12 and datos[12] else ""
 
 # Carpeta de logos
 LOGOS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logos")
@@ -104,11 +105,16 @@ with tab_datos:
         with col2:
             direccion_input = st.text_input("Dirección", value=direccion_actual, placeholder="Ej: Calle 15 # 10-25")
             ciudad_input    = st.text_input("Ciudad", value=ciudad_actual, placeholder="Ej: Valledupar, Cesar")
+            municipio_code_input = st.text_input(
+                "Código de municipio (DIVIPOLA)", value=municipio_code_actual, placeholder="Ej: 20001",
+                help="Código DIVIPOLA de 5 dígitos de tu ciudad — lo exige Factus para emitir facturas. "
+                     "Búscalo por el nombre de tu ciudad en developers.factus.com.co (Tablas de referencia → Municipios)."
+            )
 
         st.markdown("")
         if st.form_submit_button("Guardar Datos", type="primary"):
             try:
-                guardar_datos_taller(user_id, nit_input, telefono_input, direccion_input, ciudad_input)
+                guardar_datos_taller(user_id, nit_input, telefono_input, direccion_input, ciudad_input, municipio_code_input)
                 st.success("Datos guardados. Aparecerán en tus próximas facturas.")
                 st.rerun()
             except Exception as e:
