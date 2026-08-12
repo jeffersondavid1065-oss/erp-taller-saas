@@ -301,12 +301,18 @@ with tab_registrar:
         dict_categorias = {c[1]: c[0] for c in categorias}
         opciones_categorias = list(dict_categorias.keys())
 
-        with st.form("form_nuevo_gasto", clear_on_submit=True):
+        monto = st.number_input(
+            "Monto ($)", min_value=0.0, step=1000.0, key="nuevo_gasto_monto",
+            help="Va fuera del formulario para poder mostrarte el monto formateado apenas lo escribes."
+        )
+        if monto > 0:
+            st.caption(f"Vas a registrar: **{formato_cop(monto)}** — revisa que los ceros sean correctos.")
+
+        with st.form("form_nuevo_gasto"):
             col1, col2 = st.columns(2)
             with col1:
                 categoria_sel = st.selectbox("Categoría de Gasto", options=opciones_categorias)
                 descripcion = st.text_input("Descripción del gasto")
-                monto = st.number_input("Monto ($)", min_value=0.0, step=1000.0)
             with col2:
                 fecha_gasto = st.date_input("Fecha del gasto", value=datetime.today())
                 tipo_gasto = st.selectbox("Tipo", ["Variable", "Fijo"])
@@ -332,6 +338,7 @@ with tab_registrar:
                             )
                         invalidar_cache_gastos()
                         st.success(f"Gasto de {formato_cop(monto)} registrado en {categoria_sel}.")
+                        del st.session_state["nuevo_gasto_monto"]
                         st.rerun()
                     except Exception as e:
                         st.error(mensaje_error_amigable(e, "guardar el gasto"))
@@ -413,6 +420,92 @@ with tab_historial:
                     st.write(f"• {row['categoria']}: {formato_cop(row['monto'])}")
             with col_exp2:
                 st.write("")
+
+            st.markdown("---")
+            st.subheader("Editar o Eliminar un Gasto")
+            st.caption("Por si te equivocaste al registrar uno.")
+
+            opciones_editar = {
+                f"{row.fecha} — {row.categoria} — {row.descripcion} — {formato_cop(row.monto)}": row.id
+                for row in df_gastos.itertuples()
+            }
+            gasto_sel_label = st.selectbox(
+                "Selecciona el gasto a editar", options=list(opciones_editar.keys()), key="editar_gasto_sel"
+            )
+            gasto_id_sel = opciones_editar[gasto_sel_label]
+            gasto_actual = df_gastos[df_gastos['id'] == gasto_id_sel].iloc[0]
+
+            categorias_editar = obtener_categorias_gasto(user_id)
+            dict_cat_editar = {c[1]: c[0] for c in categorias_editar}
+            opciones_cat_editar = list(dict_cat_editar.keys())
+            idx_cat_actual = (
+                opciones_cat_editar.index(gasto_actual['categoria'])
+                if gasto_actual['categoria'] in opciones_cat_editar else 0
+            )
+
+            with st.form(f"form_editar_gasto_{gasto_id_sel}"):
+                col_e1, col_e2 = st.columns(2)
+                with col_e1:
+                    cat_edit = st.selectbox("Categoría", options=opciones_cat_editar, index=idx_cat_actual)
+                    desc_edit = st.text_input("Descripción", value=gasto_actual['descripcion'])
+                    monto_edit = st.number_input(
+                        "Monto ($)", min_value=0.0, step=1000.0, value=float(gasto_actual['monto'])
+                    )
+                    if monto_edit > 0:
+                        st.caption(f"Vas a guardar: **{formato_cop(monto_edit)}**")
+                with col_e2:
+                    fecha_edit = st.date_input("Fecha", value=pd.to_datetime(gasto_actual['fecha']).date())
+                    tipo_edit = st.selectbox(
+                        "Tipo", ["Variable", "Fijo"],
+                        index=["Variable", "Fijo"].index(gasto_actual['tipo'])
+                    )
+
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    guardar_edit = st.form_submit_button("Guardar Cambios", type="primary", width='stretch')
+                with col_btn2:
+                    eliminar_edit = st.form_submit_button("Eliminar Gasto", width='stretch')
+
+                if guardar_edit:
+                    if desc_edit and monto_edit > 0:
+                        try:
+                            with engine.begin() as conn:
+                                conn.execute(
+                                    text("""
+                                        UPDATE Gastos
+                                        SET categoria_id = :cat_id, descripcion = :desc,
+                                            monto = :monto, fecha = :fecha, tipo = :tipo
+                                        WHERE id = :id AND usuario_id = :uid
+                                    """),
+                                    {
+                                        "cat_id": dict_cat_editar[cat_edit],
+                                        "desc": desc_edit,
+                                        "monto": float(monto_edit),
+                                        "fecha": fecha_edit.strftime('%Y-%m-%d'),
+                                        "tipo": tipo_edit,
+                                        "id": int(gasto_id_sel),
+                                        "uid": user_id,
+                                    }
+                                )
+                            invalidar_cache_gastos()
+                            st.success("Gasto actualizado.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(mensaje_error_amigable(e, "editar el gasto"))
+                    else:
+                        st.warning("Completa todos los campos obligatorios.")
+                elif eliminar_edit:
+                    try:
+                        with engine.begin() as conn:
+                            conn.execute(
+                                text("DELETE FROM Gastos WHERE id = :id AND usuario_id = :uid"),
+                                {"id": int(gasto_id_sel), "uid": user_id}
+                            )
+                        invalidar_cache_gastos()
+                        st.success("Gasto eliminado.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(mensaje_error_amigable(e, "eliminar el gasto"))
         else:
             st.info("No hay gastos registrados en este período.")
 
