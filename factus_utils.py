@@ -106,6 +106,31 @@ def listar_rangos_numeracion(client_id, client_secret, username, password):
         return False, f"Error de conexión: {e}"
 
 
+def _resolver_numbering_range_id(token, document_nombre):
+    """numbering_range_id es opcional solo si la cuenta tiene un único rango
+    activo para ese tipo de documento; si hay más de uno (validado en
+    sandbox: dos rangos activos de 'Nota Crédito'), Factus lo exige y
+    rechaza la factura/nota con un 422 sin detalle si no se envía. Se
+    resuelve automáticamente contra /v2/numbering-ranges usando el rango
+    activo más reciente. Devuelve None si no se puede determinar (la
+    llamada seguirá intentando sin el campo, como antes)."""
+    try:
+        resp = requests.get(f"{BASE_URL}/v2/numbering-ranges", headers=_headers(token), timeout=15)
+        if resp.status_code != 200:
+            return None
+        rangos = resp.json().get("data", {}).get("data", [])
+        activos = [
+            r for r in rangos
+            if r.get("document") == document_nombre and r.get("is_active") and not r.get("is_expired")
+        ]
+        if not activos:
+            return None
+        activos.sort(key=lambda r: r.get("id", 0), reverse=True)
+        return activos[0]["id"]
+    except requests.RequestException:
+        return None
+
+
 def obtener_credenciales(uid):
     """Devuelve (client_id, client_secret, username, password) configurados
     por este taller, o (None, None, None, None) si no ha configurado nada."""
@@ -286,20 +311,23 @@ def facturar_orden(uid, hoja_id, tipo_pago, fecha_vencimiento=None, notas=None, 
     if orden_compra:
         observacion = f"OC: {orden_compra}. {observacion}".strip()
 
-    payload = {
-        "reference_code": f"MYT-{uid}-{hoja_id}",
-        "document": "01",
-        "payment_details": _construir_payment_details(tipo_pago, gran_total, fecha_vencimiento),
-        "customer": _construir_customer(empresa, municipio_code),
-        "items": items_payload,
-    }
-    if observacion:
-        payload["observation"] = observacion[:250]
-
     try:
         token, error = _obtener_token(client_id, client_secret, username, password)
         if not token:
             return False, f"No se pudo autenticar con Factus: {error}"
+
+        payload = {
+            "reference_code": f"MYT-{uid}-{hoja_id}",
+            "document": "01",
+            "payment_details": _construir_payment_details(tipo_pago, gran_total, fecha_vencimiento),
+            "customer": _construir_customer(empresa, municipio_code),
+            "items": items_payload,
+        }
+        if observacion:
+            payload["observation"] = observacion[:250]
+        numbering_range_id = _resolver_numbering_range_id(token, "Factura de Venta")
+        if numbering_range_id:
+            payload["numbering_range_id"] = numbering_range_id
 
         resp = requests.post(f"{BASE_URL}/v2/bills/validate", headers=_headers(token), json=payload, timeout=30)
         if resp.status_code not in (200, 201):
@@ -399,19 +427,23 @@ def anular_factura_orden(uid, hoja_id):
         total_orden += precio_base
 
     reference_code_nc = f"MYT-NC-{uid}-{hoja_id}"
-    payload = {
-        "reference_code": reference_code_nc,
-        "correction_concept_code": "2",  # Anulación de factura electrónica
-        "bill_number": orden.factura_numero,
-        "payment_details": _construir_payment_details(orden.tipo_pago or "Efectivo", total_orden),
-        "customer": _construir_customer(empresa, municipio_code),
-        "items": items_payload,
-    }
 
     try:
         token, error = _obtener_token(client_id, client_secret, username, password)
         if not token:
             return False, f"No se pudo autenticar con Factus: {error}"
+
+        payload = {
+            "reference_code": reference_code_nc,
+            "correction_concept_code": "2",  # Anulación de factura electrónica
+            "bill_number": orden.factura_numero,
+            "payment_details": _construir_payment_details(orden.tipo_pago or "Efectivo", total_orden),
+            "customer": _construir_customer(empresa, municipio_code),
+            "items": items_payload,
+        }
+        numbering_range_id = _resolver_numbering_range_id(token, "Nota Crédito")
+        if numbering_range_id:
+            payload["numbering_range_id"] = numbering_range_id
 
         resp = requests.post(f"{BASE_URL}/v2/credit-notes/validate", headers=_headers(token), json=payload, timeout=30)
         if resp.status_code not in (200, 201):
