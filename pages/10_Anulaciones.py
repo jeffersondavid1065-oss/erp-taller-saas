@@ -50,6 +50,9 @@ nombre_taller = st.session_state.auth["nombre_taller"]
 def formato_cop(numero):
     return f"${numero:,.0f}".replace(",", ".")
 
+if st.session_state.get("debug_anular_result"):
+    st.info(f"DEBUG (temporal): {st.session_state.pop('debug_anular_result')}")
+
 st.title("Anulaciones")
 st.markdown(f"Notas crédito (facturas anuladas) para: **{nombre_taller}**")
 st.markdown("---")
@@ -102,12 +105,14 @@ if orden_anular_busqueda:
                     anular_click = st.form_submit_button(
                         "Anular factura con nota crédito", type="primary", width='stretch'
                     )
+                st.session_state["debug_anular_result"] = f"anular_click={anular_click} confirmar_anular={confirmar_anular}"
                 if anular_click:
                     if not confirmar_anular:
                         st.warning("Marca la casilla de confirmación antes de anular la factura.")
                     else:
                         with st.spinner("Emitiendo nota crédito..."):
                             ok_nc, msg_nc = factus_utils.anular_factura_orden(user_id, hoja_id_anular)
+                        st.session_state["debug_anular_result"] = f"ok_nc={ok_nc} msg_nc={msg_nc}"
                         if ok_nc:
                             st.success(msg_nc)
                             invalidar_cache_ordenes()
