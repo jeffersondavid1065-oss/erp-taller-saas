@@ -293,7 +293,7 @@ def facturar_orden(uid, hoja_id, tipo_pago, fecha_vencimiento=None, notas=None, 
 
         resp = requests.post(f"{BASE_URL}/v2/bills/validate", headers=_headers(token), json=payload, timeout=30)
         if resp.status_code not in (200, 201):
-            return False, f"La factura fue rechazada ({resp.status_code}): {_mensaje_error(resp)}"
+            return False, f"La factura fue rechazada ({resp.status_code}): {_mensaje_error(resp)} | RAW: {resp.text[:1500]}"
 
         data = resp.json().get("data", {})
         bill = data.get("bill", data)
