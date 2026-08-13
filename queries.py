@@ -767,9 +767,67 @@ def registrar_abono(uid, hoja_id, monto, notas=None):
     invalidar_cache_ordenes()
 
 
+@st.cache_data(ttl=30)
+def obtener_deuda_por_empresa(uid):
+    """Empresas/clientes con saldo pendiente a crédito actualmente (> 0),
+    con el total adeudado y cuántas órdenes lo componen — para la pestaña
+    'Clientes con Cartera'. Solo incluye empresas que SÍ deben algo."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        return pd.read_sql_query(text("""
+            SELECT e.id as empresa_id, e.razon_social as cliente, e.telefono,
+                   SUM(h.saldo_pendiente) as deuda_actual,
+                   COUNT(h.id) as ordenes_con_deuda
+            FROM Hojas_Trabajo h
+            JOIN Empresas_Clientes e ON h.empresa_id = e.id
+            WHERE h.usuario_id = :uid AND h.tipo_pago = 'Credito' AND h.saldo_pendiente > 0
+            GROUP BY e.id, e.razon_social, e.telefono
+            ORDER BY deuda_actual DESC
+        """), con=conn, params={"uid": uid})
+
+
+def obtener_ordenes_credito_empresa(uid, empresa_id):
+    """Historial completo (no solo lo pendiente) de órdenes a crédito de una
+    empresa/cliente puntual, con su estado de facturación — para mostrar si
+    cada una tiene factura emitida, está sin facturar, o fue anulada."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        return pd.read_sql_query(text("""
+            SELECT h.id as hoja_id, h.numero_orden, date(h.fecha_ingreso) as fecha, h.placa,
+                   h.saldo_pendiente, h.fecha_vencimiento_credito,
+                   h.factura_estado, h.factura_prefijo, h.factura_numero, h.factura_pdf_url,
+                   h.nota_credito_reference_code,
+                   CASE WHEN h.saldo_pendiente > 0 AND h.fecha_vencimiento_credito < :hoy
+                        THEN TRUE ELSE FALSE END as vencido,
+                   COALESCE(SUM(d.precio_venta), 0) as total_orden
+            FROM Hojas_Trabajo h
+            LEFT JOIN Detalles_Orden d ON d.hoja_id = h.id
+            WHERE h.usuario_id = :uid AND h.empresa_id = :eid AND h.tipo_pago = 'Credito'
+            GROUP BY h.id, h.numero_orden, h.fecha_ingreso, h.placa, h.saldo_pendiente,
+                     h.fecha_vencimiento_credito, h.factura_estado, h.factura_prefijo,
+                     h.factura_numero, h.factura_pdf_url, h.nota_credito_reference_code
+            ORDER BY h.fecha_ingreso DESC
+        """), con=conn, params={"uid": uid, "eid": empresa_id, "hoy": date.today().strftime('%Y-%m-%d')})
+
+
+def obtener_abonos_empresa(uid, empresa_id):
+    """Historial completo de abonos de todas las órdenes a crédito de una
+    empresa/cliente puntual, más recientes primero."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        return pd.read_sql_query(text("""
+            SELECT a.monto, a.fecha, a.notas, h.numero_orden
+            FROM Abonos_Taller a
+            JOIN Hojas_Trabajo h ON a.hoja_id = h.id
+            WHERE a.usuario_id = :uid AND h.empresa_id = :eid
+            ORDER BY a.fecha DESC
+        """), con=conn, params={"uid": uid, "eid": empresa_id})
+
+
 def invalidar_cache_cartera():
     """Llamar tras registrar un abono, crear una factura a crédito o emitirla."""
     obtener_creditos_pendientes.clear()
+    obtener_deuda_por_empresa.clear()
 
 
 def obtener_siguiente_numero_orden(conn, uid):
