@@ -45,6 +45,12 @@ if not st.session_state.auth["logged"]:
     st.warning("Debes iniciar sesión en la página principal para acceder a este módulo.")
     st.stop()
 
+# Si el token de sesión no está en la URL (ej. tras navegar desde otra
+# página), lo vuelve a agregar para que un F5 en esta misma página
+# también recupere la sesión, sin depender solo de la cookie.
+if "token" not in st.query_params and st.session_state.auth.get("token"):
+    st.query_params["token"] = st.session_state.auth["token"]
+
 if st.session_state.auth.get("rol") == "patio":
     st.warning("🔒 Tu usuario solo tiene acceso al módulo de Recepción de Vehículos.")
     st.stop()
