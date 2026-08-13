@@ -48,7 +48,7 @@ if not st.session_state.auth["logged"]:
     
     # Bloqueo de rol: los operarios de Patio solo tienen acceso a Recepción.
 if st.session_state.auth.get("rol") == "patio":
-    st.warning("🔒 Tu usuario solo tiene acceso al módulo de Recepción de Vehículos.")
+    st.warning("Tu usuario solo tiene acceso al módulo de Recepción de Vehículos.")
     st.stop()
 
 engine = obtener_conexion()
@@ -396,7 +396,7 @@ with tab_historial:
                     f"Gastos_{fecha_ini}_{fecha_fin}.xlsx"
                 )
                 st.download_button(
-                    label="📥 Descargar en Excel (para DIAN)",
+                    label="Descargar en Excel (para DIAN)",
                     data=excel_buffer,
                     file_name=f"Gastos_{fecha_ini}_{fecha_fin}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -579,8 +579,7 @@ with tab_analisis:
         st.write(f"`{formato_cop(gastos_totales)}`")
     with col_res3:
         st.write("**Rentabilidad (Margen Neto):**")
-        color = "🔴" if margen_neto < 0 else "🟢"
-        st.write(f"{color} `{formato_cop(margen_neto)}`")
+        st.write(f"`{formato_cop(margen_neto)}`")
 
     st.markdown("---")
     
@@ -597,7 +596,7 @@ with tab_analisis:
             nombre_taller
         )
         st.download_button(
-            label="📊 Descargar Reporte Mensual Completo",
+            label="Descargar Reporte Mensual Completo",
             data=excel_reporte,
             file_name=f"Reporte_Financiero_{mes_sel:02d}_{año_sel}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -605,4 +604,4 @@ with tab_analisis:
         )
     
     with col_desc2:
-        st.info("💡 **Tip para la DIAN:** Descarga estos reportes mensuales para mantener un registro organizado de tus ingresos y gastos. Facilita auditorías y declaraciones de impuestos.")
+        st.info("**Tip para la DIAN:** Descarga estos reportes mensuales para mantener un registro organizado de tus ingresos y gastos. Facilita auditorías y declaraciones de impuestos.")

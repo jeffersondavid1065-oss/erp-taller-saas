@@ -249,7 +249,7 @@ def pantalla_login():
         st.markdown("")
 
         # ---------------- Acceso de Patio (Operarios) ----------------
-        with st.expander("🔧 Acceso de Patio (Recepción de Vehículos)"):
+        with st.expander("Acceso de Patio (Recepción de Vehículos)"):
             st.caption("Acceso exclusivo para operarios de patio. Solo permite recepcionar vehículos.")
             usuario_patio = st.text_input("Usuario", key="login_patio_user")
             pass_patio = st.text_input("Contraseña", type="password", key="login_patio_pass")
@@ -359,11 +359,11 @@ def panel_patio():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         with st.container(border=True):
-            st.subheader(f"👋 Hola, {st.session_state.auth['operario_nombre']}")
+            st.subheader(f"Hola, {st.session_state.auth['operario_nombre']}")
             st.write(f"**Taller:** {st.session_state.auth['nombre_taller']}")
             st.write("Tu usuario solo tiene acceso al módulo de **Recepción de Vehículos**.")
             st.markdown("")
-            if st.button("➡️ Ir a Recepción de Vehículos", type="primary", width='stretch'):
+            if st.button("Ir a Recepción de Vehículos", type="primary", width='stretch'):
                 try:
                     st.switch_page("pages/1_Recepción.py")
                 except Exception:
@@ -406,7 +406,7 @@ def panel_principal():
                 label_visibility="collapsed",
             )
         with col_bg2:
-            buscar_global_click = st.form_submit_button("🔍 Buscar", width='stretch')
+            buscar_global_click = st.form_submit_button("Buscar", width='stretch')
 
     # Los resultados se guardan en session_state (no solo en una variable local)
     # porque al hacer clic en "Ir a esta orden" Streamlit vuelve a correr todo
@@ -470,7 +470,7 @@ def panel_principal():
             total_vencido_dash = vencidos_dash['saldo_pendiente'].sum()
             st.markdown("---")
             st.error(
-                f"⚠️ Tienes **{len(vencidos_dash)} crédito(s) vencido(s)** por "
+                f"Tienes **{len(vencidos_dash)} crédito(s) vencido(s)** por "
                 f"{formato_cop(total_vencido_dash)}. Revisa el detalle en el módulo **Cartera**."
             )
 

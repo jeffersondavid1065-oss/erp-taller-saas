@@ -62,7 +62,7 @@ if not st.session_state.auth["logged"]:
 
 # Bloqueo de rol: los operarios de Patio solo tienen acceso a Recepción.
 if st.session_state.auth.get("rol") == "patio":
-    st.warning("🔒 Tu usuario solo tiene acceso al módulo de Recepción de Vehículos.")
+    st.warning("Tu usuario solo tiene acceso al módulo de Recepción de Vehículos.")
     st.stop()
 
 engine = obtener_conexion()
@@ -132,11 +132,11 @@ st.markdown(f"Gestión de órdenes para: **{nombre_taller}**")
 if IVA_ACTIVO:
     modo_iva_txt = "incluido en el precio" if IVA_INCLUIDO else "se suma aparte al precio"
     st.caption(
-        f"🧾 IVA activo ({modo_iva_txt}) | Default Mano de Obra: **{IVA_TIPO_DEFAULT_MO}** · "
+        f"IVA activo ({modo_iva_txt}) | Default Mano de Obra: **{IVA_TIPO_DEFAULT_MO}** · "
         f"Default Repuestos: **{IVA_TIPO_DEFAULT_REP}**. Configurable en 'Configuración del Taller'."
     )
 else:
-    st.caption("🧾 Este taller no cobra IVA (todos los ítems se facturan como 'Excluido').")
+    st.caption("Este taller no cobra IVA (todos los ítems se facturan como 'Excluido').")
 st.markdown("---")
 
 # Catálogos cacheados y compartidos con el resto de la app (no se vuelven
@@ -146,7 +146,7 @@ dict_mecanicos = {f"{m[1]}": m[0] for m in mecanicos}
 dict_empresas_filtro = {e[1]: e[0] for e in empresas}
 opciones_empresas_filtro = ["-- Todas las empresas --"] + list(dict_empresas_filtro.keys())
 
-tab_historial, tab_cotizaciones = st.tabs(["📜 Historial de Órdenes", "💬 Cotizaciones"])
+tab_historial, tab_cotizaciones = st.tabs(["Historial de Órdenes", "Cotizaciones"])
 
 with tab_historial:
     st.subheader("Historial y Filtros de Órdenes")
@@ -245,7 +245,7 @@ with tab_historial:
             _df_export, excel_historial = _generar_excel_historial_cacheado(sql_export, params_exp, nombre_taller)
 
             st.download_button(
-                f"📥 Descargar Excel ({total_registros} orden(es) que coinciden con los filtros)",
+                f"Descargar Excel ({total_registros} orden(es) que coinciden con los filtros)",
                 data=excel_historial,
                 file_name=f"Historial_Ordenes_{datetime.today().strftime('%Y%m%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -294,7 +294,7 @@ with tab_historial:
                 col_ent1, col_ent2 = st.columns([3, 1])
                 with col_ent1:
                     if fecha_entrega_actual:
-                        st.success(f"🚗 Vehículo entregado el {fecha_entrega_actual}.")
+                        st.success(f"Vehículo entregado el {fecha_entrega_actual}.")
                     else:
                         st.info("🅿️ Vehículo todavía no se ha marcado como entregado.")
                 with col_ent2:
@@ -399,7 +399,7 @@ with tab_historial:
                         )
                     
                         st.download_button(
-                            label="📄 Descargar Factura / Cotización en PDF",
+                            label="Descargar Factura / Cotización en PDF",
                             data=pdf_bytes,
                             file_name=f"Orden_{numero_orden_actual}_Placa_{placa}.pdf",
                             mime="application/pdf",
@@ -408,7 +408,7 @@ with tab_historial:
                         )
                     
                         if not _config_taller:
-                            st.caption("💡 Configura el logo y datos en **Configuración del Taller** para que aparezcan en el PDF.")
+                            st.caption("Configura el logo y datos en **Configuración del Taller** para que aparezcan en el PDF.")
 
                         st.markdown("---")
                         st.markdown("#### Copiado Rápido de Ítems")
@@ -740,7 +740,7 @@ with tab_historial:
                                         st.markdown(f"**Total Cobro:** {formato_cop(pvp_unitario_exp * cant_usar_exp)}")
 
                                     iva_tipo_prod = prod_data[5] if prod_data[5] else "Excluido"
-                                    st.caption(f"🧾 Impuesto de este producto (configurado en Inventario): **{iva_tipo_prod}**")
+                                    st.caption(f"Impuesto de este producto (configurado en Inventario): **{iva_tipo_prod}**")
 
                                     if st.button("Guardar Repuesto de Almacén", width='stretch'):
                                         try:
@@ -804,7 +804,7 @@ with tab_cotizaciones:
                     st.caption(f"Creada: {cot.fecha_creacion}")
                 with col_h3:
                     if cot.convertida_a_hoja_id:
-                        st.success(f"✅ Convertida en Orden #{cot.numero_orden}")
+                        st.success(f"Convertida en Orden #{cot.numero_orden}")
                     else:
                         st.warning("⏳ Pendiente de convertir")
 
@@ -862,7 +862,7 @@ with tab_cotizaciones:
                         )
 
                         st.download_button(
-                            "📄 Descargar Cotización en PDF",
+                            "Descargar Cotización en PDF",
                             data=pdf_bytes_cot,
                             file_name=f"Cotizacion_{cot.numero_cotizacion}_Placa_{cot.placa}.pdf",
                             mime="application/pdf",
@@ -908,7 +908,7 @@ with tab_cotizaciones:
                                         st.error(mensaje_error_amigable(e, "convertir la cotización"))
 
                             st.markdown("---")
-                            if st.button("🗑️ Eliminar Cotización", key=f"del_cot_{cot.id}"):
+                            if st.button("Eliminar Cotización", key=f"del_cot_{cot.id}"):
                                 st.session_state[f"confirm_del_cot_{cot.id}"] = True
 
                             if st.session_state.get(f"confirm_del_cot_{cot.id}", False):

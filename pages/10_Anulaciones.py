@@ -41,7 +41,7 @@ if not st.session_state.auth["logged"]:
 
 # Bloqueo de rol: los operarios de Patio solo tienen acceso a Recepción.
 if st.session_state.auth.get("rol") == "patio":
-    st.warning("🔒 Tu usuario solo tiene acceso al módulo de Recepción de Vehículos.")
+    st.warning("Tu usuario solo tiene acceso al módulo de Recepción de Vehículos.")
     st.stop()
 
 user_id = st.session_state.auth["user_id"]

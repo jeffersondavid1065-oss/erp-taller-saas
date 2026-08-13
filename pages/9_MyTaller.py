@@ -51,7 +51,7 @@ if not st.session_state.auth["logged"]:
 
 # Bloqueo de rol: los operarios de Patio solo tienen acceso a Recepción.
 if st.session_state.auth.get("rol") == "patio":
-    st.warning("🔒 Tu usuario solo tiene acceso al módulo de Recepción de Vehículos.")
+    st.warning("Tu usuario solo tiene acceso al módulo de Recepción de Vehículos.")
     st.stop()
 
 engine = obtener_conexion()
@@ -245,7 +245,7 @@ with tab_iva:
 
         st.markdown("")
         st.caption(
-            "💡 Cada producto de Inventario también tiene su propio tipo de IVA editable "
+            "Cada producto de Inventario también tiene su propio tipo de IVA editable "
             "(por ejemplo, aceite exento vs. un repuesto con IVA 19%). Ese tipo se hereda "
             "automáticamente cuando tomas el producto del almacén en una orden."
         )
@@ -294,7 +294,7 @@ with tab_operarios:
         "recepcionar vehículos (placa + cliente), sin ver costos, comisiones ni el resto de módulos."
     )
 
-    with st.expander("➕ Crear nuevo operario", expanded=False):
+    with st.expander("Crear nuevo operario", expanded=False):
         with st.form("form_nuevo_operario", clear_on_submit=True):
             nombre_op = st.text_input("Nombre del operario", placeholder="Ej: Carlos Pérez")
             usuario_op = st.text_input(
@@ -327,7 +327,7 @@ with tab_operarios:
                                 }
                             )
                         invalidar_cache_operarios()
-                        st.success(f"✅ Operario '{nombre_op}' creado con éxito.")
+                        st.success(f"Operario '{nombre_op}' creado con éxito.")
                         st.rerun()
                     except Exception as e:
                         if "UNIQUE" in str(e).upper() or "duplicate" in str(e).lower():
@@ -497,4 +497,4 @@ with tab_factus:
                     st.error(f"No se guardó: {msg}")
 
 st.markdown("---")
-st.caption("💡 **Tip:** Después de subir tu logo, descarga una factura de prueba en Expediente para verificar cómo queda.")
+st.caption("**Tip:** Después de subir tu logo, descarga una factura de prueba en Expediente para verificar cómo queda.")

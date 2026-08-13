@@ -42,7 +42,7 @@ if not st.session_state.auth["logged"]:
 
 # Bloqueo de rol: los operarios de Patio solo tienen acceso a Recepción.
 if st.session_state.auth.get("rol") == "patio":
-    st.warning("🔒 Tu usuario solo tiene acceso al módulo de Recepción de Vehículos.")
+    st.warning("Tu usuario solo tiene acceso al módulo de Recepción de Vehículos.")
     st.stop()
 
 engine = obtener_conexion()
@@ -183,7 +183,7 @@ if ordenes_sin_precio:
 listos_sin_entregar = obtener_listos_sin_entregar(user_id)
 
 if listos_sin_entregar:
-    with st.expander(f"🚗 {len(listos_sin_entregar)} vehículo(s) listo(s) esperando que el cliente pase a recogerlos", expanded=False):
+    with st.expander(f"{len(listos_sin_entregar)} vehículo(s) listo(s) esperando que el cliente pase a recogerlos", expanded=False):
         for orden_id_le, numero_orden_le, placa_le, empresa_le, estado_le in listos_sin_entregar:
             col_le1, col_le2 = st.columns([3, 1])
             with col_le1:
@@ -206,7 +206,7 @@ except Exception as e:
     vehiculos = []
     st.error(mensaje_error_amigable(e, "cargar el tablero"))
 
-def dibujar_estado(icono, titulo, estado_filtro):
+def dibujar_estado(titulo, estado_filtro):
     # Cada estado es una ventana desplegable (colapsada por defecto) en vez
     # de una columna siempre visible: con muchas órdenes activas, mostrarlo
     # todo de una vez saturaba la pantalla. Las tarjetas siguen siendo puro
@@ -214,7 +214,7 @@ def dibujar_estado(icono, titulo, estado_filtro):
     # volver a dibujar en cada clic que un st.container(border=True) por orden).
     ordenes_estado = [v for v in vehiculos if v[4] == estado_filtro]
 
-    with st.expander(f"{icono} {titulo} ({len(ordenes_estado)})", expanded=False):
+    with st.expander(f"{titulo} ({len(ordenes_estado)})", expanded=False):
         if not ordenes_estado:
             st.caption("No hay vehículos en este estado por ahora.")
             return
@@ -240,11 +240,11 @@ def dibujar_estado(icono, titulo, estado_filtro):
 
         st.markdown(''.join(tarjetas_html), unsafe_allow_html=True)
 
-dibujar_estado("🔵", "Cotizar", "Cotizar")
-dibujar_estado("🟡", "En Revisión", "En revisión")
-dibujar_estado("🟠", "Esperando Repuestos", "Esperando repuestos")
-dibujar_estado("🟣", "En Reparación", "En reparación")
-dibujar_estado("🟢", "Listo para Facturar", "Listo para facturar")
+dibujar_estado("Cotizar", "Cotizar")
+dibujar_estado("En Revisión", "En revisión")
+dibujar_estado("Esperando Repuestos", "Esperando repuestos")
+dibujar_estado("En Reparación", "En reparación")
+dibujar_estado("Listo para Facturar", "Listo para facturar")
 
 st.markdown("---")
 if st.button("Actualizar Tablero", width='stretch'):

@@ -92,14 +92,14 @@ if not empresas:
     st.stop()
 
 if not mecanicos:
-    st.info("💡 Aun no tienes mecanicos registrados: podras recepcionar el vehiculo y agregar repuestos, pero no podras asignar mano de obra hasta registrar al menos un mecanico.")
+    st.info("Aun no tienes mecanicos registrados: podras recepcionar el vehiculo y agregar repuestos, pero no podras asignar mano de obra hasta registrar al menos un mecanico.")
 
 dict_empresas = {f"{e[1]}": e[0] for e in empresas}
 dict_mecanicos = {f"{m[1]}": m[0] for m in mecanicos}
 opciones_empresas = ["-- Seleccionar Empresa --"] + list(dict_empresas.keys())
 opciones_mecanicos = ["-- Seleccionar Mecanico --"] + list(dict_mecanicos.keys())
 
-tab_orden, tab_cotizacion = st.tabs(["📋 Orden de Trabajo", "💬 Cotización"])
+tab_orden, tab_cotizacion = st.tabs(["Orden de Trabajo", "Cotización"])
 
 # ================================================================================
 # PESTAÑA 1: ORDEN DE TRABAJO (flujo real, con mecánico y descuento de stock)
@@ -222,7 +222,7 @@ with tab_orden:
                 # ==========================================
                 # BÚSQUEDA POR CÓDIGO DE BARRAS O NOMBRE
                 # ==========================================
-                st.markdown("**🔍 Buscar repuesto**")
+                st.markdown("**Buscar repuesto**")
                 st.caption("Escanea el código de barras del repuesto o escribe el nombre.")
 
                 # Limpiar campo si viene de un escaneo exitoso
@@ -266,7 +266,7 @@ with tab_orden:
                             with col_c3:
                                 st.write("")
                                 st.write("")
-                                if st.button("✅ Agregar", type="primary", width='stretch', key="btn_agregar_cod"):
+                                if st.button("Agregar", type="primary", width='stretch', key="btn_agregar_cod"):
                                     st.session_state.carrito_items.append({
                                         'Tipo': 'Repuesto',
                                         'Descripción': f"{p[1]} (x{cant_usar})",
@@ -377,7 +377,7 @@ with tab_orden:
             col_res1, col_res2, col_res3, col_res4 = st.columns([3, 2, 2, 1])
             with col_res1:
                 st.markdown(f"**{item['Tipo']}**: {item['Descripción']}")
-                st.caption(f"🧾 {item.get('IVA_Tipo', 'Excluido')}")
+                st.caption(f"{item.get('IVA_Tipo', 'Excluido')}")
             with col_res2:
                 if item['Tipo'] == 'Mano de Obra':
                     st.caption(f"Tecnico: {item['Mecánico']}")
@@ -498,7 +498,7 @@ with tab_cotizacion:
             venta_mo_cot = st.number_input("Precio estimado ($0 si aún no se define)", min_value=0.0, step=5000.0, key="venta_mo_cot")
             if venta_mo_cot > 0:
                 st.caption(f"Estimado: {formato_cop(venta_mo_cot)}")
-            st.caption("💡 El mecánico responsable se asigna más adelante, al convertir esta cotización en orden real.")
+            st.caption("El mecánico responsable se asigna más adelante, al convertir esta cotización en orden real.")
 
             st.markdown("")
             if st.button("Agregar Trabajo a la Cotización", width='stretch', key="btn_add_mo_cot"):
@@ -586,7 +586,7 @@ with tab_cotizacion:
             col_res1, col_res2, col_res3 = st.columns([4, 2, 1])
             with col_res1:
                 st.markdown(f"**{item['Tipo']}**: {item['Descripción']}")
-                st.caption(f"🧾 {item.get('IVA_Tipo', 'Excluido')}")
+                st.caption(f"{item.get('IVA_Tipo', 'Excluido')}")
             with col_res2:
                 if item['PVP Cliente'] == 0:
                     st.markdown("**Por definir ($0)**")

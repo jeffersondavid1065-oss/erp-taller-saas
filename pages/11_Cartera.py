@@ -40,7 +40,7 @@ if not st.session_state.auth["logged"]:
 
 # Bloqueo de rol: los operarios de Patio solo tienen acceso a Recepción.
 if st.session_state.auth.get("rol") == "patio":
-    st.warning("🔒 Tu usuario solo tiene acceso al módulo de Recepción de Vehículos.")
+    st.warning("Tu usuario solo tiene acceso al módulo de Recepción de Vehículos.")
     st.stop()
 
 user_id = st.session_state.auth["user_id"]
@@ -119,7 +119,7 @@ else:
             columnas_moneda=["Saldo Pendiente"], nombre_hoja="Cartera", columna_total="Saldo Pendiente"
         )
         st.download_button(
-            "📥 Descargar Excel de Cartera", data=excel_cartera,
+            "Descargar Excel de Cartera", data=excel_cartera,
             file_name=f"Cartera_{datetime.today().strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
