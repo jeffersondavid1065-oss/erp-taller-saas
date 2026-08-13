@@ -1,11 +1,13 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import pandas as pd
 import streamlit as st
 from queries import (
     obtener_creditos_pendientes, obtener_abonos_orden, registrar_abono,
     obtener_deuda_por_empresa, obtener_ordenes_credito_empresa, obtener_abonos_empresa,
+    obtener_empresas_directorio, obtener_config_taller,
 )
 from db import mensaje_error_amigable
+from pdf_utils import generar_pdf_estado_cuenta
 import factus_utils
 import excel_utils
 
@@ -69,7 +71,9 @@ st.title("Cartera")
 st.markdown(f"Gestión de cartera y créditos para: **{nombre_taller}**")
 st.markdown("---")
 
-tab_activa, tab_clientes = st.tabs(["Cartera Activa", "Clientes con Cartera"])
+tab_activa, tab_clientes, tab_estado_cuenta = st.tabs(
+    ["Cartera Activa", "Clientes con Cartera", "Estado de Cuenta"]
+)
 
 # ==========================================
 # PESTAÑA 1: CARTERA ACTIVA (análisis general + tabla completa + abonos)
@@ -373,3 +377,148 @@ with tab_clientes:
                                 st.rerun()
                             except Exception as e:
                                 st.error(mensaje_error_amigable(e, "registrar el abono"))
+
+# ==========================================
+# PESTAÑA 3: ESTADO DE CUENTA (PDF por cliente y período)
+# ==========================================
+with tab_estado_cuenta:
+    st.subheader("Generar Estado de Cuenta")
+    st.caption(
+        "Genera un estado de cuenta en PDF para enviarle a cualquier cliente: sirve tanto para "
+        "mostrarle lo que debe como para confirmarle que ya está al día (paz y salvo)."
+    )
+
+    df_empresas_ec = obtener_empresas_directorio(user_id)
+
+    if df_empresas_ec.empty:
+        st.info("Tu taller aún no tiene clientes registrados.")
+    else:
+        dict_empresas_ec = {r['razon_social']: r['id'] for _, r in df_empresas_ec.iterrows()}
+        opciones_empresas_ec = ["-- Seleccionar Empresa/Persona --"] + list(dict_empresas_ec.keys())
+
+        col_ec1, col_ec2, col_ec3 = st.columns([2, 1, 1])
+        with col_ec1:
+            cliente_ec_sel = st.selectbox("Cliente", options=opciones_empresas_ec, key="cliente_ec_sel")
+        with col_ec2:
+            fecha_desde_ec = st.date_input(
+                "Desde", value=date.today() - timedelta(days=90), key="fecha_desde_ec"
+            )
+        with col_ec3:
+            fecha_hasta_ec = st.date_input("Hasta", value=date.today(), key="fecha_hasta_ec")
+
+        if cliente_ec_sel == "-- Seleccionar Empresa/Persona --":
+            st.info("Selecciona un cliente para generar su estado de cuenta.")
+        elif fecha_desde_ec > fecha_hasta_ec:
+            st.error("La fecha 'Desde' no puede ser posterior a la fecha 'Hasta'.")
+        else:
+            empresa_id_ec = dict_empresas_ec[cliente_ec_sel]
+            fila_empresa_ec = df_empresas_ec[df_empresas_ec['id'] == empresa_id_ec].iloc[0]
+
+            df_ordenes_ec = obtener_ordenes_credito_empresa(user_id, empresa_id_ec)
+            df_abonos_ec = obtener_abonos_empresa(user_id, empresa_id_ec)
+
+            eventos = []
+            for _, r in df_ordenes_ec.iterrows():
+                eventos.append({
+                    "fecha": pd.to_datetime(r['fecha']).date(),
+                    "descripcion": f"Orden #{r['numero_orden']} — Placa {r['placa']}",
+                    "cargo": float(r['total_orden']),
+                    "abono": 0.0,
+                })
+            for _, r in df_abonos_ec.iterrows():
+                nota_txt = f" ({r['notas']})" if r.get('notas') else ""
+                eventos.append({
+                    "fecha": pd.to_datetime(r['fecha']).date(),
+                    "descripcion": f"Abono Orden #{r['numero_orden']}{nota_txt}",
+                    "cargo": 0.0,
+                    "abono": float(r['monto']),
+                })
+            eventos.sort(key=lambda e: e['fecha'])
+
+            saldo_anterior_ec = sum(e['cargo'] - e['abono'] for e in eventos if e['fecha'] < fecha_desde_ec)
+            movimientos_periodo = [e for e in eventos if fecha_desde_ec <= e['fecha'] <= fecha_hasta_ec]
+
+            saldo_corriente_ec = saldo_anterior_ec
+            filas_preview = []
+            for ev in movimientos_periodo:
+                saldo_corriente_ec += ev['cargo'] - ev['abono']
+                filas_preview.append({
+                    "Fecha": ev['fecha'].strftime("%d/%m/%Y"),
+                    "Descripción": ev['descripcion'],
+                    "Cargo": ev['cargo'],
+                    "Abono": ev['abono'],
+                    "Saldo": saldo_corriente_ec,
+                })
+            saldo_final_ec = saldo_corriente_ec
+
+            total_cargos_periodo = sum(e['cargo'] for e in movimientos_periodo)
+            total_abonos_periodo = sum(e['abono'] for e in movimientos_periodo)
+
+            st.markdown("---")
+            col_r1, col_r2, col_r3, col_r4 = st.columns(4)
+            col_r1.metric("Saldo Anterior", formato_cop(saldo_anterior_ec))
+            col_r2.metric("Cargos del Período", formato_cop(total_cargos_periodo))
+            col_r3.metric("Abonos del Período", formato_cop(total_abonos_periodo))
+            col_r4.metric("Saldo Final", formato_cop(saldo_final_ec))
+
+            if saldo_final_ec <= 0:
+                st.success(f"{cliente_ec_sel} está al día — sin saldo pendiente.")
+            else:
+                st.warning(f"{cliente_ec_sel} tiene un saldo pendiente de {formato_cop(saldo_final_ec)}.")
+
+            st.markdown("---")
+            st.markdown("**Movimientos del período:**")
+            if not filas_preview:
+                st.caption("Sin movimientos registrados en este período.")
+            else:
+                st.dataframe(
+                    pd.DataFrame(filas_preview),
+                    width='stretch', hide_index=True,
+                    column_config={
+                        "Cargo": st.column_config.NumberColumn(format="$%,d"),
+                        "Abono": st.column_config.NumberColumn(format="$%,d"),
+                        "Saldo": st.column_config.NumberColumn(format="$%,d"),
+                    }
+                )
+
+            st.markdown("---")
+
+            _config_taller_ec = obtener_config_taller(user_id)
+            logo_path_ec = _config_taller_ec[3] if _config_taller_ec and _config_taller_ec[3] else None
+            taller_nit_ec = _config_taller_ec[8] if _config_taller_ec and len(_config_taller_ec) > 8 and _config_taller_ec[8] else ""
+            taller_telefono_ec = _config_taller_ec[9] if _config_taller_ec and len(_config_taller_ec) > 9 and _config_taller_ec[9] else ""
+            taller_direccion_raw_ec = _config_taller_ec[10] if _config_taller_ec and len(_config_taller_ec) > 10 and _config_taller_ec[10] else ""
+            taller_ciudad_ec = _config_taller_ec[11] if _config_taller_ec and len(_config_taller_ec) > 11 and _config_taller_ec[11] else ""
+            taller_direccion_ec = f"{taller_direccion_raw_ec}, {taller_ciudad_ec}".strip(", ") if taller_ciudad_ec else taller_direccion_raw_ec
+            taller_email_ec = _config_taller_ec[2] if _config_taller_ec and _config_taller_ec[2] else ""
+
+            pdf_bytes_ec = generar_pdf_estado_cuenta(
+                taller_nombre=nombre_taller,
+                taller_nit=taller_nit_ec,
+                taller_telefono=taller_telefono_ec,
+                taller_direccion=taller_direccion_ec,
+                taller_email=taller_email_ec,
+                taller_logo_path=logo_path_ec,
+                cliente=cliente_ec_sel,
+                cliente_nit=fila_empresa_ec.get('nit', ''),
+                cliente_telefono=fila_empresa_ec.get('telefono', ''),
+                fecha_desde=fecha_desde_ec.strftime("%d/%m/%Y"),
+                fecha_hasta=fecha_hasta_ec.strftime("%d/%m/%Y"),
+                fecha_generacion=datetime.today().strftime("%d/%m/%Y"),
+                saldo_anterior=saldo_anterior_ec,
+                movimientos=[
+                    {"fecha": ev['fecha'].strftime("%d/%m/%Y"), "descripcion": ev['descripcion'],
+                     "cargo": ev['cargo'], "abono": ev['abono']}
+                    for ev in movimientos_periodo
+                ],
+                saldo_final=saldo_final_ec,
+            )
+
+            st.download_button(
+                "Descargar Estado de Cuenta en PDF",
+                data=pdf_bytes_ec,
+                file_name=f"Estado_Cuenta_{cliente_ec_sel.replace(' ', '_')}_{datetime.today().strftime('%Y%m%d')}.pdf",
+                mime="application/pdf",
+                type="primary",
+                width='stretch'
+            )

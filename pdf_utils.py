@@ -467,3 +467,265 @@ def generar_pdf_orden(taller, hoja_id, fecha, cliente, nit, placa, estado, df_it
         df_items=df_items,
         total=total,
     )
+
+
+_REEMPLAZOS_PDF_LATIN1 = {
+    "—": "-", "–": "-",           # em dash, en dash
+    "‘": "'", "’": "'",           # comillas simples curvas
+    "“": '"', "”": '"',           # comillas dobles curvas
+    "…": "...",                          # puntos suspensivos
+    " ": " ",                            # espacio de no separación
+}
+
+
+def _texto_seguro_pdf(valor, default=""):
+    """Convierte cualquier valor a texto seguro para las fuentes core de
+    FPDF (Helvetica), que solo soportan Latin-1. Los caracteres Unicode
+    comunes que SÍ tienen un equivalente razonable (guiones largos,
+    comillas curvas, puntos suspensivos) se traducen; cualquier otro
+    caracter fuera de Latin-1 se reemplaza por '?' en vez de reventar la
+    generación del PDF (FPDFUnicodeEncodingException)."""
+    if valor is None:
+        return default
+    try:
+        s = str(valor)
+    except Exception:
+        return default
+    for original, reemplazo in _REEMPLAZOS_PDF_LATIN1.items():
+        s = s.replace(original, reemplazo)
+    return s.encode("latin-1", errors="replace").decode("latin-1")
+
+
+def generar_pdf_estado_cuenta(
+    taller_nombre,
+    taller_nit="",
+    taller_telefono="",
+    taller_direccion="",
+    taller_email="",
+    taller_logo_path=None,
+    cliente="",
+    cliente_nit="",
+    cliente_telefono="",
+    fecha_desde="",
+    fecha_hasta="",
+    fecha_generacion="",
+    saldo_anterior=0.0,
+    movimientos=None,
+    saldo_final=0.0,
+):
+    """
+    Genera el PDF de un estado de cuenta de cartera para enviarle a un
+    cliente: saldo anterior al período, cada movimiento (cargo = orden a
+    crédito, abono = pago) con el saldo corriente después de aplicarlo, y
+    el saldo final. Sirve tanto para un cliente que todavía debe (saldo
+    final > 0) como para uno que ya pagó todo (saldo final <= 0, funciona
+    como comprobante de "paz y salvo").
+
+    `movimientos`: lista de dicts con llaves 'fecha' (str), 'descripcion'
+    (str), 'cargo' (float, 0 si no aplica) y 'abono' (float, 0 si no
+    aplica), ya ordenados cronológicamente.
+    """
+    movimientos = movimientos or []
+
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=False)
+
+    safe_str = _texto_seguro_pdf
+
+    taller_nombre    = safe_str(taller_nombre, "MyTaller")
+    taller_nit       = safe_str(taller_nit)
+    taller_telefono  = safe_str(taller_telefono)
+    taller_direccion = safe_str(taller_direccion)
+    cliente          = safe_str(cliente)
+    cliente_nit      = safe_str(cliente_nit)
+    cliente_telefono = safe_str(cliente_telefono)
+    fecha_desde      = safe_str(fecha_desde, "-")
+    fecha_hasta      = safe_str(fecha_hasta, "-")
+    fecha_generacion = safe_str(fecha_generacion, "-")
+
+    GRIS_OSCURO  = (80, 80, 80)
+    GRIS_MEDIO   = (120, 120, 120)
+    GRIS_CLARO   = (200, 200, 200)
+    NEGRO        = (30, 30, 30)
+    VERDE        = (20, 130, 70)
+    ROJO         = (180, 40, 40)
+
+    MARGEN_INF = 20
+    ALTO_PAGINA = 297
+
+    def dibujar_header_tabla(y):
+        pdf.set_draw_color(*GRIS_CLARO)
+        pdf.line(12, y, 198, y)
+        pdf.set_xy(12, y + 2)
+        pdf.set_font("Helvetica", "B", 8)
+        pdf.set_text_color(*GRIS_OSCURO)
+        pdf.cell(28, 5, "FECHA")
+        pdf.cell(80, 5, "DESCRIPCION")
+        pdf.cell(28, 5, "CARGO", align="R")
+        pdf.cell(28, 5, "ABONO", align="R")
+        pdf.cell(24, 5, "SALDO", align="R")
+        pdf.line(12, y + 7, 198, y + 7)
+        return y + 9
+
+    # ==========================================
+    # HEADER: LOGO | INFO TALLER | TITULO
+    # ==========================================
+    y_header = 12
+    logo_dibujado = False
+    if taller_logo_path and os.path.exists(taller_logo_path):
+        try:
+            pdf.image(taller_logo_path, x=12, y=y_header, w=22, h=22)
+            logo_dibujado = True
+        except Exception:
+            pass
+    if not logo_dibujado:
+        pdf.set_fill_color(180, 180, 180)
+        pdf.rect(12, y_header, 22, 22, "F")
+        pdf.set_font("Helvetica", "", 6)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_xy(12, y_header + 8)
+        pdf.cell(22, 4, "LOGOTIPO", align="C")
+
+    pdf.set_xy(38, y_header)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.set_text_color(*GRIS_OSCURO)
+    pdf.cell(80, 5, taller_nombre)
+
+    pdf.set_font("Helvetica", "", 8)
+    pdf.set_text_color(*GRIS_MEDIO)
+    pdf.set_xy(38, y_header + 6)
+    pdf.cell(80, 4, taller_direccion if taller_direccion else "Direccion, Ciudad, Pais")
+    if taller_nit:
+        pdf.set_xy(38, y_header + 10)
+        pdf.cell(80, 4, f"NIT: {taller_nit}")
+    if taller_telefono:
+        pdf.set_xy(38, y_header + 14)
+        pdf.cell(80, 4, f"Tel: {taller_telefono}")
+
+    pdf.set_xy(120, y_header)
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.set_text_color(*NEGRO)
+    pdf.cell(75, 6, "ESTADO DE CUENTA", align="R")
+
+    pdf.set_xy(120, y_header + 8)
+    pdf.set_font("Helvetica", "", 8)
+    pdf.set_text_color(*GRIS_MEDIO)
+    pdf.cell(75, 4, f"Generado: {fecha_generacion}", align="R")
+
+    pdf.set_xy(120, y_header + 12)
+    pdf.cell(75, 4, f"Periodo: {fecha_desde} a {fecha_hasta}", align="R")
+
+    pdf.set_draw_color(*GRIS_OSCURO)
+    pdf.set_line_width(0.8)
+    pdf.line(12, 37, 198, 37)
+
+    # ==========================================
+    # CLIENTE
+    # ==========================================
+    y_cli = 43
+    pdf.set_xy(12, y_cli)
+    pdf.set_font("Helvetica", "B", 8)
+    pdf.set_text_color(*GRIS_OSCURO)
+    pdf.cell(0, 4, "CLIENTE")
+
+    pdf.set_xy(12, y_cli + 5)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(0, 4, cliente)
+    pdf.set_xy(12, y_cli + 10)
+    pdf.set_font("Helvetica", "", 8)
+    pdf.set_text_color(*GRIS_MEDIO)
+    linea_cliente = f"NIT/CC: {cliente_nit}" if cliente_nit else "NIT/CC: ---"
+    if cliente_telefono:
+        linea_cliente += f"   |   Tel: {cliente_telefono}"
+    pdf.cell(0, 4, linea_cliente)
+
+    # ==========================================
+    # SALDO ANTERIOR
+    # ==========================================
+    y_sa = y_cli + 18
+    pdf.set_draw_color(*GRIS_CLARO)
+    pdf.line(12, y_sa, 198, y_sa)
+    pdf.set_xy(12, y_sa + 2)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(*GRIS_OSCURO)
+    pdf.cell(80, 5, "Saldo anterior al periodo:")
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.cell(30, 5, f"${saldo_anterior:,.0f}".replace(",", "."), align="R")
+
+    # ==========================================
+    # TABLA DE MOVIMIENTOS
+    # ==========================================
+    y_item = dibujar_header_tabla(y_sa + 9)
+    pdf.set_font("Helvetica", "", 8)
+    pdf.set_text_color(*GRIS_OSCURO)
+
+    if not movimientos:
+        pdf.set_xy(12, y_item)
+        pdf.set_text_color(*GRIS_MEDIO)
+        pdf.cell(0, 5, "Sin movimientos registrados en este periodo.")
+        y_item += 6
+    else:
+        saldo_corriente = saldo_anterior
+        for mov in movimientos:
+            if y_item > ALTO_PAGINA - MARGEN_INF - 10:
+                pdf.add_page()
+                y_item = dibujar_header_tabla(15)
+                pdf.set_font("Helvetica", "", 8)
+                pdf.set_text_color(*GRIS_OSCURO)
+
+            cargo = float(mov.get('cargo', 0) or 0)
+            abono = float(mov.get('abono', 0) or 0)
+            saldo_corriente += cargo - abono
+
+            pdf.set_xy(12, y_item)
+            pdf.cell(28, 5, safe_str(mov.get('fecha', '')))
+            pdf.cell(80, 5, safe_str(mov.get('descripcion', ''))[:55])
+            pdf.cell(28, 5, f"${cargo:,.0f}".replace(",", ".") if cargo else "", align="R")
+            pdf.cell(28, 5, f"${abono:,.0f}".replace(",", ".") if abono else "", align="R")
+            pdf.cell(24, 5, f"${saldo_corriente:,.0f}".replace(",", "."), align="R")
+            y_item += 5
+
+            pdf.set_draw_color(230, 230, 230)
+            pdf.line(12, y_item, 198, y_item)
+            y_item += 1
+
+    # ==========================================
+    # SALDO FINAL
+    # ==========================================
+    if y_item > ALTO_PAGINA - MARGEN_INF - 25:
+        pdf.add_page()
+        y_item = 15
+
+    y_item += 4
+    pdf.set_draw_color(*GRIS_OSCURO)
+    pdf.line(130, y_item, 198, y_item)
+    y_item += 2
+
+    pdf.set_xy(130, y_item)
+    pdf.set_font("Helvetica", "B", 11)
+    color_saldo = ROJO if saldo_final > 0 else VERDE
+    pdf.set_text_color(*color_saldo)
+    pdf.cell(35, 7, "Saldo Final")
+    pdf.cell(33, 7, f"${saldo_final:,.0f}".replace(",", "."), align="R")
+    y_item += 10
+
+    pdf.set_xy(12, y_item)
+    pdf.set_font("Helvetica", "B", 9)
+    if saldo_final > 0:
+        pdf.set_text_color(*ROJO)
+        pdf.cell(0, 5, "Saldo pendiente por cobrar.")
+    else:
+        pdf.set_text_color(*VERDE)
+        pdf.cell(0, 5, "Cliente al dia - sin saldo pendiente (paz y salvo).")
+    y_item += 10
+
+    # ==========================================
+    # PIE DE PAGINA
+    # ==========================================
+    pdf.set_xy(12, y_item)
+    pdf.set_font("Helvetica", "", 7)
+    pdf.set_text_color(*GRIS_MEDIO)
+    pdf.cell(0, 4, "Documento informativo de cartera. Ante cualquier diferencia, contactar al taller.")
+
+    return bytes(pdf.output())
