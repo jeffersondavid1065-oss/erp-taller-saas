@@ -20,7 +20,7 @@ import calendar
 import streamlit as st
 import pandas as pd
 from datetime import date
-from sqlalchemy import text
+from sqlalchemy import text, bindparam
 from db import obtener_conexion
 
 
@@ -1176,3 +1176,89 @@ def eliminar_cotizacion(uid, cotizacion_id):
 def invalidar_cache_cotizaciones():
     """Llamar tras crear, convertir o eliminar una cotización."""
     obtener_cotizaciones.clear()
+
+
+# ==========================================
+# ADELANTOS DE NÓMINA A MECÁNICOS
+# ==========================================
+def registrar_adelanto(uid, mecanico_id, monto, motivo=None):
+    """Registra un adelanto de nómina que un mecánico pidió antes de la
+    fecha de pago. Queda pendiente (descontado=False) hasta que se liquide
+    su nómina, momento en el que se descuenta con marcar_adelantos_descontados."""
+    engine = obtener_conexion()
+    with engine.begin() as conn:
+        conn.execute(text('''
+            INSERT INTO Adelantos_Mecanicos (usuario_id, mecanico_id, monto, motivo)
+            VALUES (:uid, :mid, :monto, :motivo)
+        '''), {"uid": uid, "mid": mecanico_id, "monto": float(monto), "motivo": motivo})
+    invalidar_cache_adelantos()
+
+
+@st.cache_data(ttl=20)
+def obtener_adelantos_pendientes_mecanico(uid, mecanico_id):
+    """Adelantos de un mecánico puntual que todavía no se han descontado de
+    ninguna liquidación, más antiguos primero (así se ven en el orden en
+    que se pidieron)."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        return conn.execute(text('''
+            SELECT id, monto, fecha, motivo
+            FROM Adelantos_Mecanicos
+            WHERE usuario_id = :uid AND mecanico_id = :mid AND descontado = FALSE
+            ORDER BY fecha ASC
+        '''), {"uid": uid, "mid": mecanico_id}).fetchall()
+
+
+@st.cache_data(ttl=20)
+def obtener_todos_adelantos_pendientes(uid):
+    """Todos los adelantos pendientes de todo el taller, con el nombre del
+    mecánico, para la vista general de la pestaña Adelantos (sin tener que
+    entrar mecánico por mecánico para saber quién debe)."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        return pd.read_sql_query(text('''
+            SELECT a.id, m.nombre as mecanico, a.monto, a.fecha, a.motivo
+            FROM Adelantos_Mecanicos a
+            JOIN Mecanicos m ON a.mecanico_id = m.id
+            WHERE a.usuario_id = :uid AND a.descontado = FALSE
+            ORDER BY a.fecha ASC
+        '''), con=conn, params={"uid": uid})
+
+
+def marcar_adelantos_descontados(uid, adelanto_ids):
+    """Marca como descontados los adelantos indicados (se llama al confirmar
+    una liquidación de nómina), para que no se vuelvan a mostrar como
+    pendientes ni se descuenten dos veces."""
+    if not adelanto_ids:
+        return
+    engine = obtener_conexion()
+    with engine.begin() as conn:
+        conn.execute(text('''
+            UPDATE Adelantos_Mecanicos
+            SET descontado = TRUE, fecha_descuento = CURRENT_TIMESTAMP
+            WHERE usuario_id = :uid AND id IN :ids AND descontado = FALSE
+        ''').bindparams(bindparam("ids", expanding=True)), {"uid": uid, "ids": list(adelanto_ids)})
+    invalidar_cache_adelantos()
+
+
+def eliminar_adelanto(uid, adelanto_id):
+    """Elimina un adelanto que se anotó por error. Lanza ValueError si ya
+    fue descontado de una liquidación (para no perder el rastro contable)."""
+    engine = obtener_conexion()
+    with engine.begin() as conn:
+        descontado = conn.execute(text('''
+            SELECT descontado FROM Adelantos_Mecanicos WHERE id = :aid AND usuario_id = :uid
+        '''), {"aid": adelanto_id, "uid": uid}).scalar()
+
+        if descontado:
+            raise ValueError("No se puede eliminar un adelanto que ya fue descontado de una liquidación.")
+
+        conn.execute(text("DELETE FROM Adelantos_Mecanicos WHERE id = :aid AND usuario_id = :uid"),
+                     {"aid": adelanto_id, "uid": uid})
+    invalidar_cache_adelantos()
+
+
+def invalidar_cache_adelantos():
+    """Llamar tras registrar, descontar o eliminar un adelanto."""
+    obtener_adelantos_pendientes_mecanico.clear()
+    obtener_todos_adelantos_pendientes.clear()

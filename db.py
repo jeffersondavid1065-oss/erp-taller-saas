@@ -250,6 +250,22 @@ def init_db():
                     FOREIGN KEY (hoja_id) REFERENCES Hojas_Trabajo(id) ON DELETE CASCADE
                 )
             '''))
+            # --- NUEVO: Adelantos de nómina a mecánicos (para descontarlos en
+            # la siguiente liquidación, en vez de anotarlos aparte) ---
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS Adelantos_Mecanicos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    usuario_id INTEGER NOT NULL,
+                    mecanico_id INTEGER NOT NULL,
+                    monto REAL NOT NULL DEFAULT 0,
+                    fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    motivo TEXT,
+                    descontado BOOLEAN DEFAULT 0,
+                    fecha_descuento TIMESTAMP,
+                    FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE,
+                    FOREIGN KEY (mecanico_id) REFERENCES Mecanicos(id) ON DELETE CASCADE
+                )
+            '''))
         else:
             conn.execute(text('''
                 CREATE TABLE IF NOT EXISTS Usuarios (
@@ -452,6 +468,22 @@ def init_db():
                     FOREIGN KEY (hoja_id) REFERENCES Hojas_Trabajo(id) ON DELETE CASCADE
                 )
             '''))
+            # --- NUEVO: Adelantos de nómina a mecánicos (para descontarlos en
+            # la siguiente liquidación, en vez de anotarlos aparte) ---
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS Adelantos_Mecanicos (
+                    id SERIAL PRIMARY KEY,
+                    usuario_id INTEGER NOT NULL,
+                    mecanico_id INTEGER NOT NULL,
+                    monto NUMERIC(12,2) NOT NULL DEFAULT 0,
+                    fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    motivo TEXT,
+                    descontado BOOLEAN DEFAULT FALSE,
+                    fecha_descuento TIMESTAMP,
+                    FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE,
+                    FOREIGN KEY (mecanico_id) REFERENCES Mecanicos(id) ON DELETE CASCADE
+                )
+            '''))
 
         # ==========================================
         # ÍNDICES
@@ -474,6 +506,8 @@ def init_db():
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_abonos_taller_usuario ON Abonos_Taller(usuario_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_cotizaciones_usuario ON Cotizaciones(usuario_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_detalles_cotizacion_cotizacion ON Detalles_Cotizacion(cotizacion_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_adelantos_mecanicos_mecanico ON Adelantos_Mecanicos(mecanico_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_adelantos_mecanicos_usuario_descontado ON Adelantos_Mecanicos(usuario_id, descontado)"))
 
         # ==========================================
         # MIGRACIONES SEGURAS
