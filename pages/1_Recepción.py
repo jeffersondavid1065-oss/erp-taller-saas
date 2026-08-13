@@ -11,6 +11,13 @@ from pdf_utils import IVA_OPCIONES
 
 init_db()
 
+_mostrar_animacion_pagina = st.session_state.get("_ultima_pagina_animada") != "recepcion"
+st.session_state["_ultima_pagina_animada"] = "recepcion"
+_anim_pagina_css = (
+    '<style>[data-testid="stAppViewBlockContainer"] { animation: fade-in-up 0.6s ease-out !important; }</style>'
+    if _mostrar_animacion_pagina else ""
+)
+
 st.markdown("""
     <style>
     header::after {
@@ -32,10 +39,9 @@ st.markdown("""
         0% { opacity: 0; transform: translateY(20px); }
         100% { opacity: 1; transform: translateY(0); }
     }
-    [data-testid="stAppViewBlockContainer"] { animation: fade-in-up 0.6s ease-out !important; }
-    div[data-testid="stVerticalBlock"] > div { animation: fade-in-up 0.5s ease-out !important; }
+    [data-testid="stExpanderDetails"], [role="tabpanel"] { animation: fade-in-up 0.4s ease-out !important; }
     </style>
-""", unsafe_allow_html=True)
+""" + _anim_pagina_css, unsafe_allow_html=True)
 
 # --------------------------------------------------------------------------------
 # AUTENTICACIÓN
