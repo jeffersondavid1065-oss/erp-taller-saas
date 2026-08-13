@@ -51,7 +51,7 @@ if not st.session_state.auth["logged"]:
 
 # Bloqueo de rol: los operarios de Patio solo tienen acceso a Recepción.
 if st.session_state.auth.get("rol") == "patio":
-    st.warning("Tu usuario solo tiene acceso al módulo de Recepción de Vehículos.")
+    st.warning("🔒 Tu usuario solo tiene acceso al módulo de Recepción de Vehículos.")
     st.stop()
 
 engine = obtener_conexion()
@@ -327,7 +327,7 @@ with tab_operarios:
                                 }
                             )
                         invalidar_cache_operarios()
-                        st.success(f"Operario '{nombre_op}' creado con éxito.")
+                        st.success(f"✅ Operario '{nombre_op}' creado con éxito.")
                         st.rerun()
                     except Exception as e:
                         if "UNIQUE" in str(e).upper() or "duplicate" in str(e).lower():

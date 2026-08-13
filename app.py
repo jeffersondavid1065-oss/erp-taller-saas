@@ -470,7 +470,7 @@ def panel_principal():
             total_vencido_dash = vencidos_dash['saldo_pendiente'].sum()
             st.markdown("---")
             st.error(
-                f"Tienes **{len(vencidos_dash)} crédito(s) vencido(s)** por "
+                f"⚠️ Tienes **{len(vencidos_dash)} crédito(s) vencido(s)** por "
                 f"{formato_cop(total_vencido_dash)}. Revisa el detalle en el módulo **Cartera**."
             )
 

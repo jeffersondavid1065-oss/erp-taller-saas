@@ -62,7 +62,7 @@ if not st.session_state.auth["logged"]:
 
 # Bloqueo de rol: los operarios de Patio solo tienen acceso a Recepción.
 if st.session_state.auth.get("rol") == "patio":
-    st.warning("Tu usuario solo tiene acceso al módulo de Recepción de Vehículos.")
+    st.warning("🔒 Tu usuario solo tiene acceso al módulo de Recepción de Vehículos.")
     st.stop()
 
 engine = obtener_conexion()
@@ -804,7 +804,7 @@ with tab_cotizaciones:
                     st.caption(f"Creada: {cot.fecha_creacion}")
                 with col_h3:
                     if cot.convertida_a_hoja_id:
-                        st.success(f"Convertida en Orden #{cot.numero_orden}")
+                        st.success(f"✅ Convertida en Orden #{cot.numero_orden}")
                     else:
                         st.warning("⏳ Pendiente de convertir")
 
@@ -908,7 +908,7 @@ with tab_cotizaciones:
                                         st.error(mensaje_error_amigable(e, "convertir la cotización"))
 
                             st.markdown("---")
-                            if st.button("Eliminar Cotización", key=f"del_cot_{cot.id}"):
+                            if st.button("🗑️ Eliminar Cotización", key=f"del_cot_{cot.id}"):
                                 st.session_state[f"confirm_del_cot_{cot.id}"] = True
 
                             if st.session_state.get(f"confirm_del_cot_{cot.id}", False):

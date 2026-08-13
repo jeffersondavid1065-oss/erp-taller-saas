@@ -40,7 +40,7 @@ if not st.session_state.auth["logged"]:
     st.stop()
 
 if st.session_state.auth.get("rol") == "patio":
-    st.warning("Tu usuario solo tiene acceso al módulo de Recepción de Vehículos.")
+    st.warning("🔒 Tu usuario solo tiene acceso al módulo de Recepción de Vehículos.")
     st.stop()
 
 engine = obtener_conexion()
@@ -150,7 +150,7 @@ with tab_stock:
             st.warning("No se encontraron productos que coincidan con la búsqueda.")
         else:
             if len(df_inv) == LIMITE_FILAS and total_productos > LIMITE_FILAS:
-                st.caption(f"Mostrando los primeros {LIMITE_FILAS} de {total_productos} productos.")
+                st.caption(f"⚠️ Mostrando los primeros {LIMITE_FILAS} de {total_productos} productos.")
 
             st.caption("Edita directamente en la tabla y haz clic en guardar.")
 
@@ -312,7 +312,7 @@ with tab_nuevo:
                         })
                     obtener_metricas_inventario.clear()
                     invalidar_cache_inventario()
-                    st.success(f"'{nom_p}' registrado — {formato_cant(stk_p, unidad_p)} en stock a {formato_cop(venta_p)}/{unidad_p} ({iva_tipo_p}).")
+                    st.success(f"✅ '{nom_p}' registrado — {formato_cant(stk_p, unidad_p)} en stock a {formato_cop(venta_p)}/{unidad_p} ({iva_tipo_p}).")
                     st.rerun()
                 except Exception as e:
                     st.error(mensaje_error_amigable(e, "guardar el producto"))
@@ -331,7 +331,7 @@ with tab_entradas:
         api_key_gemini = st.secrets["gemini"]["api_key"]
         gemini_ok = True
     except Exception:
-        st.warning("Gemini no configurado. Agrega `[gemini] api_key = 'tu-key'` en Streamlit Secrets.")
+        st.warning("⚠️ Gemini no configurado. Agrega `[gemini] api_key = 'tu-key'` en Streamlit Secrets.")
 
     col_cab1, col_cab2 = st.columns(2)
     with col_cab1:
@@ -367,7 +367,7 @@ with tab_entradas:
                             ]
                             if datos.get("numero_factura"):
                                 st.session_state.nf_taller = datos["numero_factura"]
-                            st.success(f"IA detectó **{len(datos['productos'])} repuesto(s)**.")
+                            st.success(f"✅ IA detectó **{len(datos['productos'])} repuesto(s)**.")
                             st.rerun()
                         else:
                             st.error("No se detectaron productos. Intenta con imagen más clara.")
@@ -395,7 +395,7 @@ with tab_entradas:
             )
             st.rerun()
     with col_btn2:
-        if st.button("Limpiar todo", width='stretch', key="btn_clear_taller"):
+        if st.button("🗑️ Limpiar todo", width='stretch', key="btn_clear_taller"):
             st.session_state.confirmar_limpiar_taller = True
 
     if st.session_state.get("confirmar_limpiar_taller", False):
@@ -440,12 +440,12 @@ with tab_entradas:
                 with col_h1:
                     if producto_match is not None:
                         um = producto_match.get('unidad_medida', 'Unidad')
-                        st.success(f"Encontrado: **{producto_match['nombre_producto']}** "
+                        st.success(f"✅ Encontrado: **{producto_match['nombre_producto']}** "
                                    f"(Stock: {formato_cant(producto_match['stock_actual'], um)})")
                     else:
-                        st.warning("Repuesto nuevo — se creará en el inventario")
+                        st.warning("⚠️ Repuesto nuevo — se creará en el inventario")
                 with col_h2:
-                    if st.button("Quitar", key=f"del_t_{i}", help="Quitar este repuesto de la lista"):
+                    if st.button("🗑️ Quitar", key=f"del_t_{i}", help="Quitar este repuesto de la lista"):
                         items_a_eliminar.append(i)
 
                 col_f1, col_f2, col_f3, col_f4 = st.columns([3, 1, 1, 1])
@@ -576,7 +576,7 @@ with tab_entradas:
                     st.session_state.items_entrada_taller = []
                     if "nf_taller" in st.session_state:
                         del st.session_state.nf_taller
-                    st.success(f"Entrada registrada: **{nuevos}** nuevo(s), **{actualizados}** actualizado(s).")
+                    st.success(f"✅ Entrada registrada: **{nuevos}** nuevo(s), **{actualizados}** actualizado(s).")
                     st.rerun()
                 except Exception as e:
                     st.error(mensaje_error_amigable(e, "registrar la entrada de mercancía"))

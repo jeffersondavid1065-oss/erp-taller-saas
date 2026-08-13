@@ -43,7 +43,7 @@ if not st.session_state.auth["logged"]:
     
     # Bloqueo de rol: los operarios de Patio solo tienen acceso a Recepción.
 if st.session_state.auth.get("rol") == "patio":
-    st.warning("Tu usuario solo tiene acceso al módulo de Recepción de Vehículos.")
+    st.warning("🔒 Tu usuario solo tiene acceso al módulo de Recepción de Vehículos.")
     st.stop()
 
 engine = obtener_conexion()
@@ -159,7 +159,7 @@ with engine.connect() as conn:
 
 if not df_trabajos.empty:
     if hay_filtros_activos and len(df_trabajos) == 200:
-        st.caption("Mostrando los 200 resultados más recientes que coinciden con el filtro. Afina la búsqueda para ver un rango más preciso.")
+        st.caption("⚠️ Mostrando los 200 resultados más recientes que coinciden con el filtro. Afina la búsqueda para ver un rango más preciso.")
 
     df_para_editar = df_trabajos.drop(columns=['fecha_ingreso'])
     
