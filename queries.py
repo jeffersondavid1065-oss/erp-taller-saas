@@ -797,3 +797,229 @@ def resolver_id_por_numero_orden(uid, numero_orden):
         return conn.execute(text('''
             SELECT id FROM Hojas_Trabajo WHERE usuario_id = :uid AND numero_orden = :num
         '''), {"uid": uid, "num": numero_orden}).scalar()
+
+
+# ==========================================
+# COTIZACIONES (previas a convertirse en una orden real)
+# ==========================================
+def obtener_siguiente_numero_cotizacion(conn, uid):
+    """Igual que obtener_siguiente_numero_orden pero con su propia secuencia
+    (Contadores_Cotizacion), independiente de la numeración de órdenes reales
+    - así una cotización que nunca se convierte no deja huecos en los
+    números de orden. Debe llamarse dentro de la misma transacción que
+    inserta la Cotización."""
+    conn.execute(text('''
+        INSERT INTO Contadores_Cotizacion (usuario_id, ultimo_numero) VALUES (:uid, 1)
+        ON CONFLICT (usuario_id) DO UPDATE SET ultimo_numero = Contadores_Cotizacion.ultimo_numero + 1
+    '''), {"uid": uid})
+    return conn.execute(
+        text("SELECT ultimo_numero FROM Contadores_Cotizacion WHERE usuario_id = :uid"), {"uid": uid}
+    ).scalar()
+
+
+def crear_cotizacion(uid, placa, marca, modelo, empresa_id, items):
+    """Guarda una cotización con sus ítems. A diferencia de una orden real,
+    NO descuenta stock de Inventario ni exige mecánico en los ítems de mano
+    de obra - eso solo ocurre al convertirla en orden (convertir_cotizacion_a_orden).
+    `items`: lista de dicts con las mismas llaves que usa el carrito de
+    Recepción (Tipo, Descripción, Costo, PVP Cliente, IVA_Tipo, Inventario_ID,
+    Cantidad_Descontar). Retorna el número de cotización asignado."""
+    engine = obtener_conexion()
+    with engine.begin() as conn:
+        numero_cotizacion = obtener_siguiente_numero_cotizacion(conn, uid)
+        is_sqlite = "sqlite" in str(engine.url)
+
+        if is_sqlite:
+            cursor = conn.execute(
+                text('''INSERT INTO Cotizaciones (usuario_id, numero_cotizacion, placa, marca, modelo, empresa_id)
+                        VALUES (:uid, :num, :placa, :marca, :modelo, :eid)'''),
+                {"uid": uid, "num": numero_cotizacion, "placa": placa, "marca": marca or None,
+                 "modelo": modelo or None, "eid": empresa_id}
+            )
+            cotizacion_id = cursor.lastrowid
+        else:
+            resultado = conn.execute(
+                text('''INSERT INTO Cotizaciones (usuario_id, numero_cotizacion, placa, marca, modelo, empresa_id)
+                        VALUES (:uid, :num, :placa, :marca, :modelo, :eid) RETURNING id'''),
+                {"uid": uid, "num": numero_cotizacion, "placa": placa, "marca": marca or None,
+                 "modelo": modelo or None, "eid": empresa_id}
+            )
+            cotizacion_id = resultado.scalar()
+
+        for item in items:
+            conn.execute(
+                text('''INSERT INTO Detalles_Cotizacion
+                        (cotizacion_id, tipo_item, descripcion, costo_compra, precio_venta, iva_tipo,
+                         inventario_id, cantidad_descontar)
+                        VALUES (:cid, :tipo, :desc, :costo, :pvp, :iva_tipo, :inv_id, :cant)'''),
+                {
+                    "cid": cotizacion_id, "tipo": item['Tipo'], "desc": item['Descripción'],
+                    "costo": float(item.get('Costo', 0) or 0), "pvp": float(item['PVP Cliente']),
+                    "iva_tipo": item.get('IVA_Tipo', 'Excluido'),
+                    "inv_id": item.get('Inventario_ID'), "cant": item.get('Cantidad_Descontar', 0) or 0,
+                }
+            )
+    invalidar_cache_cotizaciones()
+    return numero_cotizacion
+
+
+@st.cache_data(ttl=20)
+def obtener_cotizaciones(uid):
+    """Lista de cotizaciones del taller (convertidas o no), más recientes primero."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        query = text('''
+            SELECT c.id, c.numero_cotizacion, c.placa, c.marca, c.modelo,
+                   e.razon_social, c.fecha_creacion, c.convertida_a_hoja_id, h.numero_orden
+            FROM Cotizaciones c
+            JOIN Empresas_Clientes e ON c.empresa_id = e.id
+            LEFT JOIN Hojas_Trabajo h ON c.convertida_a_hoja_id = h.id
+            WHERE c.usuario_id = :uid
+            ORDER BY c.id DESC
+        ''')
+        return conn.execute(query, {"uid": uid}).fetchall()
+
+
+def obtener_cotizacion_detalle(uid, cotizacion_id):
+    """Encabezado (fila) + ítems (DataFrame) de una cotización puntual. Sin
+    caché: se consulta al abrirla, no en cada rerun de la página."""
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        encabezado = conn.execute(text('''
+            SELECT c.id, c.numero_cotizacion, c.placa, c.marca, c.modelo, c.empresa_id,
+                   e.razon_social, e.nit, c.fecha_creacion, c.convertida_a_hoja_id, h.numero_orden
+            FROM Cotizaciones c
+            JOIN Empresas_Clientes e ON c.empresa_id = e.id
+            LEFT JOIN Hojas_Trabajo h ON c.convertida_a_hoja_id = h.id
+            WHERE c.id = :cid AND c.usuario_id = :uid
+        '''), {"cid": cotizacion_id, "uid": uid}).fetchone()
+
+        if not encabezado:
+            return None, None
+
+        df_items = pd.read_sql_query(text('''
+            SELECT id, tipo_item, descripcion, precio_venta, iva_tipo, inventario_id, cantidad_descontar
+            FROM Detalles_Cotizacion WHERE cotizacion_id = :cid
+        '''), con=conn, params={"cid": cotizacion_id})
+
+    return encabezado, df_items
+
+
+def convertir_cotizacion_a_orden(uid, cotizacion_id, estado, mecanicos_por_item):
+    """Convierte una cotización en una orden real (Hojas_Trabajo + Detalles_Orden):
+    - Cada ítem de 'Mano de Obra' debe traer un mecánico asignado en
+      `mecanicos_por_item` ({detalle_id: mecanico_id}), obligatorio recién
+      en este paso (la cotización no lo exigía).
+    - Los ítems de 'Repuesto' que vinieron del almacén propio (inventario_id)
+      descuentan stock apenas ahora - una cotización nunca lo hizo, así que
+      se valida que siga habiendo suficiente disponible.
+    Retorna el número de la nueva orden. Lanza ValueError con un mensaje
+    entendible si falta un mecánico o no alcanza el stock."""
+    engine = obtener_conexion()
+    with engine.begin() as conn:
+        is_sqlite = "sqlite" in str(engine.url)
+
+        cot = conn.execute(text('''
+            SELECT placa, marca, modelo, empresa_id, convertida_a_hoja_id
+            FROM Cotizaciones WHERE id = :cid AND usuario_id = :uid
+        '''), {"cid": cotizacion_id, "uid": uid}).fetchone()
+
+        if not cot:
+            raise ValueError("Esa cotización no existe.")
+        if cot.convertida_a_hoja_id:
+            raise ValueError("Esta cotización ya fue convertida en una orden.")
+
+        items = conn.execute(text('''
+            SELECT id, tipo_item, descripcion, costo_compra, precio_venta, iva_tipo,
+                   inventario_id, cantidad_descontar
+            FROM Detalles_Cotizacion WHERE cotizacion_id = :cid
+        '''), {"cid": cotizacion_id}).fetchall()
+
+        for item in items:
+            if item.tipo_item == 'Mano de Obra' and not mecanicos_por_item.get(item.id):
+                raise ValueError(f"Falta asignar un mecánico al ítem '{item.descripcion}'.")
+            if item.inventario_id:
+                stock_actual = conn.execute(
+                    text("SELECT stock_actual FROM Inventario WHERE id = :iid AND usuario_id = :uid"),
+                    {"iid": item.inventario_id, "uid": uid}
+                ).scalar()
+                if stock_actual is None or float(stock_actual) < float(item.cantidad_descontar or 0):
+                    raise ValueError(
+                        f"Ya no hay suficiente stock de '{item.descripcion}' para convertir esta cotización "
+                        f"(disponible: {stock_actual if stock_actual is not None else 0})."
+                    )
+
+        numero_orden = obtener_siguiente_numero_orden(conn, uid)
+
+        if is_sqlite:
+            cursor = conn.execute(
+                text('''INSERT INTO Hojas_Trabajo (usuario_id, numero_orden, placa, marca, modelo, empresa_id, estado)
+                        VALUES (:uid, :num, :placa, :marca, :modelo, :eid, :estado)'''),
+                {"uid": uid, "num": numero_orden, "placa": cot.placa, "marca": cot.marca,
+                 "modelo": cot.modelo, "eid": cot.empresa_id, "estado": estado}
+            )
+            hoja_id = cursor.lastrowid
+        else:
+            resultado = conn.execute(
+                text('''INSERT INTO Hojas_Trabajo (usuario_id, numero_orden, placa, marca, modelo, empresa_id, estado)
+                        VALUES (:uid, :num, :placa, :marca, :modelo, :eid, :estado) RETURNING id'''),
+                {"uid": uid, "num": numero_orden, "placa": cot.placa, "marca": cot.marca,
+                 "modelo": cot.modelo, "eid": cot.empresa_id, "estado": estado}
+            )
+            hoja_id = resultado.scalar()
+
+        hay_items_de_almacen = False
+        for item in items:
+            mecanico_id = mecanicos_por_item.get(item.id) if item.tipo_item == 'Mano de Obra' else None
+            conn.execute(
+                text('''INSERT INTO Detalles_Orden
+                        (hoja_id, tipo_item, descripcion, mecanico_id, costo_compra, precio_venta, iva_tipo)
+                        VALUES (:hid, :tipo, :desc, :mec_id, :costo, :pvp, :iva_tipo)'''),
+                {
+                    "hid": hoja_id, "tipo": item.tipo_item, "desc": item.descripcion,
+                    "mec_id": mecanico_id, "costo": float(item.costo_compra or 0),
+                    "pvp": float(item.precio_venta), "iva_tipo": item.iva_tipo,
+                }
+            )
+            if item.inventario_id:
+                hay_items_de_almacen = True
+                conn.execute(
+                    text('''UPDATE Inventario SET stock_actual = stock_actual - :cant
+                            WHERE id = :iid AND stock_actual >= :cant'''),
+                    {"cant": item.cantidad_descontar, "iid": item.inventario_id}
+                )
+
+        conn.execute(text('''
+            UPDATE Cotizaciones SET convertida_a_hoja_id = :hid, fecha_conversion = CURRENT_TIMESTAMP
+            WHERE id = :cid
+        '''), {"hid": hoja_id, "cid": cotizacion_id})
+
+    invalidar_cache_cotizaciones()
+    invalidar_cache_ordenes()
+    if hay_items_de_almacen:
+        invalidar_cache_inventario()
+
+    return numero_orden
+
+
+def eliminar_cotizacion(uid, cotizacion_id):
+    """Elimina una cotización (y sus ítems) que todavía no se ha convertido
+    en orden real. Lanza ValueError si ya fue convertida."""
+    engine = obtener_conexion()
+    with engine.begin() as conn:
+        convertida = conn.execute(text('''
+            SELECT convertida_a_hoja_id FROM Cotizaciones WHERE id = :cid AND usuario_id = :uid
+        '''), {"cid": cotizacion_id, "uid": uid}).scalar()
+
+        if convertida:
+            raise ValueError("No se puede eliminar una cotización que ya fue convertida en orden.")
+
+        conn.execute(text("DELETE FROM Detalles_Cotizacion WHERE cotizacion_id = :cid"), {"cid": cotizacion_id})
+        conn.execute(text("DELETE FROM Cotizaciones WHERE id = :cid AND usuario_id = :uid"),
+                     {"cid": cotizacion_id, "uid": uid})
+    invalidar_cache_cotizaciones()
+
+
+def invalidar_cache_cotizaciones():
+    """Llamar tras crear, convertir o eliminar una cotización."""
+    obtener_cotizaciones.clear()

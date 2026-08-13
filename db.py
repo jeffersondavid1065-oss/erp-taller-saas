@@ -120,6 +120,48 @@ def init_db():
                     comision_mecanico REAL DEFAULT 0
                 )
             '''))
+            # --- NUEVO: Cotizaciones (previo a convertirse en una Hoja_Trabajo
+            # real). Tabla separada a propósito, no un estado más de
+            # Hojas_Trabajo: así ninguna consulta existente (dashboard, nómina,
+            # pendientes, cartera, análisis financiero...) necesita filtrarlas,
+            # y una cotización nunca descuenta stock ni exige mecánico hasta
+            # que se convierte en orden real. ---
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS Contadores_Cotizacion (
+                    usuario_id INTEGER PRIMARY KEY,
+                    ultimo_numero INTEGER NOT NULL DEFAULT 0
+                )
+            '''))
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS Cotizaciones (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    usuario_id INTEGER NOT NULL,
+                    numero_cotizacion INTEGER,
+                    placa TEXT NOT NULL,
+                    marca TEXT,
+                    modelo TEXT,
+                    empresa_id INTEGER,
+                    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    convertida_a_hoja_id INTEGER,
+                    fecha_conversion TIMESTAMP,
+                    FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE,
+                    FOREIGN KEY (convertida_a_hoja_id) REFERENCES Hojas_Trabajo(id) ON DELETE SET NULL
+                )
+            '''))
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS Detalles_Cotizacion (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    cotizacion_id INTEGER NOT NULL,
+                    tipo_item TEXT CHECK(tipo_item IN ('Mano de Obra', 'Repuesto')),
+                    descripcion TEXT NOT NULL,
+                    costo_compra REAL DEFAULT 0,
+                    precio_venta REAL NOT NULL,
+                    iva_tipo TEXT,
+                    inventario_id INTEGER,
+                    cantidad_descontar REAL DEFAULT 0,
+                    FOREIGN KEY (cotizacion_id) REFERENCES Cotizaciones(id) ON DELETE CASCADE
+                )
+            '''))
             conn.execute(text('''
                 CREATE TABLE IF NOT EXISTS Inventario (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -277,6 +319,48 @@ def init_db():
                     comision_mecanico REAL DEFAULT 0
                 )
             '''))
+            # --- NUEVO: Cotizaciones (previo a convertirse en una Hoja_Trabajo
+            # real). Tabla separada a propósito, no un estado más de
+            # Hojas_Trabajo: así ninguna consulta existente (dashboard, nómina,
+            # pendientes, cartera, análisis financiero...) necesita filtrarlas,
+            # y una cotización nunca descuenta stock ni exige mecánico hasta
+            # que se convierte en orden real. ---
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS Contadores_Cotizacion (
+                    usuario_id INTEGER PRIMARY KEY,
+                    ultimo_numero INTEGER NOT NULL DEFAULT 0
+                )
+            '''))
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS Cotizaciones (
+                    id SERIAL PRIMARY KEY,
+                    usuario_id INTEGER NOT NULL,
+                    numero_cotizacion INTEGER,
+                    placa TEXT NOT NULL,
+                    marca TEXT,
+                    modelo TEXT,
+                    empresa_id INTEGER,
+                    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    convertida_a_hoja_id INTEGER,
+                    fecha_conversion TIMESTAMP,
+                    FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE,
+                    FOREIGN KEY (convertida_a_hoja_id) REFERENCES Hojas_Trabajo(id) ON DELETE SET NULL
+                )
+            '''))
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS Detalles_Cotizacion (
+                    id SERIAL PRIMARY KEY,
+                    cotizacion_id INTEGER NOT NULL,
+                    tipo_item TEXT CHECK(tipo_item IN ('Mano de Obra', 'Repuesto')),
+                    descripcion TEXT NOT NULL,
+                    costo_compra REAL DEFAULT 0,
+                    precio_venta REAL NOT NULL,
+                    iva_tipo TEXT,
+                    inventario_id INTEGER,
+                    cantidad_descontar REAL DEFAULT 0,
+                    FOREIGN KEY (cotizacion_id) REFERENCES Cotizaciones(id) ON DELETE CASCADE
+                )
+            '''))
             conn.execute(text('''
                 CREATE TABLE IF NOT EXISTS Inventario (
                     id SERIAL PRIMARY KEY,
@@ -388,6 +472,8 @@ def init_db():
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_operarios_patio_token ON Operarios_Patio(token_sesion)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_abonos_taller_hoja ON Abonos_Taller(hoja_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_abonos_taller_usuario ON Abonos_Taller(usuario_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_cotizaciones_usuario ON Cotizaciones(usuario_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_detalles_cotizacion_cotizacion ON Detalles_Cotizacion(cotizacion_id)"))
 
         # ==========================================
         # MIGRACIONES SEGURAS
@@ -503,6 +589,12 @@ def init_db():
                 # "no editar después de facturado" que aplica a ítems/precios/estado.
                 if 'fecha_entrega' not in cols_ht:
                     conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN fecha_entrega TEXT"))
+                # --- NUEVO: marca/modelo del vehículo (texto libre, opcional).
+                # Se muestran en el PDF de la orden/cotización cuando vienen.
+                if 'marca' not in cols_ht:
+                    conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN marca TEXT"))
+                if 'modelo' not in cols_ht:
+                    conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN modelo TEXT"))
                 # --- NUEVO: numeración de orden independiente por taller (antes se
                 # mostraba el id autoincremental global, compartido entre todas las
                 # cuentas). Al agregar la columna, se numeran retroactivamente las
@@ -612,6 +704,10 @@ def init_db():
                 # --- NUEVO: fecha de entrega del vehículo al cliente (ver nota en el
                 # bloque sqlite de arriba sobre por qué es independiente de 'estado') ---
                 conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS fecha_entrega TEXT"))
+                # --- NUEVO: marca/modelo del vehículo (texto libre, opcional).
+                # Se muestran en el PDF de la orden/cotización cuando vienen.
+                conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS marca TEXT"))
+                conn.execute(text("ALTER TABLE Hojas_Trabajo ADD COLUMN IF NOT EXISTS modelo TEXT"))
                 # --- NUEVO: numeración de orden independiente por taller (antes se
                 # mostraba el id autoincremental global, compartido entre todas las
                 # cuentas). Solo se hace el backfill una vez, la primera vez que la

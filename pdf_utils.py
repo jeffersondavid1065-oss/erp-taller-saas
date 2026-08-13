@@ -129,10 +129,15 @@ def generar_pdf_orden_profesional(
     df_items=None,
     total=0,
     subtotal=None,
-    desglose_iva=None
+    desglose_iva=None,
+    marca="",
+    modelo="",
+    es_cotizacion=False
 ):
     """
-    Genera el PDF de la orden/factura.
+    Genera el PDF de la orden/factura, o de una cotización si es_cotizacion=True
+    (cambia el rótulo del encabezado, la columna de pago y el pie de página
+    para dejar claro que no es un documento fiscal).
 
     - Si `subtotal` se pasa (no None), se muestra el desglose: Subtotal,
       una línea por cada tipo de impuesto presente en `desglose_iva`
@@ -142,6 +147,8 @@ def generar_pdf_orden_profesional(
       mostrado en pantalla.
     - Si no se pasan, se muestra únicamente el total (comportamiento para
       talleres sin IVA activo).
+    - `marca`/`modelo`: opcionales, texto libre. Si vienen, se imprimen
+      debajo de la placa.
     """
     pdf = FPDF()
     pdf.add_page()
@@ -169,7 +176,10 @@ def generar_pdf_orden_profesional(
     cliente_nit      = safe_str(cliente_nit)
     placa            = safe_str(placa)
     estado           = safe_str(estado)
+    marca            = safe_str(marca)
+    modelo           = safe_str(modelo)
     hoja_id_str      = str(hoja_id).zfill(5) if hoja_id else "00000"
+    etiqueta_doc     = "Cotizacion" if es_cotizacion else "Factura"
 
     mostrar_desglose_iva = subtotal is not None
     desglose_iva = desglose_iva or {}
@@ -229,13 +239,13 @@ def generar_pdf_orden_profesional(
     pdf.set_xy(130, y_header)
     pdf.set_font("Helvetica", "B", 12)
     pdf.set_text_color(*GRIS_OSCURO)
-    pdf.cell(65, 5, f"Factura# {hoja_id_str}", align="R")
+    pdf.cell(65, 5, f"{etiqueta_doc}# {hoja_id_str}", align="R")
     pdf.ln(0)
 
     pdf.set_xy(130, y_header + 7)
     pdf.set_font("Helvetica", "", 8)
     pdf.set_text_color(*GRIS_MEDIO)
-    pdf.cell(65, 4, "Fecha de emision", align="R")
+    pdf.cell(65, 4, "Fecha de cotizacion" if es_cotizacion else "Fecha de emision", align="R")
     pdf.ln(0)
 
     pdf.set_xy(130, y_header + 12)
@@ -298,6 +308,10 @@ def generar_pdf_orden_profesional(
     pdf.cell(col_ancho - 5, 4, f"NIT: {cliente_nit}" if cliente_nit else "NIT: ---")
     pdf.set_xy(col1_x, y_cols + 18)
     pdf.cell(col_ancho - 5, 4, f"Placa: {placa}" if placa else "")
+    if marca or modelo:
+        marca_modelo_txt = " / ".join(v for v in (marca, modelo) if v)
+        pdf.set_xy(col1_x, y_cols + 23)
+        pdf.cell(col_ancho - 5, 4, f"Marca/Modelo: {marca_modelo_txt}")
 
     # Contenido columna 2: Detalles (descripción del trabajo)
     pdf.set_xy(col2_x, y_cols + 8)
@@ -306,13 +320,15 @@ def generar_pdf_orden_profesional(
     pdf.cell(col_ancho - 5, 4, "y mantenimiento")
 
     # Contenido columna 3: Pago
-    if estado.lower() == "facturado":
+    if es_cotizacion:
+        estado_pago = "Precios sujetos a cambio"
+    elif estado.lower() == "facturado":
         estado_pago = "PAGADO"
     else:
         estado_pago = "Por cobrar"
 
     pdf.set_xy(col3_x, y_cols + 8)
-    pdf.cell(col_ancho, 4, f"Vencimiento {fecha}")
+    pdf.cell(col_ancho, 4, f"Fecha {fecha}" if es_cotizacion else f"Vencimiento {fecha}")
     pdf.set_xy(col3_x, y_cols + 13)
     pdf.set_font("Helvetica", "B", 9)
     pdf.set_text_color(*GRIS_OSCURO)
@@ -415,6 +431,13 @@ def generar_pdf_orden_profesional(
     pdf.set_text_color(*GRIS_MEDIO)
     pdf.cell(0, 4, "Gracias por confiar en nuestros servicios. Conserve este documento.")
     y_pie += 4
+
+    if es_cotizacion:
+        pdf.set_xy(12, y_pie)
+        pdf.set_font("Helvetica", "B", 7)
+        pdf.set_text_color(180, 120, 20)
+        pdf.cell(0, 3, "Cotizacion sin valor fiscal - no reemplaza una factura")
+        y_pie += 4
 
     if estado.lower() == "facturado":
         pdf.set_xy(12, y_pie)
