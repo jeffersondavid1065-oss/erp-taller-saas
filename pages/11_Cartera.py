@@ -143,7 +143,13 @@ else:
         f"Orden #{r['numero_orden']} — {r['cliente']} (Placa {r['placa']}) — Saldo: {formato_cop(r['saldo_pendiente'])}": r['hoja_id']
         for _, r in df_creditos.iterrows()
     }
-    orden_sel_str = st.selectbox("Selecciona la orden a abonar", options=list(dict_ordenes_credito.keys()))
+    opciones_ordenes_credito = ["-- Seleccionar Empresa/Persona --"] + list(dict_ordenes_credito.keys())
+    orden_sel_str = st.selectbox("Selecciona la orden a abonar", options=opciones_ordenes_credito)
+
+    if orden_sel_str == "-- Seleccionar Empresa/Persona --":
+        st.info("Selecciona una orden para registrar un abono.")
+        st.stop()
+
     hoja_id_sel = dict_ordenes_credito[orden_sel_str]
     fila_credito_sel = df_creditos[df_creditos['hoja_id'] == hoja_id_sel].iloc[0]
     saldo_actual = float(fila_credito_sel['saldo_pendiente'])
