@@ -305,6 +305,99 @@ def obtener_resumen_financiero_periodo(uid, fecha_inicio, fecha_fin):
 
 
 @st.cache_data(ttl=60)
+def obtener_desglose_mano_obra_repuestos(uid, fecha_inicio, fecha_fin):
+    """Ingresos, costo y margen del período (solo órdenes 'Facturado', mismo
+    criterio que _resumen_financiero_periodo) separados por Mano de Obra y
+    Repuestos - estándar en talleres: el margen de mano de obra suele ser
+    bastante más alto que el de repuestos, y verlos mezclados esconde esa
+    diferencia. Devuelve un dict {tipo_item: {ingresos, costo, margen,
+    margen_pct, cantidad}}."""
+    from pdf_utils import IVA_TASA, resolver_iva_tipo
+
+    engine = obtener_conexion()
+    config = obtener_config_taller(uid)
+    iva_activo = bool(config[4]) if config and config[4] is not None else False
+    iva_incluido = bool(config[5]) if config and config[5] is not None else False
+    iva_tipo_mo = config[6] if config and config[6] else "Excluido"
+    iva_tipo_rep = config[7] if config and config[7] else "Excluido"
+
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT d.tipo_item, d.precio_venta, d.costo_compra, d.iva_tipo
+            FROM Detalles_Orden d
+            JOIN Hojas_Trabajo h ON d.hoja_id = h.id
+            WHERE h.usuario_id = :uid AND h.estado = 'Facturado'
+              AND DATE(h.fecha_ingreso) >= :f_ini AND DATE(h.fecha_ingreso) <= :f_fin
+        """), {
+            "uid": uid,
+            "f_ini": fecha_inicio.strftime('%Y-%m-%d'),
+            "f_fin": fecha_fin.strftime('%Y-%m-%d'),
+        }).fetchall()
+
+    resultado = {
+        "Mano de Obra": {"ingresos": 0.0, "costo": 0.0, "cantidad": 0},
+        "Repuesto": {"ingresos": 0.0, "costo": 0.0, "cantidad": 0},
+    }
+    for tipo_item, precio_venta, costo_compra, iva_tipo in rows:
+        clave = tipo_item if tipo_item in resultado else "Repuesto"
+
+        etiqueta = resolver_iva_tipo(iva_tipo)
+        if etiqueta is None:
+            etiqueta = iva_tipo_mo if tipo_item == "Mano de Obra" else iva_tipo_rep
+        if not iva_activo:
+            etiqueta = "Excluido"
+        tasa = IVA_TASA.get(etiqueta, 0.0) / 100.0
+        precio = float(precio_venta or 0)
+        base = precio / (1 + tasa) if (iva_incluido and tasa > 0) else precio
+
+        resultado[clave]["ingresos"] += base
+        resultado[clave]["costo"] += float(costo_compra or 0)
+        resultado[clave]["cantidad"] += 1
+
+    for clave, datos in resultado.items():
+        ingresos, costo = datos["ingresos"], datos["costo"]
+        datos["ingresos"] = round(ingresos, 2)
+        datos["costo"] = round(costo, 2)
+        datos["margen"] = round(ingresos - costo, 2)
+        datos["margen_pct"] = round((ingresos - costo) / ingresos * 100, 1) if ingresos > 0 else 0.0
+
+    return resultado
+
+
+@st.cache_data(ttl=120)
+def obtener_tendencia_mensual(uid, meses=6):
+    """Ingresos, costo directo, gastos y utilidad neta de cada uno de los
+    últimos `meses` meses (incluyendo el actual, hasta hoy) - para ver la
+    tendencia del negocio en vez de solo la foto de un período. Reutiliza
+    _resumen_financiero_periodo mes a mes."""
+    MESES_LABEL = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+    hoy = date.today()
+    filas = []
+    for i in range(meses - 1, -1, -1):
+        mes_target = hoy.month - i
+        año_target = hoy.year
+        while mes_target <= 0:
+            mes_target += 12
+            año_target -= 1
+
+        f_ini = date(año_target, mes_target, 1)
+        ultimo_dia_mes = calendar.monthrange(año_target, mes_target)[1]
+        es_mes_actual = (año_target, mes_target) == (hoy.year, hoy.month)
+        f_fin = date(año_target, mes_target, hoy.day if es_mes_actual else ultimo_dia_mes)
+
+        resumen = _resumen_financiero_periodo(uid, f_ini.strftime('%Y-%m-%d'), f_fin.strftime('%Y-%m-%d'))
+        filas.append({
+            "Mes": f"{MESES_LABEL[mes_target - 1]} {año_target}",
+            "Ingresos": resumen["ingresos"],
+            "Costo Directo": resumen["costo_directo"],
+            "Gastos": resumen["gastos"],
+            "Utilidad Neta": resumen["utilidad_neta"],
+        })
+
+    return pd.DataFrame(filas)
+
+
+@st.cache_data(ttl=60)
 def obtener_iva_por_tasa_periodo(uid, fecha_inicio, fecha_fin):
     """IVA generado en el período, desglosado por tasa (Excluido, IVA 5%,
     IVA 19%, etc.) - insumo para saber cuánto declarar y pagar a la DIAN
@@ -364,6 +457,8 @@ def invalidar_cache_financiero():
     obtener_metricas_financieras.clear()
     obtener_resumen_financiero_periodo.clear()
     obtener_iva_por_tasa_periodo.clear()
+    obtener_desglose_mano_obra_repuestos.clear()
+    obtener_tendencia_mensual.clear()
 
 
 @st.cache_data(ttl=30)
