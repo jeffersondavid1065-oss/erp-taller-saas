@@ -31,9 +31,6 @@ st.markdown("""
         z-index: 9999999 !important;
         pointer-events: all !important;
     }
-    [data-testid="stToolbar"] { display: none !important; }
-    #MainMenu { visibility: hidden !important; }
-    footer { visibility: hidden !important; }
 
     @keyframes fade-in-up {
         0% { opacity: 0; transform: translateY(20px); }
