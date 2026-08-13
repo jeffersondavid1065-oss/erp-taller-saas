@@ -7,6 +7,7 @@ from sqlalchemy import text
 from db import obtener_conexion, init_db, mensaje_error_amigable
 from queries import obtener_metricas_dashboard, obtener_metricas_financieras, buscar_ordenes, obtener_creditos_pendientes
 from datetime import datetime, date
+from streamlit_cookies_controller import CookieController
 
 # Correo del administrador del sistema (dueño de MyTaller). Controla el
 # acceso al módulo Admin y su visibilidad en el menú lateral.
@@ -21,6 +22,13 @@ st.set_page_config(
 
 # Inicializar Base de Datos (cacheada como recurso en db.py -> se ejecuta 1 sola vez)
 init_db()
+
+# Controlador de cookies del navegador: permite que la sesión sobreviva un F5,
+# cerrar y reabrir la pestaña, o pegar la URL limpia (sin ?token=...). El token
+# en la URL (más abajo) sigue existiendo como vía rápida (no depende de la ida
+# y vuelta asíncrona del componente de cookies), pero la cookie es la que
+# recupera la sesión cuando esa URL con el token ya no está disponible.
+cookies_controller = CookieController()
 
 # --------------------------------------------------------------------------------
 # 2. SESSION STATE NAMESPACED CON PERSISTENCIA
@@ -40,12 +48,14 @@ if "auth" not in st.session_state:
 is_logged = st.session_state.auth["logged"]
 
 # --------------------------------------------------------------------------------
-# Verificar si hay token en la URL (query params) al cargar la página.
-# Primero se busca entre los dueños de taller (Usuarios); si no hay coincidencia,
-# se busca entre los Operarios de Patio.
+# Verificar si hay un token de sesión válido, primero en la URL (query params,
+# disponible de inmediato) y si no, en la cookie del navegador (tarda un rerun
+# extra en llegar la primera vez, pero sobrevive cerrar/reabrir la pestaña o
+# pegar la URL limpia). Primero se busca entre los dueños de taller (Usuarios);
+# si no hay coincidencia, se busca entre los Operarios de Patio.
 # --------------------------------------------------------------------------------
 if not st.session_state.auth["logged"]:
-    token_en_url = st.query_params.get("token")
+    token_en_url = st.query_params.get("token") or cookies_controller.get("token")
     if token_en_url:
         engine_verify = obtener_conexion()
         try:
@@ -63,6 +73,8 @@ if not st.session_state.auth["logged"]:
                 st.session_state.auth["email"] = usuario_token[2]
                 st.session_state.auth["token"] = token_en_url
                 st.session_state.auth["rol"] = "admin"
+                st.query_params["token"] = token_en_url
+                cookies_controller.set("token", token_en_url, max_age=30 * 24 * 60 * 60)
                 st.rerun()
             else:
                 # No es un dueño de taller: buscar entre Operarios de Patio
@@ -86,6 +98,8 @@ if not st.session_state.auth["logged"]:
                     st.session_state.auth["rol"] = "patio"
                     st.session_state.auth["operario_id"] = operario_token[0]
                     st.session_state.auth["operario_nombre"] = operario_token[1]
+                    st.query_params["token"] = token_en_url
+                    cookies_controller.set("token", token_en_url, max_age=30 * 24 * 60 * 60)
                     st.rerun()
         except Exception:
             # Si hay error, simplemente continúa con login normal
@@ -124,13 +138,6 @@ st.markdown("""
     [data-testid="stSidebar"] { display: none !important; }
     [data-testid="stSidebarCollapsedControl"] { display: none !important; }
     """) + """
-
-    @keyframes fade-in-up {
-        0% { opacity: 0; transform: translateY(20px); }
-        100% { opacity: 1; transform: translateY(0); }
-    }
-    [data-testid="stAppViewBlockContainer"] { animation: fade-in-up 0.6s ease-out !important; }
-    div[data-testid="stVerticalBlock"] > div { animation: fade-in-up 0.5s ease-out !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -234,8 +241,10 @@ def pantalla_login():
                                     "operario_nombre": None,
                                 }
 
-                                # Pasar token en URL para que persista entre recargas
+                                # Pasar token en URL y en cookie para que la sesión persista
+                                # entre recargas, cierres de pestaña y URLs limpias.
                                 st.query_params["token"] = token_nuevo
+                                cookies_controller.set("token", token_nuevo, max_age=30 * 24 * 60 * 60)
 
                                 st.success(f"¡Bienvenido, {user[1]}!")
                                 st.rerun()
@@ -294,6 +303,7 @@ def pantalla_login():
                                 "operario_nombre": operario[1],
                             }
                             st.query_params["token"] = token_patio
+                            cookies_controller.set("token", token_patio, max_age=30 * 24 * 60 * 60)
                             st.rerun()
                         elif operario and not operario[5]:
                             st.error("Este usuario de patio está desactivado. Contacta al administrador del taller.")
@@ -385,6 +395,7 @@ def panel_patio():
             }
             if "token" in st.query_params:
                 del st.query_params["token"]
+            cookies_controller.remove("token")
             st.rerun()
 
 
@@ -510,9 +521,10 @@ def panel_principal():
             "token": None, "rol": None, "operario_id": None, "operario_nombre": None,
         }
 
-        # Limpiar token de la URL
+        # Limpiar token de la URL y de la cookie
         if "token" in st.query_params:
             del st.query_params["token"]
+        cookies_controller.remove("token")
 
         st.rerun()
 
