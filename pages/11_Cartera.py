@@ -37,6 +37,17 @@ st.markdown("""
         100% { opacity: 1; transform: translateY(0); }
     }
     [data-testid="stExpanderDetails"], [role="tabpanel"] { animation: fade-in-up 0.4s ease-out !important; }
+
+    /* Aparición sutil del detalle al seleccionar un cliente (Clientes con
+       Cartera / Estado de Cuenta): fundido corto y casi sin desplazamiento,
+       a propósito más discreto que fade-in-up. */
+    @keyframes fade-in-subtle {
+        0% { opacity: 0; transform: translateY(6px); }
+        100% { opacity: 1; transform: translateY(0); }
+    }
+    .st-key-detalle_cliente_cartera, .st-key-detalle_estado_cuenta {
+        animation: fade-in-subtle 0.35s ease-out;
+    }
     </style>
 """ + _anim_pagina_css, unsafe_allow_html=True)
 
@@ -260,69 +271,70 @@ with tab_clientes:
         if cliente_sel_cartera == "-- Seleccionar Empresa/Persona --":
             st.info("Selecciona un cliente para ver su detalle de cartera.")
         else:
-            empresa_id_sel = dict_empresas_deuda[cliente_sel_cartera]
-            df_ordenes_cliente = obtener_ordenes_credito_empresa(user_id, empresa_id_sel)
-            df_abonos_cliente = obtener_abonos_empresa(user_id, empresa_id_sel)
+            with st.container(key="detalle_cliente_cartera"):
+                empresa_id_sel = dict_empresas_deuda[cliente_sel_cartera]
+                df_ordenes_cliente = obtener_ordenes_credito_empresa(user_id, empresa_id_sel)
+                df_abonos_cliente = obtener_abonos_empresa(user_id, empresa_id_sel)
 
-            deuda_actual_cliente = df_ordenes_cliente['saldo_pendiente'].sum()
-            total_abonado_cliente = df_abonos_cliente['monto'].sum() if not df_abonos_cliente.empty else 0
-            ordenes_con_deuda_cliente = len(df_ordenes_cliente[df_ordenes_cliente['saldo_pendiente'] > 0])
+                deuda_actual_cliente = df_ordenes_cliente['saldo_pendiente'].sum()
+                total_abonado_cliente = df_abonos_cliente['monto'].sum() if not df_abonos_cliente.empty else 0
+                ordenes_con_deuda_cliente = len(df_ordenes_cliente[df_ordenes_cliente['saldo_pendiente'] > 0])
 
-            col_c1, col_c2, col_c3, col_c4 = st.columns(4)
-            col_c1.metric("Deuda Actual", formato_cop(deuda_actual_cliente))
-            col_c2.metric("Total Abonado (histórico)", formato_cop(total_abonado_cliente))
-            col_c3.metric("Órdenes con Deuda", ordenes_con_deuda_cliente)
-            col_c4.metric("Órdenes a Crédito (total)", len(df_ordenes_cliente))
+                col_c1, col_c2, col_c3, col_c4 = st.columns(4)
+                col_c1.metric("Deuda Actual", formato_cop(deuda_actual_cliente))
+                col_c2.metric("Total Abonado (histórico)", formato_cop(total_abonado_cliente))
+                col_c3.metric("Órdenes con Deuda", ordenes_con_deuda_cliente)
+                col_c4.metric("Órdenes a Crédito (total)", len(df_ordenes_cliente))
 
-            st.markdown("---")
-            st.markdown(f"**Órdenes a crédito de {cliente_sel_cartera}:**")
+                st.markdown("---")
+                st.markdown(f"**Órdenes a crédito de {cliente_sel_cartera}:**")
 
-            df_ord_mostrar = df_ordenes_cliente.copy()
-            df_ord_mostrar['numero_factura_texto'] = (
-                df_ord_mostrar['factura_prefijo'].fillna('').astype(str)
-                + df_ord_mostrar['factura_numero'].fillna('').astype(str)
-            )
-
-            def _estado_factura_txt(row):
-                if row['nota_credito_reference_code']:
-                    return "Anulada (N.C.)"
-                if row['factura_estado'] == 'emitida':
-                    return "Facturada"
-                if row['factura_estado'] == 'error':
-                    return "Error factura"
-                return "Sin facturar"
-
-            df_ord_mostrar['facturacion'] = df_ord_mostrar.apply(_estado_factura_txt, axis=1)
-
-            st.dataframe(
-                df_ord_mostrar[[
-                    'numero_orden', 'fecha', 'placa', 'total_orden', 'saldo_pendiente',
-                    'fecha_vencimiento_credito', 'vencido', 'facturacion', 'numero_factura_texto'
-                ]].rename(columns={
-                    'numero_orden': 'N° Orden', 'fecha': 'Fecha', 'placa': 'Placa',
-                    'total_orden': 'Total Orden', 'saldo_pendiente': 'Saldo Pendiente',
-                    'fecha_vencimiento_credito': 'Fecha Vencimiento', 'vencido': 'Vencido',
-                    'facturacion': 'Facturación', 'numero_factura_texto': 'N° Factura',
-                }),
-                width='stretch', hide_index=True,
-                column_config={
-                    "Total Orden": st.column_config.NumberColumn(format="$%,d"),
-                    "Saldo Pendiente": st.column_config.NumberColumn(format="$%,d"),
-                }
-            )
-
-            st.markdown("---")
-            st.markdown("**Historial de abonos:**")
-            if df_abonos_cliente.empty:
-                st.caption(f"{cliente_sel_cartera} todavía no ha hecho ningún abono.")
-            else:
-                st.dataframe(
-                    df_abonos_cliente.rename(columns={
-                        'monto': 'Monto', 'fecha': 'Fecha', 'notas': 'Notas', 'numero_orden': 'N° Orden',
-                    })[['Fecha', 'N° Orden', 'Monto', 'Notas']],
-                    width='stretch', hide_index=True,
-                    column_config={"Monto": st.column_config.NumberColumn(format="$%,d")}
+                df_ord_mostrar = df_ordenes_cliente.copy()
+                df_ord_mostrar['numero_factura_texto'] = (
+                    df_ord_mostrar['factura_prefijo'].fillna('').astype(str)
+                    + df_ord_mostrar['factura_numero'].fillna('').astype(str)
                 )
+
+                def _estado_factura_txt(row):
+                    if row['nota_credito_reference_code']:
+                        return "Anulada (N.C.)"
+                    if row['factura_estado'] == 'emitida':
+                        return "Facturada"
+                    if row['factura_estado'] == 'error':
+                        return "Error factura"
+                    return "Sin facturar"
+
+                df_ord_mostrar['facturacion'] = df_ord_mostrar.apply(_estado_factura_txt, axis=1)
+
+                st.dataframe(
+                    df_ord_mostrar[[
+                        'numero_orden', 'fecha', 'placa', 'total_orden', 'saldo_pendiente',
+                        'fecha_vencimiento_credito', 'vencido', 'facturacion', 'numero_factura_texto'
+                    ]].rename(columns={
+                        'numero_orden': 'N° Orden', 'fecha': 'Fecha', 'placa': 'Placa',
+                        'total_orden': 'Total Orden', 'saldo_pendiente': 'Saldo Pendiente',
+                        'fecha_vencimiento_credito': 'Fecha Vencimiento', 'vencido': 'Vencido',
+                        'facturacion': 'Facturación', 'numero_factura_texto': 'N° Factura',
+                    }),
+                    width='stretch', hide_index=True,
+                    column_config={
+                        "Total Orden": st.column_config.NumberColumn(format="$%,d"),
+                        "Saldo Pendiente": st.column_config.NumberColumn(format="$%,d"),
+                    }
+                )
+
+                st.markdown("---")
+                st.markdown("**Historial de abonos:**")
+                if df_abonos_cliente.empty:
+                    st.caption(f"{cliente_sel_cartera} todavía no ha hecho ningún abono.")
+                else:
+                    st.dataframe(
+                        df_abonos_cliente.rename(columns={
+                            'monto': 'Monto', 'fecha': 'Fecha', 'notas': 'Notas', 'numero_orden': 'N° Orden',
+                        })[['Fecha', 'N° Orden', 'Monto', 'Notas']],
+                        width='stretch', hide_index=True,
+                        column_config={"Monto": st.column_config.NumberColumn(format="$%,d")}
+                    )
 
             ordenes_pendientes_cliente = df_ordenes_cliente[df_ordenes_cliente['saldo_pendiente'] > 0]
             if not ordenes_pendientes_cliente.empty:
@@ -411,114 +423,115 @@ with tab_estado_cuenta:
         elif fecha_desde_ec > fecha_hasta_ec:
             st.error("La fecha 'Desde' no puede ser posterior a la fecha 'Hasta'.")
         else:
-            empresa_id_ec = dict_empresas_ec[cliente_ec_sel]
-            fila_empresa_ec = df_empresas_ec[df_empresas_ec['id'] == empresa_id_ec].iloc[0]
+            with st.container(key="detalle_estado_cuenta"):
+                empresa_id_ec = dict_empresas_ec[cliente_ec_sel]
+                fila_empresa_ec = df_empresas_ec[df_empresas_ec['id'] == empresa_id_ec].iloc[0]
 
-            df_ordenes_ec = obtener_ordenes_credito_empresa(user_id, empresa_id_ec)
-            df_abonos_ec = obtener_abonos_empresa(user_id, empresa_id_ec)
+                df_ordenes_ec = obtener_ordenes_credito_empresa(user_id, empresa_id_ec)
+                df_abonos_ec = obtener_abonos_empresa(user_id, empresa_id_ec)
 
-            eventos = []
-            for _, r in df_ordenes_ec.iterrows():
-                eventos.append({
-                    "fecha": pd.to_datetime(r['fecha']).date(),
-                    "descripcion": f"Orden #{r['numero_orden']} — Placa {r['placa']}",
-                    "cargo": float(r['total_orden']),
-                    "abono": 0.0,
-                })
-            for _, r in df_abonos_ec.iterrows():
-                nota_txt = f" ({r['notas']})" if r.get('notas') else ""
-                eventos.append({
-                    "fecha": pd.to_datetime(r['fecha']).date(),
-                    "descripcion": f"Abono Orden #{r['numero_orden']}{nota_txt}",
-                    "cargo": 0.0,
-                    "abono": float(r['monto']),
-                })
-            eventos.sort(key=lambda e: e['fecha'])
+                eventos = []
+                for _, r in df_ordenes_ec.iterrows():
+                    eventos.append({
+                        "fecha": pd.to_datetime(r['fecha']).date(),
+                        "descripcion": f"Orden #{r['numero_orden']} — Placa {r['placa']}",
+                        "cargo": float(r['total_orden']),
+                        "abono": 0.0,
+                    })
+                for _, r in df_abonos_ec.iterrows():
+                    nota_txt = f" ({r['notas']})" if r.get('notas') else ""
+                    eventos.append({
+                        "fecha": pd.to_datetime(r['fecha']).date(),
+                        "descripcion": f"Abono Orden #{r['numero_orden']}{nota_txt}",
+                        "cargo": 0.0,
+                        "abono": float(r['monto']),
+                    })
+                eventos.sort(key=lambda e: e['fecha'])
 
-            saldo_anterior_ec = sum(e['cargo'] - e['abono'] for e in eventos if e['fecha'] < fecha_desde_ec)
-            movimientos_periodo = [e for e in eventos if fecha_desde_ec <= e['fecha'] <= fecha_hasta_ec]
+                saldo_anterior_ec = sum(e['cargo'] - e['abono'] for e in eventos if e['fecha'] < fecha_desde_ec)
+                movimientos_periodo = [e for e in eventos if fecha_desde_ec <= e['fecha'] <= fecha_hasta_ec]
 
-            saldo_corriente_ec = saldo_anterior_ec
-            filas_preview = []
-            for ev in movimientos_periodo:
-                saldo_corriente_ec += ev['cargo'] - ev['abono']
-                filas_preview.append({
-                    "Fecha": ev['fecha'].strftime("%d/%m/%Y"),
-                    "Descripción": ev['descripcion'],
-                    "Cargo": ev['cargo'],
-                    "Abono": ev['abono'],
-                    "Saldo": saldo_corriente_ec,
-                })
-            saldo_final_ec = saldo_corriente_ec
+                saldo_corriente_ec = saldo_anterior_ec
+                filas_preview = []
+                for ev in movimientos_periodo:
+                    saldo_corriente_ec += ev['cargo'] - ev['abono']
+                    filas_preview.append({
+                        "Fecha": ev['fecha'].strftime("%d/%m/%Y"),
+                        "Descripción": ev['descripcion'],
+                        "Cargo": ev['cargo'],
+                        "Abono": ev['abono'],
+                        "Saldo": saldo_corriente_ec,
+                    })
+                saldo_final_ec = saldo_corriente_ec
 
-            total_cargos_periodo = sum(e['cargo'] for e in movimientos_periodo)
-            total_abonos_periodo = sum(e['abono'] for e in movimientos_periodo)
+                total_cargos_periodo = sum(e['cargo'] for e in movimientos_periodo)
+                total_abonos_periodo = sum(e['abono'] for e in movimientos_periodo)
 
-            st.markdown("---")
-            col_r1, col_r2, col_r3, col_r4 = st.columns(4)
-            col_r1.metric("Saldo Anterior", formato_cop(saldo_anterior_ec))
-            col_r2.metric("Cargos del Período", formato_cop(total_cargos_periodo))
-            col_r3.metric("Abonos del Período", formato_cop(total_abonos_periodo))
-            col_r4.metric("Saldo Final", formato_cop(saldo_final_ec))
+                st.markdown("---")
+                col_r1, col_r2, col_r3, col_r4 = st.columns(4)
+                col_r1.metric("Saldo Anterior", formato_cop(saldo_anterior_ec))
+                col_r2.metric("Cargos del Período", formato_cop(total_cargos_periodo))
+                col_r3.metric("Abonos del Período", formato_cop(total_abonos_periodo))
+                col_r4.metric("Saldo Final", formato_cop(saldo_final_ec))
 
-            if saldo_final_ec <= 0:
-                st.success(f"{cliente_ec_sel} está al día — sin saldo pendiente.")
-            else:
-                st.warning(f"{cliente_ec_sel} tiene un saldo pendiente de {formato_cop(saldo_final_ec)}.")
+                if saldo_final_ec <= 0:
+                    st.success(f"{cliente_ec_sel} está al día — sin saldo pendiente.")
+                else:
+                    st.warning(f"{cliente_ec_sel} tiene un saldo pendiente de {formato_cop(saldo_final_ec)}.")
 
-            st.markdown("---")
-            st.markdown("**Movimientos del período:**")
-            if not filas_preview:
-                st.caption("Sin movimientos registrados en este período.")
-            else:
-                st.dataframe(
-                    pd.DataFrame(filas_preview),
-                    width='stretch', hide_index=True,
-                    column_config={
-                        "Cargo": st.column_config.NumberColumn(format="$%,d"),
-                        "Abono": st.column_config.NumberColumn(format="$%,d"),
-                        "Saldo": st.column_config.NumberColumn(format="$%,d"),
-                    }
+                st.markdown("---")
+                st.markdown("**Movimientos del período:**")
+                if not filas_preview:
+                    st.caption("Sin movimientos registrados en este período.")
+                else:
+                    st.dataframe(
+                        pd.DataFrame(filas_preview),
+                        width='stretch', hide_index=True,
+                        column_config={
+                            "Cargo": st.column_config.NumberColumn(format="$%,d"),
+                            "Abono": st.column_config.NumberColumn(format="$%,d"),
+                            "Saldo": st.column_config.NumberColumn(format="$%,d"),
+                        }
+                    )
+
+                st.markdown("---")
+
+                _config_taller_ec = obtener_config_taller(user_id)
+                logo_path_ec = _config_taller_ec[3] if _config_taller_ec and _config_taller_ec[3] else None
+                taller_nit_ec = _config_taller_ec[8] if _config_taller_ec and len(_config_taller_ec) > 8 and _config_taller_ec[8] else ""
+                taller_telefono_ec = _config_taller_ec[9] if _config_taller_ec and len(_config_taller_ec) > 9 and _config_taller_ec[9] else ""
+                taller_direccion_raw_ec = _config_taller_ec[10] if _config_taller_ec and len(_config_taller_ec) > 10 and _config_taller_ec[10] else ""
+                taller_ciudad_ec = _config_taller_ec[11] if _config_taller_ec and len(_config_taller_ec) > 11 and _config_taller_ec[11] else ""
+                taller_direccion_ec = f"{taller_direccion_raw_ec}, {taller_ciudad_ec}".strip(", ") if taller_ciudad_ec else taller_direccion_raw_ec
+                taller_email_ec = _config_taller_ec[2] if _config_taller_ec and _config_taller_ec[2] else ""
+
+                pdf_bytes_ec = generar_pdf_estado_cuenta(
+                    taller_nombre=nombre_taller,
+                    taller_nit=taller_nit_ec,
+                    taller_telefono=taller_telefono_ec,
+                    taller_direccion=taller_direccion_ec,
+                    taller_email=taller_email_ec,
+                    taller_logo_path=logo_path_ec,
+                    cliente=cliente_ec_sel,
+                    cliente_nit=fila_empresa_ec.get('nit', ''),
+                    cliente_telefono=fila_empresa_ec.get('telefono', ''),
+                    fecha_desde=fecha_desde_ec.strftime("%d/%m/%Y"),
+                    fecha_hasta=fecha_hasta_ec.strftime("%d/%m/%Y"),
+                    fecha_generacion=datetime.today().strftime("%d/%m/%Y"),
+                    saldo_anterior=saldo_anterior_ec,
+                    movimientos=[
+                        {"fecha": ev['fecha'].strftime("%d/%m/%Y"), "descripcion": ev['descripcion'],
+                         "cargo": ev['cargo'], "abono": ev['abono']}
+                        for ev in movimientos_periodo
+                    ],
+                    saldo_final=saldo_final_ec,
                 )
 
-            st.markdown("---")
-
-            _config_taller_ec = obtener_config_taller(user_id)
-            logo_path_ec = _config_taller_ec[3] if _config_taller_ec and _config_taller_ec[3] else None
-            taller_nit_ec = _config_taller_ec[8] if _config_taller_ec and len(_config_taller_ec) > 8 and _config_taller_ec[8] else ""
-            taller_telefono_ec = _config_taller_ec[9] if _config_taller_ec and len(_config_taller_ec) > 9 and _config_taller_ec[9] else ""
-            taller_direccion_raw_ec = _config_taller_ec[10] if _config_taller_ec and len(_config_taller_ec) > 10 and _config_taller_ec[10] else ""
-            taller_ciudad_ec = _config_taller_ec[11] if _config_taller_ec and len(_config_taller_ec) > 11 and _config_taller_ec[11] else ""
-            taller_direccion_ec = f"{taller_direccion_raw_ec}, {taller_ciudad_ec}".strip(", ") if taller_ciudad_ec else taller_direccion_raw_ec
-            taller_email_ec = _config_taller_ec[2] if _config_taller_ec and _config_taller_ec[2] else ""
-
-            pdf_bytes_ec = generar_pdf_estado_cuenta(
-                taller_nombre=nombre_taller,
-                taller_nit=taller_nit_ec,
-                taller_telefono=taller_telefono_ec,
-                taller_direccion=taller_direccion_ec,
-                taller_email=taller_email_ec,
-                taller_logo_path=logo_path_ec,
-                cliente=cliente_ec_sel,
-                cliente_nit=fila_empresa_ec.get('nit', ''),
-                cliente_telefono=fila_empresa_ec.get('telefono', ''),
-                fecha_desde=fecha_desde_ec.strftime("%d/%m/%Y"),
-                fecha_hasta=fecha_hasta_ec.strftime("%d/%m/%Y"),
-                fecha_generacion=datetime.today().strftime("%d/%m/%Y"),
-                saldo_anterior=saldo_anterior_ec,
-                movimientos=[
-                    {"fecha": ev['fecha'].strftime("%d/%m/%Y"), "descripcion": ev['descripcion'],
-                     "cargo": ev['cargo'], "abono": ev['abono']}
-                    for ev in movimientos_periodo
-                ],
-                saldo_final=saldo_final_ec,
-            )
-
-            st.download_button(
-                "Descargar Estado de Cuenta en PDF",
-                data=pdf_bytes_ec,
-                file_name=f"Estado_Cuenta_{cliente_ec_sel.replace(' ', '_')}_{datetime.today().strftime('%Y%m%d')}.pdf",
-                mime="application/pdf",
-                type="primary",
-                width='stretch'
-            )
+                st.download_button(
+                    "Descargar Estado de Cuenta en PDF",
+                    data=pdf_bytes_ec,
+                    file_name=f"Estado_Cuenta_{cliente_ec_sel.replace(' ', '_')}_{datetime.today().strftime('%Y%m%d')}.pdf",
+                    mime="application/pdf",
+                    type="primary",
+                    width='stretch'
+                )
