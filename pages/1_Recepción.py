@@ -5,7 +5,7 @@ from db import obtener_conexion, init_db, mensaje_error_amigable
 from queries import (
     obtener_catalogos, obtener_inventario_activo, obtener_config_taller,
     invalidar_cache_ordenes, invalidar_cache_inventario, obtener_siguiente_numero_orden,
-    crear_cotizacion,
+    crear_cotizacion, invalidar_cache_directorio, obtener_metricas_dashboard,
 )
 from pdf_utils import IVA_OPCIONES
 
@@ -95,9 +95,59 @@ st.markdown("---")
 
 empresas, mecanicos = obtener_catalogos(user_id)
 
+# ================================================================================
+# Registro rapido de cliente nuevo, disponible tambien para operarios de
+# Patio (que no tienen acceso al Directorio completo en Registros). Solo
+# permite crear, no editar/eliminar clientes existentes ni ver su historial.
+# ================================================================================
+with st.expander("+ Registrar cliente nuevo", expanded=not empresas):
+    with st.form("form_cliente_rapido_recepcion", clear_on_submit=True):
+        col_nc1, col_nc2 = st.columns(2)
+        with col_nc1:
+            nc_razon_social = st.text_input("Razon Social o Nombre del Cliente")
+            nc_tipo_doc = st.radio("Tipo de documento", ["NIT", "CC"], horizontal=True, key="nc_tipo_doc")
+            nc_nit = st.text_input("NIT o Cedula (sin puntos)")
+            nc_dv = st.text_input("Digito de Verificacion (DV)", help="Solo aplica para NIT.")
+        with col_nc2:
+            nc_telefono = st.text_input("Telefono de Contacto")
+            nc_email = st.text_input("Correo Electronico")
+
+        if st.form_submit_button("Guardar Cliente", type="primary"):
+            if nc_razon_social and nc_nit:
+                try:
+                    with obtener_conexion().begin() as conn_nc:
+                        conn_nc.execute(
+                            text('''
+                                INSERT INTO Empresas_Clientes
+                                    (usuario_id, razon_social, nit, telefono, email, tipo_documento, digito_verificacion, regimen)
+                                VALUES (:uid, :razon, :nit, :tel, :email, :tipo_doc, :dv, :regimen)
+                            '''),
+                            {
+                                "uid": user_id,
+                                "razon": nc_razon_social,
+                                "nit": nc_nit,
+                                "tel": nc_telefono,
+                                "email": nc_email,
+                                "tipo_doc": nc_tipo_doc,
+                                "dv": nc_dv or None,
+                                "regimen": "SIMPLIFIED_REGIME",
+                            }
+                        )
+                    invalidar_cache_directorio()
+                    obtener_metricas_dashboard.clear()
+                    st.session_state["_empresa_recien_creada"] = nc_razon_social
+                    st.success(f"Cliente {nc_razon_social} registrado. Ya lo puedes seleccionar abajo.")
+                    st.rerun()
+                except Exception as e:
+                    if "unique constraint" in str(e).lower() or "duplicate key" in str(e).lower():
+                        st.error("Ya existe un cliente registrado con ese mismo NIT/Cedula en el taller.")
+                    else:
+                        st.error(mensaje_error_amigable(e, "registrar el cliente"))
+            else:
+                st.warning("La Razon Social y el NIT/Cedula son obligatorios.")
+
 if not empresas:
-    st.warning("Tu taller aun no tiene empresas o clientes registrados en la base de datos.")
-    st.info("Debes registrar al menos 1 cliente en el Directorio para poder recepcionar vehiculos.")
+    st.info("Registra al menos 1 cliente arriba para poder recepcionar vehiculos.")
     st.stop()
 
 if not mecanicos:
@@ -107,6 +157,12 @@ dict_empresas = {f"{e[1]}": e[0] for e in empresas}
 dict_mecanicos = {f"{m[1]}": m[0] for m in mecanicos}
 opciones_empresas = ["-- Seleccionar Empresa --"] + list(dict_empresas.keys())
 opciones_mecanicos = ["-- Seleccionar Mecanico --"] + list(dict_mecanicos.keys())
+
+_empresa_recien_creada = st.session_state.pop("_empresa_recien_creada", None)
+_index_empresa_default = (
+    opciones_empresas.index(_empresa_recien_creada)
+    if _empresa_recien_creada in opciones_empresas else 0
+)
 
 tab_orden, tab_cotizacion = st.tabs(["Orden de Trabajo", "Cotización"])
 
@@ -123,7 +179,7 @@ with tab_orden:
         with col1:
             placa = st.text_input("Placa del Vehiculo").upper()
         with col2:
-            empresa_sel = st.selectbox("Empresa / Cliente", options=opciones_empresas)
+            empresa_sel = st.selectbox("Empresa / Cliente", options=opciones_empresas, index=_index_empresa_default)
         with col3:
             estado = st.selectbox("Estado Operativo", [
                 "Cotizar", "En revisión", "Esperando repuestos",
@@ -488,7 +544,7 @@ with tab_cotizacion:
             placa_cot = st.text_input("Placa del Vehiculo", key="placa_cot").upper()
             marca_cot = st.text_input("Marca del Vehiculo (opcional)", key="marca_cot")
         with col_c2:
-            empresa_sel_cot = st.selectbox("Empresa / Cliente", options=opciones_empresas, key="empresa_cot")
+            empresa_sel_cot = st.selectbox("Empresa / Cliente", options=opciones_empresas, index=_index_empresa_default, key="empresa_cot")
             modelo_cot = st.text_input("Modelo del Vehiculo (opcional)", key="modelo_cot")
 
     st.markdown("---")
