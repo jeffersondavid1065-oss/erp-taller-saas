@@ -1,8 +1,11 @@
 import streamlit as st
 import html
+from datetime import date, timedelta
 from sqlalchemy import text
 from db import obtener_conexion, mensaje_error_amigable
 from queries import obtener_listos_sin_entregar, marcar_entrega
+
+OPCIONES_PAGO_ENTREGA = ["Efectivo", "Transferencia", "Credito", "Mixto"]
 
 # ==========================================
 # ESTILOS CSS CON MÁSCARA DERECHA ADAPTABLE Y ANIMACIÓN
@@ -196,14 +199,39 @@ listos_sin_entregar = obtener_listos_sin_entregar(user_id)
 
 if listos_sin_entregar:
     with st.expander(f"{len(listos_sin_entregar)} vehículo(s) listo(s) esperando que el cliente pase a recogerlos", expanded=False):
-        for orden_id_le, numero_orden_le, placa_le, empresa_le, estado_le in listos_sin_entregar:
+        for orden_id_le, numero_orden_le, placa_le, empresa_le, estado_le, tipo_pago_le, factura_estado_le in listos_sin_entregar:
+            fe_txt_le = "✅ Con factura electrónica" if factura_estado_le == "emitida" else "— Sin factura electrónica"
             col_le1, col_le2 = st.columns([3, 1])
             with col_le1:
                 st.markdown(f"**Orden #{numero_orden_le}** — Placa {placa_le} — {empresa_le}")
-                st.caption(f"Estado: {estado_le}")
+                st.caption(f"Estado: {estado_le} · {fe_txt_le}")
             with col_le2:
-                if st.button("Marcar Entregado", key=f"entregar_{orden_id_le}", width='stretch'):
-                    marcar_entrega(user_id, orden_id_le, True)
+                if tipo_pago_le:
+                    if st.button("Marcar Entregado", key=f"entregar_{orden_id_le}", width='stretch'):
+                        marcar_entrega(user_id, orden_id_le, True)
+                        st.rerun()
+
+            if not tipo_pago_le:
+                with st.form(f"form_entrega_pago_{orden_id_le}"):
+                    st.caption("Define el método de pago para poder marcar esta orden como entregada.")
+                    tipo_pago_entrega_le = st.selectbox(
+                        "Método de pago", OPCIONES_PAGO_ENTREGA, key=f"tipo_pago_entrega_{orden_id_le}"
+                    )
+                    fecha_venc_entrega_le = None
+                    if tipo_pago_entrega_le == "Credito":
+                        fecha_venc_entrega_le = st.date_input(
+                            "Fecha de vencimiento del crédito",
+                            value=date.today() + timedelta(days=30),
+                            key=f"fecha_venc_entrega_{orden_id_le}"
+                        )
+                    confirmar_entrega_pago_le = st.form_submit_button(
+                        "Confirmar Entrega", type="primary", width='stretch'
+                    )
+                if confirmar_entrega_pago_le:
+                    marcar_entrega(
+                        user_id, orden_id_le, True,
+                        tipo_pago=tipo_pago_entrega_le, fecha_vencimiento_credito=fecha_venc_entrega_le
+                    )
                     st.rerun()
             st.divider()
 

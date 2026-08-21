@@ -743,14 +743,74 @@ def marcar_orden_facturada(hoja_id):
     invalidar_cache_ordenes()
 
 
-def marcar_entrega(uid, hoja_id, entregado):
+def _calcular_total_orden_actual(uid, hoja_id):
+    """Total a cobrar de una orden con el mismo criterio de IVA que se usa
+    al facturar electrónicamente (calcular_totales_orden + config del
+    taller), para que el saldo que se guarda en Cartera al entregar sin
+    factura coincida con lo que se habría facturado."""
+    from pdf_utils import calcular_totales_orden
+    engine = obtener_conexion()
+    with engine.connect() as conn:
+        df_items = pd.read_sql_query(text('''
+            SELECT tipo_item, precio_venta, iva_tipo FROM Detalles_Orden WHERE hoja_id = :hid
+        '''), con=conn, params={"hid": hoja_id})
+    config = obtener_config_taller(uid)
+    iva_activo = bool(config[4]) if config and config[4] is not None else False
+    iva_incluido = bool(config[5]) if config and config[5] is not None else False
+    iva_tipo_default_mo = config[6] if config and config[6] else "Excluido"
+    iva_tipo_default_rep = config[7] if config and config[7] else "Excluido"
+    _, _, gran_total, _ = calcular_totales_orden(
+        df_items, iva_activo=iva_activo, iva_incluido=iva_incluido,
+        iva_tipo_default_mano_obra=iva_tipo_default_mo, iva_tipo_default_repuestos=iva_tipo_default_rep
+    )
+    return gran_total
+
+
+def marcar_entrega(uid, hoja_id, entregado, tipo_pago=None, fecha_vencimiento_credito=None):
     """Registra (o revierte, si el usuario se equivocó) la fecha en que el
     vehículo salió del taller. Es un campo aparte de 'estado' a propósito:
     un vehículo puede entregarse antes o después de facturarse (ej. crédito),
     así que no tiene sentido forzarlo dentro del enum de estado ni bloquearlo
-    por el candado de "no editar después de facturado"."""
+    por el candado de "no editar después de facturado".
+
+    tipo_pago / fecha_vencimiento_credito: solo se usan al entregar
+    (entregado=True) una orden que TODAVÍA no tiene método de pago guardado
+    (ni por factura electrónica ni por una entrega anterior). Antes,
+    tipo_pago/saldo_pendiente solo se guardaban al facturar electrónicamente
+    con Factus — un taller sin FE (o que no factura una orden puntual) nunca
+    podía dejar un crédito registrado en Cartera. Guardarlo aquí también,
+    en el momento de la entrega, cierra ese hueco sin depender de la FE."""
     engine = obtener_conexion()
+
+    # Se resuelve ANTES de abrir la transacción de escritura: tanto la
+    # verificación de tipo_pago como (si aplica) el cálculo del saldo abren
+    # su propia conexión de solo lectura, y anidarlas dentro de un
+    # engine.begin() ya abierto puede bloquearse en SQLite (un solo writer).
+    guardar_pago = False
+    saldo = None
+    if entregado and tipo_pago:
+        with engine.connect() as conn_check:
+            orden_actual = conn_check.execute(text('''
+                SELECT tipo_pago FROM Hojas_Trabajo WHERE id = :hid AND usuario_id = :uid
+            '''), {"hid": hoja_id, "uid": uid}).fetchone()
+        if orden_actual and not orden_actual.tipo_pago:
+            guardar_pago = True
+            if tipo_pago == "Credito":
+                saldo = _calcular_total_orden_actual(uid, hoja_id)
+
     with engine.begin() as conn:
+        if guardar_pago:
+            conn.execute(text('''
+                UPDATE Hojas_Trabajo
+                SET tipo_pago = :tipo_pago, saldo_pendiente = :saldo,
+                    fecha_vencimiento_credito = :fecha_venc
+                WHERE id = :hid AND usuario_id = :uid
+            '''), {
+                "tipo_pago": tipo_pago, "saldo": saldo,
+                "fecha_venc": fecha_vencimiento_credito.strftime('%Y-%m-%d') if fecha_vencimiento_credito else None,
+                "hid": hoja_id, "uid": uid,
+            })
+
         conn.execute(
             text("""
                 UPDATE Hojas_Trabajo
@@ -760,17 +820,21 @@ def marcar_entrega(uid, hoja_id, entregado):
             {"fecha": date.today().isoformat() if entregado else None, "hid": hoja_id, "uid": uid}
         )
     invalidar_cache_ordenes()
+    invalidar_cache_cartera()
 
 
 @st.cache_data(ttl=20)
 def obtener_listos_sin_entregar(uid):
     """Órdenes que ya terminaron el trabajo (Listo para facturar o Facturado)
     pero cuyo vehículo todavía no se ha marcado como entregado — la cola de
-    'carros listos, esperando que el cliente pase a recogerlos'."""
+    'carros listos, esperando que el cliente pase a recogerlos'. Incluye
+    tipo_pago (para saber si ya se puede entregar directo o falta pedir el
+    método de pago) y factura_estado (para mostrar si tiene FE o no)."""
     engine = obtener_conexion()
     with engine.connect() as conn:
         query = text('''
-            SELECT h.id, h.numero_orden, h.placa, e.razon_social, h.estado
+            SELECT h.id, h.numero_orden, h.placa, e.razon_social, h.estado,
+                   h.tipo_pago, h.factura_estado
             FROM Hojas_Trabajo h
             JOIN Empresas_Clientes e ON h.empresa_id = e.id
             WHERE h.usuario_id = :uid
@@ -842,14 +906,18 @@ def obtener_notas_credito_periodo(uid, fecha_inicio, fecha_fin):
 # ==========================================
 @st.cache_data(ttl=30)
 def obtener_creditos_pendientes(uid):
-    """Todas las órdenes facturadas a crédito con saldo pendiente (> 0), con
-    los datos del cliente y del vehículo, para la página de Cartera."""
+    """Todas las órdenes a crédito con saldo pendiente (> 0) — facturadas
+    electrónicamente o no (desde que se entregó sin FE guardando el método
+    de pago) —, con los datos del cliente y del vehículo, para la página de
+    Cartera. factura_estado/nota_credito_reference_code se incluyen para
+    poder mostrar si cada una tiene o no tiene factura electrónica."""
     engine = obtener_conexion()
     with engine.connect() as conn:
         return pd.read_sql_query(text("""
             SELECT h.id as hoja_id, h.numero_orden, h.placa, e.razon_social as cliente, e.telefono,
                    h.saldo_pendiente, h.fecha_vencimiento_credito,
                    h.factura_prefijo, h.factura_numero, h.factura_pdf_url,
+                   h.factura_estado, h.nota_credito_reference_code,
                    CASE WHEN h.fecha_vencimiento_credito < :hoy THEN TRUE ELSE FALSE END as vencido
             FROM Hojas_Trabajo h
             JOIN Empresas_Clientes e ON h.empresa_id = e.id

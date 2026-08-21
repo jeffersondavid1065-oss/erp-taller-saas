@@ -78,6 +78,15 @@ nombre_taller = st.session_state.auth["nombre_taller"]
 def formato_cop(numero):
     return f"${float(numero):,.0f}".replace(",", ".")
 
+def _estado_factura_txt(row):
+    if row['nota_credito_reference_code']:
+        return "Anulada (N.C.)"
+    if row['factura_estado'] == 'emitida':
+        return "Facturada"
+    if row['factura_estado'] == 'error':
+        return "Error factura"
+    return "Sin facturar"
+
 st.title("Cartera")
 st.markdown(f"Gestión de cartera y créditos para: **{nombre_taller}**")
 st.markdown("---")
@@ -137,15 +146,16 @@ with tab_activa:
         df_mostrar['numero_factura_texto'] = (
             df_mostrar['factura_prefijo'].fillna('').astype(str) + df_mostrar['factura_numero'].fillna('').astype(str)
         )
+        df_mostrar['facturacion'] = df_mostrar.apply(_estado_factura_txt, axis=1)
         if df_mostrar.empty:
             st.info("Ninguna orden coincide con la búsqueda.")
         df_mostrar = df_mostrar[[
             'numero_orden', 'placa', 'cliente', 'telefono', 'saldo_pendiente',
-            'fecha_vencimiento_credito', 'vencido', 'numero_factura_texto'
+            'fecha_vencimiento_credito', 'vencido', 'facturacion', 'numero_factura_texto'
         ]].rename(columns={
             'numero_orden': 'N° Orden', 'placa': 'Placa', 'cliente': 'Cliente', 'telefono': 'Teléfono',
             'saldo_pendiente': 'Saldo Pendiente', 'fecha_vencimiento_credito': 'Fecha Vencimiento',
-            'vencido': 'Vencido', 'numero_factura_texto': 'N° Factura',
+            'vencido': 'Vencido', 'facturacion': 'Facturación', 'numero_factura_texto': 'N° Factura',
         })
         st.dataframe(
             df_mostrar,
@@ -294,16 +304,6 @@ with tab_clientes:
                     df_ord_mostrar['factura_prefijo'].fillna('').astype(str)
                     + df_ord_mostrar['factura_numero'].fillna('').astype(str)
                 )
-
-                def _estado_factura_txt(row):
-                    if row['nota_credito_reference_code']:
-                        return "Anulada (N.C.)"
-                    if row['factura_estado'] == 'emitida':
-                        return "Facturada"
-                    if row['factura_estado'] == 'error':
-                        return "Error factura"
-                    return "Sin facturar"
-
                 df_ord_mostrar['facturacion'] = df_ord_mostrar.apply(_estado_factura_txt, axis=1)
 
                 st.dataframe(

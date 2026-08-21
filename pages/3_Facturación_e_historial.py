@@ -302,6 +302,10 @@ with tab_historial:
                 col1.metric("Cliente", cliente)
                 col2.metric("NIT", nit)
                 col3.metric("Estado Actual", estado_actual)
+                st.caption(
+                    "✅ Con factura electrónica" if factura_estado_actual == "emitida"
+                    else "— Sin factura electrónica"
+                )
 
                 col_ent1, col_ent2 = st.columns([3, 1])
                 with col_ent1:
@@ -314,10 +318,34 @@ with tab_historial:
                         if st.button("Deshacer entrega", width='stretch'):
                             marcar_entrega(user_id, hoja_id, False)
                             st.rerun()
-                    else:
+                    elif tipo_pago_actual:
                         if st.button("Marcar como Entregado", type="primary", width='stretch'):
                             marcar_entrega(user_id, hoja_id, True)
                             st.rerun()
+
+                if not fecha_entrega_actual and not tipo_pago_actual:
+                    with st.form("form_entregar_con_pago"):
+                        st.caption("Define el método de pago para poder marcar esta orden como entregada.")
+                        tipo_pago_exp_entrega = st.selectbox(
+                            "Método de pago", ["Efectivo", "Transferencia", "Credito", "Mixto"],
+                            key="tipo_pago_exp_entrega"
+                        )
+                        fecha_venc_exp_entrega = None
+                        if tipo_pago_exp_entrega == "Credito":
+                            fecha_venc_exp_entrega = st.date_input(
+                                "Fecha de vencimiento del crédito",
+                                value=datetime.today() + timedelta(days=30),
+                                key="fecha_venc_exp_entrega"
+                            )
+                        entregar_con_pago_click = st.form_submit_button(
+                            "Marcar como Entregado", type="primary", width='stretch'
+                        )
+                    if entregar_con_pago_click:
+                        marcar_entrega(
+                            user_id, hoja_id, True,
+                            tipo_pago=tipo_pago_exp_entrega, fecha_vencimiento_credito=fecha_venc_exp_entrega
+                        )
+                        st.rerun()
 
                 with engine.connect() as conn:
                     df_trabajos = pd.read_sql_query(
