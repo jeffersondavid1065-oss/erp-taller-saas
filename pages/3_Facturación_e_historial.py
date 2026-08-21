@@ -480,6 +480,7 @@ with tab_historial:
                         else:
                             placeholder_fe = st.empty()
 
+                            @st.fragment
                             def _dibujar_estado_factura():
                                 # Vuelve a consultar y dibujar esta pestaña con el
                                 # estado más reciente, en la MISMA ejecución del
