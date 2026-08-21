@@ -350,68 +350,72 @@ with tab_operarios:
     st.markdown("---")
     st.markdown("#### Operarios registrados")
 
-    operarios = obtener_operarios_patio(user_id)
+    @st.fragment
+    def _seccion_operarios_patio():
+        operarios = obtener_operarios_patio(user_id)
 
-    if not operarios:
-        st.info("Aún no has creado ningún operario de patio.")
-    else:
-        for op in operarios:
-            op_id, op_nombre, op_login, op_activo = op
-            with st.container(border=True):
-                col_o1, col_o2, col_o3, col_o4 = st.columns([2, 2, 1, 2])
-                with col_o1:
-                    st.markdown(f"**{op_nombre}**")
-                with col_o2:
-                    st.caption(f"Usuario: `{op_login}`")
-                with col_o3:
-                    if op_activo:
-                        st.success("Activo")
-                    else:
-                        st.error("Inactivo")
-                with col_o4:
-                    col_btn1, col_btn2 = st.columns(2)
-                    with col_btn1:
-                        etiqueta_toggle = "Desactivar" if op_activo else "Activar"
-                        if st.button(etiqueta_toggle, key=f"toggle_op_{op_id}", width='stretch'):
-                            try:
-                                with engine.begin() as conn_toggle:
-                                    conn_toggle.execute(
-                                        text("UPDATE Operarios_Patio SET activo = :nuevo_estado, token_sesion = NULL WHERE id = :oid AND usuario_id = :uid"),
-                                        {"nuevo_estado": not op_activo, "oid": op_id, "uid": user_id}
-                                    )
-                                invalidar_cache_operarios()
-                                st.rerun()
-                            except Exception as e:
-                                st.error(mensaje_error_amigable(e, "cambiar el estado del operario"))
-                    with col_btn2:
-                        if st.button("Cambiar clave", key=f"reset_op_{op_id}", width='stretch'):
-                            st.session_state[f"mostrar_reset_{op_id}"] = True
+        if not operarios:
+            st.info("Aún no has creado ningún operario de patio.")
+        else:
+            for op in operarios:
+                op_id, op_nombre, op_login, op_activo = op
+                with st.container(border=True):
+                    col_o1, col_o2, col_o3, col_o4 = st.columns([2, 2, 1, 2])
+                    with col_o1:
+                        st.markdown(f"**{op_nombre}**")
+                    with col_o2:
+                        st.caption(f"Usuario: `{op_login}`")
+                    with col_o3:
+                        if op_activo:
+                            st.success("Activo")
+                        else:
+                            st.error("Inactivo")
+                    with col_o4:
+                        col_btn1, col_btn2 = st.columns(2)
+                        with col_btn1:
+                            etiqueta_toggle = "Desactivar" if op_activo else "Activar"
+                            if st.button(etiqueta_toggle, key=f"toggle_op_{op_id}", width='stretch'):
+                                try:
+                                    with engine.begin() as conn_toggle:
+                                        conn_toggle.execute(
+                                            text("UPDATE Operarios_Patio SET activo = :nuevo_estado, token_sesion = NULL WHERE id = :oid AND usuario_id = :uid"),
+                                            {"nuevo_estado": not op_activo, "oid": op_id, "uid": user_id}
+                                        )
+                                    invalidar_cache_operarios()
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(mensaje_error_amigable(e, "cambiar el estado del operario"))
+                        with col_btn2:
+                            if st.button("Cambiar clave", key=f"reset_op_{op_id}", width='stretch'):
+                                st.session_state[f"mostrar_reset_{op_id}"] = True
 
-                if st.session_state.get(f"mostrar_reset_{op_id}", False):
-                    with st.form(key=f"form_reset_{op_id}"):
-                        nueva_pass = st.text_input("Nueva contraseña", type="password", key=f"nueva_pass_{op_id}")
-                        col_fr1, col_fr2 = st.columns(2)
-                        with col_fr1:
-                            if st.form_submit_button("Guardar nueva contraseña", type="primary"):
-                                if nueva_pass and len(nueva_pass) >= 4:
-                                    try:
-                                        nuevo_hash_op = bcrypt.hashpw(nueva_pass.encode(), bcrypt.gensalt()).decode()
-                                        with engine.begin() as conn_np:
-                                            conn_np.execute(
-                                                text("UPDATE Operarios_Patio SET password = :pw, token_sesion = NULL WHERE id = :oid AND usuario_id = :uid"),
-                                                {"pw": nuevo_hash_op, "oid": op_id, "uid": user_id}
-                                            )
-                                        st.session_state[f"mostrar_reset_{op_id}"] = False
-                                        st.success("Contraseña actualizada.")
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(mensaje_error_amigable(e, "actualizar la contraseña"))
-                                else:
-                                    st.error("La contraseña debe tener al menos 4 caracteres.")
-                        with col_fr2:
-                            if st.form_submit_button("Cancelar"):
-                                st.session_state[f"mostrar_reset_{op_id}"] = False
-                                st.rerun()
+                    if st.session_state.get(f"mostrar_reset_{op_id}", False):
+                        with st.form(key=f"form_reset_{op_id}"):
+                            nueva_pass = st.text_input("Nueva contraseña", type="password", key=f"nueva_pass_{op_id}")
+                            col_fr1, col_fr2 = st.columns(2)
+                            with col_fr1:
+                                if st.form_submit_button("Guardar nueva contraseña", type="primary"):
+                                    if nueva_pass and len(nueva_pass) >= 4:
+                                        try:
+                                            nuevo_hash_op = bcrypt.hashpw(nueva_pass.encode(), bcrypt.gensalt()).decode()
+                                            with engine.begin() as conn_np:
+                                                conn_np.execute(
+                                                    text("UPDATE Operarios_Patio SET password = :pw, token_sesion = NULL WHERE id = :oid AND usuario_id = :uid"),
+                                                    {"pw": nuevo_hash_op, "oid": op_id, "uid": user_id}
+                                                )
+                                            st.session_state[f"mostrar_reset_{op_id}"] = False
+                                            st.success("Contraseña actualizada.")
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(mensaje_error_amigable(e, "actualizar la contraseña"))
+                                    else:
+                                        st.error("La contraseña debe tener al menos 4 caracteres.")
+                            with col_fr2:
+                                if st.form_submit_button("Cancelar"):
+                                    st.session_state[f"mostrar_reset_{op_id}"] = False
+                                    st.rerun()
+
+    _seccion_operarios_patio()
 
 # ==========================================
 # TAB 5: FACTURACIÓN ELECTRÓNICA

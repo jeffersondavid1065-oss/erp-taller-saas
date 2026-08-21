@@ -178,64 +178,70 @@ with tab_activa:
             )
 
         st.markdown("---")
-        st.subheader("Registrar Abono")
+        @st.fragment
+        def _seccion_registrar_abono():
+            st.subheader("Registrar Abono")
 
-        dict_ordenes_credito = {
-            f"Orden #{r['numero_orden']} — {r['cliente']} (Placa {r['placa']}) — Saldo: {formato_cop(r['saldo_pendiente'])}": r['hoja_id']
-            for _, r in df_creditos.iterrows()
-        }
-        opciones_ordenes_credito = ["-- Seleccionar Empresa/Persona --"] + list(dict_ordenes_credito.keys())
-        orden_sel_str = st.selectbox("Selecciona la orden a abonar", options=opciones_ordenes_credito)
+            dict_ordenes_credito = {
+                f"Orden #{r['numero_orden']} — {r['cliente']} (Placa {r['placa']}) — Saldo: {formato_cop(r['saldo_pendiente'])}": r['hoja_id']
+                for _, r in df_creditos.iterrows()
+            }
+            opciones_ordenes_credito = ["-- Seleccionar Empresa/Persona --"] + list(dict_ordenes_credito.keys())
+            orden_sel_str = st.selectbox("Selecciona la orden a abonar", options=opciones_ordenes_credito)
 
-        if orden_sel_str == "-- Seleccionar Empresa/Persona --":
-            st.info("Selecciona una orden para registrar un abono.")
-        else:
-            hoja_id_sel = dict_ordenes_credito[orden_sel_str]
-            fila_credito_sel = df_creditos[df_creditos['hoja_id'] == hoja_id_sel].iloc[0]
-            saldo_actual = float(fila_credito_sel['saldo_pendiente'])
-            numero_orden_sel = fila_credito_sel['numero_orden']
+            if orden_sel_str == "-- Seleccionar Empresa/Persona --":
+                st.info("Selecciona una orden para registrar un abono.")
+            else:
+                hoja_id_sel = dict_ordenes_credito[orden_sel_str]
+                fila_credito_sel = df_creditos[df_creditos['hoja_id'] == hoja_id_sel].iloc[0]
+                saldo_actual = float(fila_credito_sel['saldo_pendiente'])
+                numero_orden_sel = fila_credito_sel['numero_orden']
 
-            factus_utils.mostrar_documento(
-                st, "Descargar factura de esta orden", fila_credito_sel['factura_pdf_url'],
-                f"Factura_Orden_{numero_orden_sel}.pdf", "application/pdf"
-            )
-
-            st.caption(f"Saldo pendiente de esta orden: **{formato_cop(saldo_actual)}**")
-
-            col_ab1, col_ab2 = st.columns(2)
-            with col_ab1:
-                monto_abono = st.number_input(
-                    "Monto del abono", min_value=0, max_value=int(saldo_actual), step=5000, value=0,
-                    help=(
-                        "Un 'abono' es un pago parcial de la deuda del cliente. Escribe cuánto pagó "
-                        "ahora — si pagó todo, escribe el saldo pendiente completo."
-                    )
+                factus_utils.mostrar_documento(
+                    st, "Descargar factura de esta orden", fila_credito_sel['factura_pdf_url'],
+                    f"Factura_Orden_{numero_orden_sel}.pdf", "application/pdf"
                 )
-                metodo_abono = st.selectbox("Método de pago", ["Efectivo", "Transferencia"])
-            with col_ab2:
-                notas_abono = st.text_area("Notas (opcional)", placeholder="Ej: Pago parcial en efectivo en taller")
 
-            if st.button("Registrar Abono", type="primary", width='stretch'):
-                if monto_abono <= 0:
-                    st.warning("Escribe cuánto pagó el cliente. El monto debe ser mayor a cero.")
-                else:
-                    try:
-                        nota_completa = f"[{metodo_abono}] {notas_abono}".strip() if notas_abono else f"[{metodo_abono}]"
-                        with st.spinner("Registrando abono..."):
-                            registrar_abono(user_id, hoja_id_sel, monto_abono, nota_completa)
-                        st.success(f"Abono de {formato_cop(monto_abono)} registrado.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(mensaje_error_amigable(e, "registrar el abono"))
+                st.caption(f"Saldo pendiente de esta orden: **{formato_cop(saldo_actual)}**")
 
-            with st.expander(f"Historial de abonos de la Orden #{numero_orden_sel}"):
-                abonos = obtener_abonos_orden(hoja_id_sel)
-                if not abonos:
-                    st.caption("Todavía no se ha registrado ningún abono para esta orden.")
-                else:
-                    for ab in abonos:
-                        nota_txt = f" — {ab.notas}" if ab.notas else ""
-                        st.write(f"• {formato_cop(ab.monto)} el {ab.fecha}{nota_txt}")
+                col_ab1, col_ab2 = st.columns(2)
+                with col_ab1:
+                    monto_abono = st.number_input(
+                        "Monto del abono", min_value=0, max_value=int(saldo_actual), step=5000, value=0,
+                        help=(
+                            "Un 'abono' es un pago parcial de la deuda del cliente. Escribe cuánto pagó "
+                            "ahora — si pagó todo, escribe el saldo pendiente completo."
+                        )
+                    )
+                    metodo_abono = st.selectbox("Método de pago", ["Efectivo", "Transferencia"])
+                with col_ab2:
+                    notas_abono = st.text_area("Notas (opcional)", placeholder="Ej: Pago parcial en efectivo en taller")
+
+                if st.button("Registrar Abono", type="primary", width='stretch'):
+                    if monto_abono <= 0:
+                        st.warning("Escribe cuánto pagó el cliente. El monto debe ser mayor a cero.")
+                    else:
+                        try:
+                            nota_completa = f"[{metodo_abono}] {notas_abono}".strip() if notas_abono else f"[{metodo_abono}]"
+                            with st.spinner("Registrando abono..."):
+                                registrar_abono(user_id, hoja_id_sel, monto_abono, nota_completa)
+                            st.success(f"Abono de {formato_cop(monto_abono)} registrado.")
+                            # scope="app": la tabla y métricas de arriba (fuera de
+                            # este fragment) también deben reflejar el nuevo saldo.
+                            st.rerun(scope="app")
+                        except Exception as e:
+                            st.error(mensaje_error_amigable(e, "registrar el abono"))
+
+                with st.expander(f"Historial de abonos de la Orden #{numero_orden_sel}"):
+                    abonos = obtener_abonos_orden(hoja_id_sel)
+                    if not abonos:
+                        st.caption("Todavía no se ha registrado ningún abono para esta orden.")
+                    else:
+                        for ab in abonos:
+                            nota_txt = f" — {ab.notas}" if ab.notas else ""
+                            st.write(f"• {formato_cop(ab.monto)} el {ab.fecha}{nota_txt}")
+
+        _seccion_registrar_abono()
 
 # ==========================================
 # PESTAÑA 2: CLIENTES CON CARTERA (vista por cliente)
@@ -336,59 +342,65 @@ with tab_clientes:
                         column_config={"Monto": st.column_config.NumberColumn(format="$%,d")}
                     )
 
-            ordenes_pendientes_cliente = df_ordenes_cliente[df_ordenes_cliente['saldo_pendiente'] > 0]
-            if not ordenes_pendientes_cliente.empty:
-                st.markdown("---")
-                st.markdown("**Registrar Abono para este cliente:**")
+            @st.fragment
+            def _seccion_registrar_abono_cliente():
+                ordenes_pendientes_cliente = df_ordenes_cliente[df_ordenes_cliente['saldo_pendiente'] > 0]
+                if not ordenes_pendientes_cliente.empty:
+                    st.markdown("---")
+                    st.markdown("**Registrar Abono para este cliente:**")
 
-                dict_ordenes_cliente = {
-                    f"Orden #{r['numero_orden']} — Saldo: {formato_cop(r['saldo_pendiente'])}": r['hoja_id']
-                    for _, r in ordenes_pendientes_cliente.iterrows()
-                }
-                opciones_ord_cliente = ["-- Seleccionar Orden --"] + list(dict_ordenes_cliente.keys())
-                orden_abono_cliente_sel = st.selectbox(
-                    "Selecciona la orden a abonar", options=opciones_ord_cliente, key="orden_abono_cliente_sel"
-                )
-
-                if orden_abono_cliente_sel != "-- Seleccionar Orden --":
-                    hoja_id_cliente_sel = dict_ordenes_cliente[orden_abono_cliente_sel]
-                    fila_orden_cliente = ordenes_pendientes_cliente[
-                        ordenes_pendientes_cliente['hoja_id'] == hoja_id_cliente_sel
-                    ].iloc[0]
-                    saldo_cliente_actual = float(fila_orden_cliente['saldo_pendiente'])
-
-                    factus_utils.mostrar_documento(
-                        st, "Descargar factura de esta orden", fila_orden_cliente['factura_pdf_url'],
-                        f"Factura_Orden_{fila_orden_cliente['numero_orden']}.pdf", "application/pdf"
+                    dict_ordenes_cliente = {
+                        f"Orden #{r['numero_orden']} — Saldo: {formato_cop(r['saldo_pendiente'])}": r['hoja_id']
+                        for _, r in ordenes_pendientes_cliente.iterrows()
+                    }
+                    opciones_ord_cliente = ["-- Seleccionar Orden --"] + list(dict_ordenes_cliente.keys())
+                    orden_abono_cliente_sel = st.selectbox(
+                        "Selecciona la orden a abonar", options=opciones_ord_cliente, key="orden_abono_cliente_sel"
                     )
 
-                    col_ca1, col_ca2 = st.columns(2)
-                    with col_ca1:
-                        monto_abono_cliente = st.number_input(
-                            "Monto del abono", min_value=0, max_value=int(saldo_cliente_actual), step=5000, value=0,
-                            key="monto_abono_cliente"
-                        )
-                        metodo_abono_cliente = st.selectbox(
-                            "Método de pago", ["Efectivo", "Transferencia"], key="metodo_abono_cliente"
-                        )
-                    with col_ca2:
-                        notas_abono_cliente = st.text_area("Notas (opcional)", key="notas_abono_cliente")
+                    if orden_abono_cliente_sel != "-- Seleccionar Orden --":
+                        hoja_id_cliente_sel = dict_ordenes_cliente[orden_abono_cliente_sel]
+                        fila_orden_cliente = ordenes_pendientes_cliente[
+                            ordenes_pendientes_cliente['hoja_id'] == hoja_id_cliente_sel
+                        ].iloc[0]
+                        saldo_cliente_actual = float(fila_orden_cliente['saldo_pendiente'])
 
-                    if st.button("Registrar Abono", type="primary", width='stretch', key="btn_abono_cliente"):
-                        if monto_abono_cliente <= 0:
-                            st.warning("Escribe cuánto pagó el cliente. El monto debe ser mayor a cero.")
-                        else:
-                            try:
-                                nota_completa_c = (
-                                    f"[{metodo_abono_cliente}] {notas_abono_cliente}".strip()
-                                    if notas_abono_cliente else f"[{metodo_abono_cliente}]"
-                                )
-                                with st.spinner("Registrando abono..."):
-                                    registrar_abono(user_id, hoja_id_cliente_sel, monto_abono_cliente, nota_completa_c)
-                                st.success(f"Abono de {formato_cop(monto_abono_cliente)} registrado.")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(mensaje_error_amigable(e, "registrar el abono"))
+                        factus_utils.mostrar_documento(
+                            st, "Descargar factura de esta orden", fila_orden_cliente['factura_pdf_url'],
+                            f"Factura_Orden_{fila_orden_cliente['numero_orden']}.pdf", "application/pdf"
+                        )
+
+                        col_ca1, col_ca2 = st.columns(2)
+                        with col_ca1:
+                            monto_abono_cliente = st.number_input(
+                                "Monto del abono", min_value=0, max_value=int(saldo_cliente_actual), step=5000, value=0,
+                                key="monto_abono_cliente"
+                            )
+                            metodo_abono_cliente = st.selectbox(
+                                "Método de pago", ["Efectivo", "Transferencia"], key="metodo_abono_cliente"
+                            )
+                        with col_ca2:
+                            notas_abono_cliente = st.text_area("Notas (opcional)", key="notas_abono_cliente")
+
+                        if st.button("Registrar Abono", type="primary", width='stretch', key="btn_abono_cliente"):
+                            if monto_abono_cliente <= 0:
+                                st.warning("Escribe cuánto pagó el cliente. El monto debe ser mayor a cero.")
+                            else:
+                                try:
+                                    nota_completa_c = (
+                                        f"[{metodo_abono_cliente}] {notas_abono_cliente}".strip()
+                                        if notas_abono_cliente else f"[{metodo_abono_cliente}]"
+                                    )
+                                    with st.spinner("Registrando abono..."):
+                                        registrar_abono(user_id, hoja_id_cliente_sel, monto_abono_cliente, nota_completa_c)
+                                    st.success(f"Abono de {formato_cop(monto_abono_cliente)} registrado.")
+                                    # scope="app": las métricas de deuda del cliente
+                                    # (fuera de este fragment) también deben refrescarse.
+                                    st.rerun(scope="app")
+                                except Exception as e:
+                                    st.error(mensaje_error_amigable(e, "registrar el abono"))
+
+            _seccion_registrar_abono_cliente()
 
 # ==========================================
 # PESTAÑA 3: ESTADO DE CUENTA (PDF por cliente y período)

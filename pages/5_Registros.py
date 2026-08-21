@@ -416,83 +416,87 @@ with tab_mecanicos:
                     st.warning("Por favor, completa ambos campos.")
     
     with col_mec2:
-        st.subheader("Personal Actual")
-        
-        mecanicos_db = obtener_mecanicos_directorio(user_id)
-        
-        if not mecanicos_db.empty:
-            for index, row in mecanicos_db.iterrows():
-                with st.container(border=True):
-                    st.markdown(f"**{row['nombre']}**")
-                    st.caption(f"Documento: {row['documento']} | Estado: **{row['estado']}**")
-                    
-                    col_m1, col_m2 = st.columns(2)
-                    with col_m1:
-                        if st.button("Editar", key=f"btn_edit_mec_{row['id']}", width='stretch'):
-                            st.session_state[f"edit_mode_{row['id']}"] = True
-                    with col_m2:
-                        if st.button("Eliminar", key=f"btn_del_mec_{row['id']}", width='stretch'):
-                            st.session_state[f"del_confirm_mec_{row['id']}"] = True
+        @st.fragment
+        def _seccion_personal_actual():
+            st.subheader("Personal Actual")
+            
+            mecanicos_db = obtener_mecanicos_directorio(user_id)
+            
+            if not mecanicos_db.empty:
+                for index, row in mecanicos_db.iterrows():
+                    with st.container(border=True):
+                        st.markdown(f"**{row['nombre']}**")
+                        st.caption(f"Documento: {row['documento']} | Estado: **{row['estado']}**")
+                        
+                        col_m1, col_m2 = st.columns(2)
+                        with col_m1:
+                            if st.button("Editar", key=f"btn_edit_mec_{row['id']}", width='stretch'):
+                                st.session_state[f"edit_mode_{row['id']}"] = True
+                        with col_m2:
+                            if st.button("Eliminar", key=f"btn_del_mec_{row['id']}", width='stretch'):
+                                st.session_state[f"del_confirm_mec_{row['id']}"] = True
 
-                    if st.session_state.get(f"del_confirm_mec_{row['id']}", False):
-                        st.warning(f"¿Eliminar a **{row['nombre']}** del equipo? Esta acción no se puede deshacer.")
-                        col_dc1, col_dc2 = st.columns(2)
-                        with col_dc1:
-                            if st.button("Sí, eliminar definitivamente", key=f"yes_del_mec_{row['id']}", type="primary", width='stretch'):
-                                try:
-                                    with engine.begin() as conn_del:
-                                        conn_del.execute(
-                                            text("DELETE FROM Mecanicos WHERE id = :id AND usuario_id = :uid"),
-                                            {"id": int(row['id']), "uid": user_id}
-                                        )
-                                    invalidar_cache_directorio()
+                        if st.session_state.get(f"del_confirm_mec_{row['id']}", False):
+                            st.warning(f"¿Eliminar a **{row['nombre']}** del equipo? Esta acción no se puede deshacer.")
+                            col_dc1, col_dc2 = st.columns(2)
+                            with col_dc1:
+                                if st.button("Sí, eliminar definitivamente", key=f"yes_del_mec_{row['id']}", type="primary", width='stretch'):
+                                    try:
+                                        with engine.begin() as conn_del:
+                                            conn_del.execute(
+                                                text("DELETE FROM Mecanicos WHERE id = :id AND usuario_id = :uid"),
+                                                {"id": int(row['id']), "uid": user_id}
+                                            )
+                                        invalidar_cache_directorio()
+                                        st.session_state[f"del_confirm_mec_{row['id']}"] = False
+                                        st.success("Mecánico eliminado.")
+                                        st.rerun()
+                                    except Exception:
+                                        st.error("No se puede eliminar: tiene trabajos asociados en órdenes de servicio.")
+                            with col_dc2:
+                                if st.button("Cancelar", key=f"no_del_mec_{row['id']}", width='stretch'):
                                     st.session_state[f"del_confirm_mec_{row['id']}"] = False
-                                    st.success("Mecánico eliminado.")
                                     st.rerun()
-                                except Exception:
-                                    st.error("No se puede eliminar: tiene trabajos asociados en órdenes de servicio.")
-                        with col_dc2:
-                            if st.button("Cancelar", key=f"no_del_mec_{row['id']}", width='stretch'):
-                                st.session_state[f"del_confirm_mec_{row['id']}"] = False
-                                st.rerun()
 
-                    if st.session_state.get(f"edit_mode_{row['id']}", False):
-                        with st.form(key=f"form_update_mec_{row['id']}"):
-                            nuevo_nombre = st.text_input("Nombre", value=row['nombre'])
-                            nuevo_doc = st.text_input("Documento", value=row['documento'])
-                            nuevo_estado = st.selectbox("Estado", ["Activo", "Inactivo"], index=0 if row['estado'] == 'Activo' else 1)
-                            
-                            col_f1, col_f2 = st.columns(2)
-                            with col_f1:
-                                guardar = st.form_submit_button("Guardar", type="primary")
-                            with col_f2:
-                                cancelar = st.form_submit_button("Cancelar")
+                        if st.session_state.get(f"edit_mode_{row['id']}", False):
+                            with st.form(key=f"form_update_mec_{row['id']}"):
+                                nuevo_nombre = st.text_input("Nombre", value=row['nombre'])
+                                nuevo_doc = st.text_input("Documento", value=row['documento'])
+                                nuevo_estado = st.selectbox("Estado", ["Activo", "Inactivo"], index=0 if row['estado'] == 'Activo' else 1)
                                 
-                            if guardar:
-                                try:
-                                    with engine.begin() as conn_upd:
-                                        conn_upd.execute(
-                                            text('''
-                                                UPDATE Mecanicos 
-                                                SET nombre = :nombre, documento = :doc, estado = :estado 
-                                                WHERE id = :id AND usuario_id = :uid
-                                            '''),
-                                            {
-                                                "nombre": nuevo_nombre, 
-                                                "doc": nuevo_doc, 
-                                                "estado": nuevo_estado, 
-                                                "id": int(row['id']), 
-                                                "uid": user_id
-                                            }
-                                        )
-                                    invalidar_cache_directorio()
+                                col_f1, col_f2 = st.columns(2)
+                                with col_f1:
+                                    guardar = st.form_submit_button("Guardar", type="primary")
+                                with col_f2:
+                                    cancelar = st.form_submit_button("Cancelar")
+                                    
+                                if guardar:
+                                    try:
+                                        with engine.begin() as conn_upd:
+                                            conn_upd.execute(
+                                                text('''
+                                                    UPDATE Mecanicos 
+                                                    SET nombre = :nombre, documento = :doc, estado = :estado 
+                                                    WHERE id = :id AND usuario_id = :uid
+                                                '''),
+                                                {
+                                                    "nombre": nuevo_nombre, 
+                                                    "doc": nuevo_doc, 
+                                                    "estado": nuevo_estado, 
+                                                    "id": int(row['id']), 
+                                                    "uid": user_id
+                                                }
+                                            )
+                                        invalidar_cache_directorio()
+                                        st.session_state[f"edit_mode_{row['id']}"] = False
+                                        st.success("Registro actualizado con éxito.")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(mensaje_error_amigable(e, "actualizar el mecánico"))
+                                if cancelar:
                                     st.session_state[f"edit_mode_{row['id']}"] = False
-                                    st.success("Registro actualizado con éxito.")
                                     st.rerun()
-                                except Exception as e:
-                                    st.error(mensaje_error_amigable(e, "actualizar el mecánico"))
-                            if cancelar:
-                                st.session_state[f"edit_mode_{row['id']}"] = False
-                                st.rerun()
-        else:
-            st.info("No hay mecánicos registrados en el sistema.")
+            else:
+                st.info("No hay mecánicos registrados en el sistema.")
+
+        _seccion_personal_actual()

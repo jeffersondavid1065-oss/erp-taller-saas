@@ -112,9 +112,16 @@ st.markdown("---")
 # ==========================================
 # 1. MÓDULO PARA LIQUIDAR Y COTIZAR TRABAJOS EN $0
 # ==========================================
-ordenes_sin_precio = obtener_ordenes_con_items_pendientes(user_id)
-
-if ordenes_sin_precio:
+# Envuelto en un fragment: cada tecla en los inputs de precio antes solo
+# recargaba toda la página (tablero Kanban incluido). La consulta de
+# ordenes_sin_precio se recalcula ADENTRO del fragment (no afuera) para que,
+# tras guardar precios, la orden desaparezca de la lista sin depender de un
+# rerun de página completa (que en un fragment ya no ocurre por defecto).
+@st.fragment
+def _seccion_precios_pendientes():
+    ordenes_sin_precio = obtener_ordenes_con_items_pendientes(user_id)
+    if not ordenes_sin_precio:
+        return
     with st.expander(f"Atención: Hay {len(ordenes_sin_precio)} orden(es) con trabajos sin precio asignado", expanded=True):
         dict_pendientes = {f"Orden #{o[1]} - Placa: {o[2]} ({o[3]})": o[0] for o in ordenes_sin_precio}
         dict_numero_por_id = {o[0]: o[1] for o in ordenes_sin_precio}
@@ -192,12 +199,19 @@ if ordenes_sin_precio:
 
     st.markdown("---")
 
+_seccion_precios_pendientes()
+
 # ==========================================
 # 2. VEHÍCULOS LISTOS SIN ENTREGAR
 # ==========================================
-listos_sin_entregar = obtener_listos_sin_entregar(user_id)
-
-if listos_sin_entregar:
+# Mismo motivo que la sección 1: fragment con la consulta recalculada
+# adentro, para que un vehículo entregado desaparezca de la lista sin
+# depender de un rerun de página completa.
+@st.fragment
+def _seccion_listos_sin_entregar():
+    listos_sin_entregar = obtener_listos_sin_entregar(user_id)
+    if not listos_sin_entregar:
+        return
     with st.expander(f"{len(listos_sin_entregar)} vehículo(s) listo(s) esperando que el cliente pase a recogerlos", expanded=False):
         for orden_id_le, numero_orden_le, placa_le, empresa_le, estado_le, tipo_pago_le, factura_estado_le in listos_sin_entregar:
             fe_txt_le = "✅ Con factura electrónica" if factura_estado_le == "emitida" else "— Sin factura electrónica"
@@ -236,6 +250,8 @@ if listos_sin_entregar:
             st.divider()
 
     st.markdown("---")
+
+_seccion_listos_sin_entregar()
 
 # ==========================================
 # 3. TABLERO KANBAN DE PENDIENTES

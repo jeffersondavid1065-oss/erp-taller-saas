@@ -220,81 +220,85 @@ with tab_flota:
         # PESTAÑA: CONFIGURAR RECETA E INVENTARIO
         # ==========================================
         with tab_receta:
-            st.write("Agrega los insumos uno por uno. Ejemplo: agrega 1 Filtro de Aceite, luego 2 Filtros de ACPM, luego 4 Cuartos de Aceite.")
+            @st.fragment
+            def _seccion_receta_vehiculo():
+                st.write("Agrega los insumos uno por uno. Ejemplo: agrega 1 Filtro de Aceite, luego 2 Filtros de ACPM, luego 4 Cuartos de Aceite.")
 
-            recetas_df = obtener_receta_vehiculo(veh_id_activo)
+                recetas_df = obtener_receta_vehiculo(veh_id_activo)
 
-            if not recetas_df.empty:
-                st.markdown("**Insumos actuales del vehiculo:**")
-                for idx, row in recetas_df.iterrows():
-                    col_item1, col_item2, col_item3, col_item4 = st.columns([3, 1, 2, 1])
-                    col_item1.write(f"{row['nombre_producto']}")
-                    col_item2.write(f"Cant: {row['cantidad']}")
-                    col_item3.write(f"Unidad: {formato_cop(row['precio_venta'])}")
-                    with col_item4:
-                        if st.button("Eliminar", key=f"del_receta_{row['id']}"):
-                            st.session_state[f"del_confirm_receta_{row['id']}"] = True
+                if not recetas_df.empty:
+                    st.markdown("**Insumos actuales del vehiculo:**")
+                    for idx, row in recetas_df.iterrows():
+                        col_item1, col_item2, col_item3, col_item4 = st.columns([3, 1, 2, 1])
+                        col_item1.write(f"{row['nombre_producto']}")
+                        col_item2.write(f"Cant: {row['cantidad']}")
+                        col_item3.write(f"Unidad: {formato_cop(row['precio_venta'])}")
+                        with col_item4:
+                            if st.button("Eliminar", key=f"del_receta_{row['id']}"):
+                                st.session_state[f"del_confirm_receta_{row['id']}"] = True
 
-                    if st.session_state.get(f"del_confirm_receta_{row['id']}", False):
-                        col_rc1, col_rc2, col_rc3 = st.columns([2, 1, 1])
-                        col_rc1.warning(f"¿Quitar **{row['nombre_producto']}** de la lista de este vehículo?")
-                        with col_rc2:
-                            if st.button("Sí, quitar", key=f"yes_del_receta_{row['id']}", type="primary", width='stretch'):
-                                try:
-                                    with engine.begin() as conn_del:
-                                        conn_del.execute(text("DELETE FROM Recetas_Vehiculo WHERE id = :rid"), {"rid": row['id']})
-                                    invalidar_cache_receta()
+                        if st.session_state.get(f"del_confirm_receta_{row['id']}", False):
+                            col_rc1, col_rc2, col_rc3 = st.columns([2, 1, 1])
+                            col_rc1.warning(f"¿Quitar **{row['nombre_producto']}** de la lista de este vehículo?")
+                            with col_rc2:
+                                if st.button("Sí, quitar", key=f"yes_del_receta_{row['id']}", type="primary", width='stretch'):
+                                    try:
+                                        with engine.begin() as conn_del:
+                                            conn_del.execute(text("DELETE FROM Recetas_Vehiculo WHERE id = :rid"), {"rid": row['id']})
+                                        invalidar_cache_receta()
+                                        st.session_state[f"del_confirm_receta_{row['id']}"] = False
+                                        st.success("Insumo eliminado de la lista.")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(mensaje_error_amigable(e, "eliminar el insumo"))
+                            with col_rc3:
+                                if st.button("Cancelar", key=f"no_del_receta_{row['id']}", width='stretch'):
                                     st.session_state[f"del_confirm_receta_{row['id']}"] = False
-                                    st.success("Insumo eliminado de la lista.")
                                     st.rerun()
-                                except Exception as e:
-                                    st.error(mensaje_error_amigable(e, "eliminar el insumo"))
-                        with col_rc3:
-                            if st.button("Cancelar", key=f"no_del_receta_{row['id']}", width='stretch'):
-                                st.session_state[f"del_confirm_receta_{row['id']}"] = False
+                else:
+                    st.caption("No hay insumos configurados para este vehiculo.")
+
+                st.markdown("---")
+                with st.form("form_add_receta_inventario", clear_on_submit=True):
+                    st.markdown("**Agregar Insumo a la Lista**")
+                    col_r1, col_r2 = st.columns(2)
+                    with col_r1:
+                        item_desc = st.text_input("Nombre del Filtro o Aceite (Ej: Filtro ACPM, Cuarto Aceite 15W40)")
+                        cant_item = st.number_input("Cantidad que usa el carro", min_value=1, value=1, step=1)
+                    with col_r2:
+                        costo_compra = st.number_input("Costo de Compra ($)", min_value=0.0, step=1000.0)
+                        precio_venta = st.number_input("Precio de Venta ($)", min_value=0.0, step=1000.0)
+
+                    if st.form_submit_button("Guardar en Lista y Almacen", type="primary"):
+                        if item_desc:
+                            try:
+                                with engine.begin() as conn_r:
+                                    is_sqlite = "sqlite" in str(conn_r.engine.url)
+                                    if is_sqlite:
+                                        cur = conn_r.execute(
+                                            text("INSERT INTO Inventario (usuario_id, nombre_producto, costo_compra, precio_venta, stock_actual) VALUES (:uid, :nom, :costo, :pvp, 0)"),
+                                            {"uid": user_id, "nom": item_desc, "costo": float(costo_compra), "pvp": float(precio_venta)}
+                                        )
+                                        nuevo_inv_id = cur.lastrowid
+                                    else:
+                                        res = conn_r.execute(
+                                            text("INSERT INTO Inventario (usuario_id, nombre_producto, costo_compra, precio_venta, stock_actual) VALUES (:uid, :nom, :costo, :pvp, 0) RETURNING id"),
+                                            {"uid": user_id, "nom": item_desc, "costo": float(costo_compra), "pvp": float(precio_venta)}
+                                        )
+                                        nuevo_inv_id = res.scalar()
+
+                                    conn_r.execute(
+                                        text("INSERT INTO Recetas_Vehiculo (vehiculo_id, inventario_id, cantidad) VALUES (:vid, :iid, :cant)"),
+                                        {"vid": veh_id_activo, "iid": nuevo_inv_id, "cant": int(cant_item)}
+                                    )
+                                invalidar_cache_receta()
+                                invalidar_cache_inventario()
+                                st.success("Insumo guardado.")
                                 st.rerun()
-            else:
-                st.caption("No hay insumos configurados para este vehiculo.")
+                            except Exception as e:
+                                st.error(mensaje_error_amigable(e, "guardar el insumo"))
 
-            st.markdown("---")
-            with st.form("form_add_receta_inventario", clear_on_submit=True):
-                st.markdown("**Agregar Insumo a la Lista**")
-                col_r1, col_r2 = st.columns(2)
-                with col_r1:
-                    item_desc = st.text_input("Nombre del Filtro o Aceite (Ej: Filtro ACPM, Cuarto Aceite 15W40)")
-                    cant_item = st.number_input("Cantidad que usa el carro", min_value=1, value=1, step=1)
-                with col_r2:
-                    costo_compra = st.number_input("Costo de Compra ($)", min_value=0.0, step=1000.0)
-                    precio_venta = st.number_input("Precio de Venta ($)", min_value=0.0, step=1000.0)
-
-                if st.form_submit_button("Guardar en Lista y Almacen", type="primary"):
-                    if item_desc:
-                        try:
-                            with engine.begin() as conn_r:
-                                is_sqlite = "sqlite" in str(conn_r.engine.url)
-                                if is_sqlite:
-                                    cur = conn_r.execute(
-                                        text("INSERT INTO Inventario (usuario_id, nombre_producto, costo_compra, precio_venta, stock_actual) VALUES (:uid, :nom, :costo, :pvp, 0)"),
-                                        {"uid": user_id, "nom": item_desc, "costo": float(costo_compra), "pvp": float(precio_venta)}
-                                    )
-                                    nuevo_inv_id = cur.lastrowid
-                                else:
-                                    res = conn_r.execute(
-                                        text("INSERT INTO Inventario (usuario_id, nombre_producto, costo_compra, precio_venta, stock_actual) VALUES (:uid, :nom, :costo, :pvp, 0) RETURNING id"),
-                                        {"uid": user_id, "nom": item_desc, "costo": float(costo_compra), "pvp": float(precio_venta)}
-                                    )
-                                    nuevo_inv_id = res.scalar()
-
-                                conn_r.execute(
-                                    text("INSERT INTO Recetas_Vehiculo (vehiculo_id, inventario_id, cantidad) VALUES (:vid, :iid, :cant)"),
-                                    {"vid": veh_id_activo, "iid": nuevo_inv_id, "cant": int(cant_item)}
-                                )
-                            invalidar_cache_receta()
-                            invalidar_cache_inventario()
-                            st.success("Insumo guardado.")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(mensaje_error_amigable(e, "guardar el insumo"))
+            _seccion_receta_vehiculo()
 
         # ==========================================
         # PESTAÑA: DESPACHO Y ORDENES

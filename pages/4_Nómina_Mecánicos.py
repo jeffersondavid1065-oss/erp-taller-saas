@@ -175,62 +175,66 @@ with tab_auditoria:
         # cientos de registros históricos en talleres con mucho volumen.
         query_final_str = " ".join(query_base_sql) + " ORDER BY h.fecha_ingreso DESC LIMIT 200"
 
-    with engine.connect() as conn:
-        df_trabajos = pd.read_sql_query(text(query_final_str), con=conn, params=params_auditoria)
+    @st.fragment
+    def _seccion_auditoria_trabajos():
+        with engine.connect() as conn:
+            df_trabajos = pd.read_sql_query(text(query_final_str), con=conn, params=params_auditoria)
 
-    if not df_trabajos.empty:
-        if hay_filtros_activos and len(df_trabajos) == 200:
-            st.caption("⚠️ Mostrando los 200 resultados más recientes que coinciden con el filtro. Afina la búsqueda para ver un rango más preciso.")
+        if not df_trabajos.empty:
+            if hay_filtros_activos and len(df_trabajos) == 200:
+                st.caption("⚠️ Mostrando los 200 resultados más recientes que coinciden con el filtro. Afina la búsqueda para ver un rango más preciso.")
 
-        df_para_editar = df_trabajos.drop(columns=['fecha_ingreso'])
+            df_para_editar = df_trabajos.drop(columns=['fecha_ingreso'])
 
-        df_editado = st.data_editor(
-            df_para_editar,
-            hide_index=True,
-            width='stretch',
-            disabled=["detalle_id", "orden_nro", "placa", "empresa", "mecanico", "tipo_item"],
-            column_config={
-                "detalle_id": None,
-                "orden_nro": "N° Orden",
-                "placa": "Placa",
-                "empresa": "Cliente / Empresa",
-                "mecanico": "Mecánico",
-                "tipo_item": "Tipo",
-                "descripcion": "Descripción del Trabajo (Editable)",
-                "precio_venta": st.column_config.NumberColumn("Precio Venta (Editable)", format="$%,d")
-            }
-        )
+            df_editado = st.data_editor(
+                df_para_editar,
+                hide_index=True,
+                width='stretch',
+                disabled=["detalle_id", "orden_nro", "placa", "empresa", "mecanico", "tipo_item"],
+                column_config={
+                    "detalle_id": None,
+                    "orden_nro": "N° Orden",
+                    "placa": "Placa",
+                    "empresa": "Cliente / Empresa",
+                    "mecanico": "Mecánico",
+                    "tipo_item": "Tipo",
+                    "descripcion": "Descripción del Trabajo (Editable)",
+                    "precio_venta": st.column_config.NumberColumn("Precio Venta (Editable)", format="$%,d")
+                }
+            )
 
-        if st.button("Guardar Correcciones en la Base de Datos", type="primary"):
-            cambios = df_editado.compare(df_para_editar)
-            if not cambios.empty:
-                try:
-                    with engine.begin() as conn_update:
-                        for index, row in df_editado.iterrows():
-                            desc_orig = df_para_editar.loc[index, 'descripcion']
-                            precio_orig = df_para_editar.loc[index, 'precio_venta']
+            if st.button("Guardar Correcciones en la Base de Datos", type="primary"):
+                cambios = df_editado.compare(df_para_editar)
+                if not cambios.empty:
+                    try:
+                        with engine.begin() as conn_update:
+                            for index, row in df_editado.iterrows():
+                                desc_orig = df_para_editar.loc[index, 'descripcion']
+                                precio_orig = df_para_editar.loc[index, 'precio_venta']
 
-                            if row['descripcion'] != desc_orig or row['precio_venta'] != precio_orig:
-                                conn_update.execute(
-                                    text('''
-                                        UPDATE Detalles_Orden
-                                        SET descripcion = :desc, precio_venta = :precio
-                                        WHERE id = :id
-                                    '''),
-                                    {"desc": row['descripcion'], "precio": float(row['precio_venta']), "id": int(row['detalle_id'])}
-                                )
+                                if row['descripcion'] != desc_orig or row['precio_venta'] != precio_orig:
+                                    conn_update.execute(
+                                        text('''
+                                            UPDATE Detalles_Orden
+                                            SET descripcion = :desc, precio_venta = :precio
+                                            WHERE id = :id
+                                        '''),
+                                        {"desc": row['descripcion'], "precio": float(row['precio_venta']), "id": int(row['detalle_id'])}
+                                    )
 
-                    # Estos cambios afectan precio_venta, que impacta métricas del
-                    # dashboard, el tablero y la lista de pendientes por cotizar.
-                    invalidar_cache_ordenes()
-                    st.success("Cambios aplicados y sincronizados con éxito.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(mensaje_error_amigable(e, "guardar los cambios"))
-            else:
-                st.warning("No se detectaron cambios nuevos para guardar.")
-    else:
-        st.info("No se encontraron trabajos que coincidan con los filtros o criterios de búsqueda.")
+                        # Estos cambios afectan precio_venta, que impacta métricas del
+                        # dashboard, el tablero y la lista de pendientes por cotizar.
+                        invalidar_cache_ordenes()
+                        st.success("Cambios aplicados y sincronizados con éxito.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(mensaje_error_amigable(e, "guardar los cambios"))
+                else:
+                    st.warning("No se detectaron cambios nuevos para guardar.")
+        else:
+            st.info("No se encontraron trabajos que coincidan con los filtros o criterios de búsqueda.")
+
+    _seccion_auditoria_trabajos()
 
 # ==========================================
 # PESTAÑA 2: LIQUIDACIÓN DE NÓMINA (FILTROS Y CÁLCULO CON RETENCIÓN)
@@ -379,77 +383,87 @@ with tab_adelantos:
         "solo de su próxima liquidación, sin que tengas que anotarlo aparte ni acordarte después."
     )
 
-    mecanicos_adelanto = obtener_mecanicos_nomina(user_id)
+    @st.fragment
+    def _seccion_registrar_adelanto():
+        mecanicos_adelanto = obtener_mecanicos_nomina(user_id)
 
-    if not mecanicos_adelanto:
-        st.info("No hay mecánicos registrados en tu taller.")
-    else:
-        dict_mecanicos_adelanto = {f"{m[1]}": m[0] for m in mecanicos_adelanto}
-        opciones_mecanicos_adelanto = ["-- Seleccionar Mecánico --"] + list(dict_mecanicos_adelanto.keys())
+        if not mecanicos_adelanto:
+            st.info("No hay mecánicos registrados en tu taller.")
+        else:
+            dict_mecanicos_adelanto = {f"{m[1]}": m[0] for m in mecanicos_adelanto}
+            opciones_mecanicos_adelanto = ["-- Seleccionar Mecánico --"] + list(dict_mecanicos_adelanto.keys())
 
-        with st.container(border=True):
-            col_ad1, col_ad2 = st.columns(2)
-            with col_ad1:
-                mecanico_adelanto_sel = st.selectbox(
-                    "Mecánico", options=opciones_mecanicos_adelanto, key="mecanico_adelanto_sel"
-                )
-                monto_adelanto = st.number_input(
-                    "Monto del adelanto", min_value=0, step=5000, value=0, key="monto_adelanto"
-                )
-            with col_ad2:
-                motivo_adelanto = st.text_area(
-                    "Motivo (opcional)", placeholder="Ej: Emergencia familiar", key="motivo_adelanto"
-                )
+            with st.container(border=True):
+                col_ad1, col_ad2 = st.columns(2)
+                with col_ad1:
+                    mecanico_adelanto_sel = st.selectbox(
+                        "Mecánico", options=opciones_mecanicos_adelanto, key="mecanico_adelanto_sel"
+                    )
+                    monto_adelanto = st.number_input(
+                        "Monto del adelanto", min_value=0, step=5000, value=0, key="monto_adelanto"
+                    )
+                with col_ad2:
+                    motivo_adelanto = st.text_area(
+                        "Motivo (opcional)", placeholder="Ej: Emergencia familiar", key="motivo_adelanto"
+                    )
 
-            if st.button("Registrar Adelanto", type="primary", width='stretch', key="btn_registrar_adelanto"):
-                if mecanico_adelanto_sel == "-- Seleccionar Mecánico --":
-                    st.error("Selecciona el mecánico que pidió el adelanto.")
-                elif monto_adelanto <= 0:
-                    st.warning("Escribe cuánto se le adelantó. El monto debe ser mayor a cero.")
-                else:
-                    try:
-                        registrar_adelanto(
-                            user_id, dict_mecanicos_adelanto[mecanico_adelanto_sel],
-                            monto_adelanto, motivo_adelanto or None
-                        )
-                        st.success(f"Adelanto de {formato_cop(monto_adelanto)} registrado para {mecanico_adelanto_sel}.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(mensaje_error_amigable(e, "registrar el adelanto"))
+                if st.button("Registrar Adelanto", type="primary", width='stretch', key="btn_registrar_adelanto"):
+                    if mecanico_adelanto_sel == "-- Seleccionar Mecánico --":
+                        st.error("Selecciona el mecánico que pidió el adelanto.")
+                    elif monto_adelanto <= 0:
+                        st.warning("Escribe cuánto se le adelantó. El monto debe ser mayor a cero.")
+                    else:
+                        try:
+                            registrar_adelanto(
+                                user_id, dict_mecanicos_adelanto[mecanico_adelanto_sel],
+                                monto_adelanto, motivo_adelanto or None
+                            )
+                            st.success(f"Adelanto de {formato_cop(monto_adelanto)} registrado para {mecanico_adelanto_sel}.")
+                            # scope="app": la lista de "Adelantos Pendientes de Todo
+                            # el Taller" vive en otro fragment aparte, más abajo.
+                            st.rerun(scope="app")
+                        except Exception as e:
+                            st.error(mensaje_error_amigable(e, "registrar el adelanto"))
+
+    _seccion_registrar_adelanto()
 
     st.markdown("---")
     st.subheader("Adelantos Pendientes de Todo el Taller")
 
-    df_todos_adelantos = obtener_todos_adelantos_pendientes(user_id)
+    @st.fragment
+    def _seccion_adelantos_taller():
+        df_todos_adelantos = obtener_todos_adelantos_pendientes(user_id)
 
-    if df_todos_adelantos.empty:
-        st.success("No hay adelantos pendientes por descontar. Todo al día.")
-    else:
-        total_adelantos_taller = df_todos_adelantos['monto'].sum()
-        st.metric("Total en Adelantos Pendientes", formato_cop(total_adelantos_taller))
+        if df_todos_adelantos.empty:
+            st.success("No hay adelantos pendientes por descontar. Todo al día.")
+        else:
+            total_adelantos_taller = df_todos_adelantos['monto'].sum()
+            st.metric("Total en Adelantos Pendientes", formato_cop(total_adelantos_taller))
 
-        st.dataframe(
-            df_todos_adelantos[['mecanico', 'monto', 'fecha', 'motivo']].rename(columns={
-                'mecanico': 'Mecánico', 'monto': 'Monto', 'fecha': 'Fecha', 'motivo': 'Motivo',
-            }),
-            width='stretch', hide_index=True,
-            column_config={"Monto": st.column_config.NumberColumn(format="$%,d")}
-        )
+            st.dataframe(
+                df_todos_adelantos[['mecanico', 'monto', 'fecha', 'motivo']].rename(columns={
+                    'mecanico': 'Mecánico', 'monto': 'Monto', 'fecha': 'Fecha', 'motivo': 'Motivo',
+                }),
+                width='stretch', hide_index=True,
+                column_config={"Monto": st.column_config.NumberColumn(format="$%,d")}
+            )
 
-        st.markdown("---")
-        st.markdown("**Eliminar un adelanto registrado por error:**")
-        dict_adelantos_borrar = {
-            f"{r['mecanico']} — {formato_cop(r['monto'])} el {r['fecha']}": r['id']
-            for _, r in df_todos_adelantos.iterrows()
-        }
-        opciones_borrar = ["-- Seleccionar Adelanto --"] + list(dict_adelantos_borrar.keys())
-        adelanto_borrar_sel = st.selectbox("Adelanto a eliminar", options=opciones_borrar, key="adelanto_borrar_sel")
+            st.markdown("---")
+            st.markdown("**Eliminar un adelanto registrado por error:**")
+            dict_adelantos_borrar = {
+                f"{r['mecanico']} — {formato_cop(r['monto'])} el {r['fecha']}": r['id']
+                for _, r in df_todos_adelantos.iterrows()
+            }
+            opciones_borrar = ["-- Seleccionar Adelanto --"] + list(dict_adelantos_borrar.keys())
+            adelanto_borrar_sel = st.selectbox("Adelanto a eliminar", options=opciones_borrar, key="adelanto_borrar_sel")
 
-        if adelanto_borrar_sel != "-- Seleccionar Adelanto --":
-            if st.button("Eliminar Adelanto", key="btn_eliminar_adelanto"):
-                try:
-                    eliminar_adelanto(user_id, dict_adelantos_borrar[adelanto_borrar_sel])
-                    st.success("Adelanto eliminado.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(mensaje_error_amigable(e, "eliminar el adelanto"))
+            if adelanto_borrar_sel != "-- Seleccionar Adelanto --":
+                if st.button("Eliminar Adelanto", key="btn_eliminar_adelanto"):
+                    try:
+                        eliminar_adelanto(user_id, dict_adelantos_borrar[adelanto_borrar_sel])
+                        st.success("Adelanto eliminado.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(mensaje_error_amigable(e, "eliminar el adelanto"))
+
+    _seccion_adelantos_taller()
