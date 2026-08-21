@@ -781,6 +781,33 @@ def obtener_listos_sin_entregar(uid):
         return conn.execute(query, {"uid": uid}).fetchall()
 
 
+def eliminar_orden(uid, hoja_id):
+    """Elimina permanentemente una orden y sus ítems (Detalles_Orden). Solo
+    se permite si el vehículo todavía no fue marcado como entregado y la
+    orden no tiene factura electrónica — ninguna de las dos se puede
+    deshacer una vez ocurre, así que borrar la orden dejaría ese rastro
+    huérfano. Lanza ValueError con un mensaje entendible si no se cumple
+    alguna de las dos condiciones."""
+    engine = obtener_conexion()
+    with engine.begin() as conn:
+        orden = conn.execute(text('''
+            SELECT fecha_entrega, factura_estado
+            FROM Hojas_Trabajo WHERE id = :hid AND usuario_id = :uid
+        '''), {"hid": hoja_id, "uid": uid}).fetchone()
+
+        if not orden:
+            raise ValueError("Esa orden no existe.")
+        if orden.fecha_entrega:
+            raise ValueError("No se puede eliminar una orden que ya fue entregada.")
+        if orden.factura_estado:
+            raise ValueError("No se puede eliminar una orden que ya tiene factura electrónica.")
+
+        conn.execute(text("DELETE FROM Detalles_Orden WHERE hoja_id = :hid"), {"hid": hoja_id})
+        conn.execute(text("DELETE FROM Hojas_Trabajo WHERE id = :hid AND usuario_id = :uid"),
+                     {"hid": hoja_id, "uid": uid})
+    invalidar_cache_ordenes()
+
+
 def obtener_notas_credito_periodo(uid, fecha_inicio, fecha_fin):
     """Todas las notas crédito (anulaciones de factura electrónica) emitidas
     en un período, con los datos de la orden/factura que anularon, para la

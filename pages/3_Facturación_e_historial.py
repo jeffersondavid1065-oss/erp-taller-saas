@@ -6,7 +6,7 @@ from sqlalchemy import text
 from db import obtener_conexion, init_db, mensaje_error_amigable
 from queries import (
     obtener_catalogos, obtener_config_taller, invalidar_cache_ordenes, invalidar_cache_inventario,
-    tiene_fe_habilitada, obtener_credenciales_factus, marcar_entrega,
+    tiene_fe_habilitada, obtener_credenciales_factus, marcar_entrega, eliminar_orden,
     obtener_cotizaciones, obtener_cotizacion_detalle, convertir_cotizacion_a_orden, eliminar_cotizacion,
 )
 from io import BytesIO
@@ -782,6 +782,42 @@ with tab_historial:
                                             st.error(mensaje_error_amigable(e, "asignar el repuesto del almacén"))
                                 else:
                                     st.info("No tienes productos con stock disponible en tu almacén.")
+
+                    st.markdown("---")
+                    st.subheader("4. Eliminar Orden")
+
+                    if fecha_entrega_actual:
+                        st.info(
+                            "Esta orden ya fue marcada como entregada — no se puede eliminar. "
+                            "Si fue un error, deshaz la entrega arriba en el expediente."
+                        )
+                    else:
+                        st.warning(
+                            "Elimina permanentemente esta orden y todos sus ítems. Esta acción no se puede deshacer."
+                        )
+                        with st.form(f"form_eliminar_orden_{hoja_id}"):
+                            motivo_eliminar_orden = st.text_area("Motivo de la eliminación *")
+                            confirmar_eliminar_orden = st.checkbox(
+                                f"Confirmo que quiero eliminar la Orden #{numero_orden_actual} y todos sus ítems."
+                            )
+                            eliminar_orden_click = st.form_submit_button(
+                                "Eliminar Orden", type="primary", width='stretch'
+                            )
+                        if eliminar_orden_click:
+                            if not motivo_eliminar_orden.strip():
+                                st.warning("Escribe el motivo de la eliminación.")
+                            elif not confirmar_eliminar_orden:
+                                st.warning("Marca la casilla de confirmación antes de eliminar.")
+                            else:
+                                try:
+                                    eliminar_orden(user_id, hoja_id)
+                                    _invalidar_caches_orden()
+                                    st.success(f"Orden #{numero_orden_actual} eliminada.")
+                                    st.rerun()
+                                except ValueError as e:
+                                    st.error(str(e))
+                                except Exception as e:
+                                    st.error(mensaje_error_amigable(e, "eliminar la orden"))
         else:
             st.error("Por favor, ingresa un número de orden válido.")
 
