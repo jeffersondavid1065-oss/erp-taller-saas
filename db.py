@@ -9,7 +9,12 @@ LOCAL_DB_PATH = os.path.join(BASE_DIR, "erp_taller.db")
 @st.cache_resource
 def obtener_conexion():
     try:
-        db_url = st.secrets["postgres"]["url"]
+        # DATABASE_URL como variable de entorno simple primero: hostings como
+        # Railway/Render no generan un .streamlit/secrets.toml por sí solos
+        # (eso es un mecanismo propio de Streamlit Community Cloud), así que
+        # esto permite desplegar en cualquier lado sin ese paso extra. Si no
+        # existe, cae al st.secrets de siempre (Streamlit Cloud o local).
+        db_url = os.environ.get("DATABASE_URL") or st.secrets["postgres"]["url"]
         engine = create_engine(
             db_url,
             pool_size=10,

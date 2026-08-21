@@ -6,16 +6,20 @@ Usa el nuevo SDK google-genai con modelos Gemini 3.x
 import streamlit as st
 import json
 import re
+import os
 from PIL import Image
 import io
 from db import mensaje_error_amigable
 
 
 def configurar_cliente():
-    """Configura el cliente de Gemini con la key de los secrets."""
+    """Configura el cliente de Gemini con la key de los secrets (o de
+    GEMINI_API_KEY como variable de entorno simple, para hostings que no
+    generan un .streamlit/secrets.toml como sí hace Streamlit Community
+    Cloud)."""
     try:
         from google import genai
-        api_key = st.secrets["gemini"]["api_key"]
+        api_key = os.environ.get("GEMINI_API_KEY") or st.secrets["gemini"]["api_key"]
         client = genai.Client(api_key=api_key)
         return client
     except Exception as e:

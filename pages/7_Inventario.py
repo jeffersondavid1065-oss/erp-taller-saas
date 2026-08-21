@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import os
 from sqlalchemy import text
 from db import obtener_conexion, init_db, mensaje_error_amigable
 from queries import invalidar_cache_inventario, obtener_config_taller
@@ -337,10 +338,10 @@ with tab_entradas:
 
     gemini_ok = False
     try:
-        api_key_gemini = st.secrets["gemini"]["api_key"]
+        api_key_gemini = os.environ.get("GEMINI_API_KEY") or st.secrets["gemini"]["api_key"]
         gemini_ok = True
     except Exception:
-        st.warning("⚠️ Gemini no configurado. Agrega `[gemini] api_key = 'tu-key'` en Streamlit Secrets.")
+        st.warning("⚠️ Gemini no configurado. Agrega `[gemini] api_key = 'tu-key'` en Streamlit Secrets (o GEMINI_API_KEY como variable de entorno).")
 
     col_cab1, col_cab2 = st.columns(2)
     with col_cab1:
